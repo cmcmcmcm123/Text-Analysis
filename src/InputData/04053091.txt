@@ -1,0 +1,136 @@
+Geometrically Inspired Itemset Mining
+
+Abstract  In our geometric view, an itemset is a vector (itemvector) in the space of transactions. Linear and potentially non-linear transformations can be applied to the itemvectors before mining patterns.
+
+Aggregation functions and interestingness measures can be applied to the transformed vectors and pushed inside the mining process. We show that interest- ing itemset mining can be carried out by instanti- ating four abstract functions: a transformation (g), an algebraic aggregation operator (?) and measures (f and F ). For Frequent Itemset Mining (FIM), g and F are identity transformations, ? is intersection and f is the cardinality. Based on this geometric view we present a novel algorithm that uses space linear in the number of 1-itemsets to mine all inter- esting itemsets in a single pass over the data, with no candidate generation. It scales (roughly) linearly in running time with the number of interesting item- sets. FIM experiments show that it outperforms FP- Growth on realistic datasets above a small support threshold (0.29% and 1.2% in our experiments) 1.
+
+1 Introduction  Traditional Association Rule Mining (ARM) con- siders a set of transactions T containing items I .
+
+Each transaction t ? T is a subset of the items, t ? I .
+
+The most time-consuming task of ARM is Frequent Itemset Mining (FIM), whereby all itemsets I ? ? I that occur in a sufficient number of transactions are generated. Specifically, if ?(I ?) ? minSup, where ?(I ?) = |{t : I ? ? t}| is the number of transactions containing I ? (known as the support of I ?).
+
+For item enumeration type algorithms, each trans-  1This research was partially funded by the Australian Research Council (ARC) Discovery Grant, Project ID: DP055900  action has generally been recorded as a row in the dataset. These algorithms make two or more passes, reading it one transaction at a time.
+
+We consider the data in its transposed format: Each row, x{i}, (corresponding to an item i ? I) contains the set of transaction identifiers (tids) of the transactions containing i. Specifically, x{i} = {t.tid : t ? T ? i ? t}. We call x{i} an itemvector because it represents an item in the space spanned by the transactions2. An example is provided in Figure 1(a).
+
+We can also represent an itemset I ? ? I as an itemvector: xI? = {t.tid : t ? T ? I ? ? t}. Figure 1(b) shows all itemsets that have support greater than one, represented as vectors in transaction space. For example, consider x{4} = {t2, t3} located at g and x{2} = {t1, t2, t3} located at f . x{2,4} can be ob- tained using x{2,4} = x{2} ? x{4} = {t2, t3}, and so is located at g. It should be clear that ?(I ?) = |xI? | = | ?i?I? x{i}|.
+
+There are a three important things to note from the above: (1) We can represent an item by a vector (we used a set representation to encode its location in transaction space, but we could have equally well used an alternate representation in some other space).
+
+(2) We can create itemvectors that represent itemsets by performing a simple operation on the itemvectors (in the case above, set intersection). (3) We can eval- uate a measure using a function on the itemvector (in the above case, we used set size and the support measure). These fundamental operations are all that are required for a mining algorithm. In Section 3 we generalise them to function g(?), operator ? and func- tion f(?) respectively. We add an additional family of functions F (?) for more complicated measures.
+
+So far we have considered itemvectors as binary.
+
+There is no reason for this restriction. Provided that we have functions f(?) and F (?) and an operator  2For simplicity we will use transactions and their tids inter- changeably  0-7695-2701-9/06 $20.00  ? 2006    (a) Transposing a dataset of three transactions (tid ? {t1, t2, t3}) containing items I = {1, 2, 3, 4, 5}.
+
+(b) Itemsets with support greater than 1 in transaction space.
+
+Figure 1. Running itemvector example  ? that obey the requirements set out in Section 3, we can map the original itemvector into some other space via g(?). This has potential for dimensionality and noise reduction or sketch algorithms. Suppose it is possible to perform Singular Value Decomposition (SVD) or Random Projections [1] to reduce the noise and dimensionality (number of transactions) before mining itemsets. This has previously been impossi- ble since the transformation creates real valued vec- tors, and hence cannot be mined using exiting algo- rithms. Using our framework, all that is required are suitable ?, f(?) and F (?). We can also use measures other than support. Any anti-monotonic (or prefix or weakly anti-monotonic) measure that fits into our framework can be used.
+
+We briefly illustrate some of the ideas used in our algorithm using Figure 1(a). We simply wish to convey the importance of the transpose view to our technique, and introduce some of the challenges we solved. Too keep things simple, we use the instantia- tion of g(?), ?, f(?) and F (?) required for traditional FIM. Our algorithm scans the transposed dataset row by row. Suppose we scan it bottom up3 so we first read x{5} = {t1, t3}. Assume minSup = 1. We can immediately say that ?({5}) = 2 ? minSup and so itemset {5} is frequent. We then read the next row, x{4} = {t2, t3}, and find that {4} is frequent.
+
+Since we now have both x{5} and x{4}, we can create x{4,5} = x{4} ? x{5} = {t3}. We have now checked all possible itemsets containing items 4 and 5. To progress, we read x{3} = {t2} and find that {3} is frequent. We can also check more itemsets: x{3,5} = x{3} ? x{5} = ? and x{3,4} = x{3} ? x{4} = {t2} so {3, 4} is frequent. Since {3, 5} is not frequent, neither is {3, 4, 5} by the anti-monotonic property of support [2]. We next read x{2} and continue the pro-  3This is just so the ordering of items in the data structure of our algorithm is increasing.
+
+cess. It should be clear from the above that (1) a sin- gle pass over the dataset is sufficient to mine all fre- quent itemsets, (2) having processed any n itemvec- tors corresponding to items in J = {1, ..., n}, we can generate all itemsets L ? J and (3) having the dataset in transpose format and using the itemvector concept allows this to work.
+
+Each itemvector could take up significant space, we may need many of them, and operations on them could be expensive. We generate at least as many itemvectors as there are frequent itemsets4. Since the number of itemsets is at worst 2|I| ? 1, clearly it is not feasible to keep all these in memory, nor do we need to. On the other hand, we do not want to recom- pute them as this is expensive. If there are n items we could use n itemvectors of space and create all item- sets, but we must recompute most itemvectors mul- tiple times, so the time is not linear in the number of frequent itemsets ? it will be exponential. For ex- ample, suppose we have created x{1,2,3}. When we later need x{1,2,3,4}, we do not want to have to recal- culate it as x{1} ? x{2} ? x{3} ? x{4}. Instead, we would like to use the previously calculated x{1,2,3}: x{1,2,3,4} = x{1,2,3} ? x{4} being one option. The challenge is to use as little space as necessary, while avoiding re-computations.
+
+We present an algorithm that uses time roughly linear in the number of interesting itemsets and at worst n? + ?l/2	 itemvectors of space, where n? ? n is the number of interesting 1-itemsets and l is the size of the largest interesting itemset. This worst case scenario is only reached with extremely low support, and most practical situations require only a small fraction of n?. Based on these facts and the geomet- ric inspiration provided by the itemvectors, we call it Geometrically inspired Linear Itemset Mining In the  4It is ?at least? because some itemsets are not frequent, but we only know this once we have calculated its itemvector.
+
+0-7695-2701-9/06 $20.00  ? 2006    Transpose, or GLIMIT.
+
+It is widely recognised that FP-Growth type algo-  rithms are the fastest know algorithms. We show ex- perimentally that GLIMIT outperforms FP-Growth [5] when the support is above a small threshold.
+
+GLIMIT is more than ?just another FIM/ARM al- gorithm? and support is just one of many possible interestingness measures it can use.
+
+We make the following contributions: ? We show interesting consequences of viewing  transaction data as itemvectors in transaction- space. We develop a theoretical framework for operating on itemvectors. This abstraction allows a new class of algorithm to be devel- oped, gives great flexibility in the measures used, inspires new geometric based interesting- ness measures and opens up the potential for useful transformations (such as preprocessing) on the data that were previously impossible.
+
+? We present GLIMIT, a new, efficient and fast class of algorithm that uses our framework to mine interesting itemsets in one pass without candidate generation. It uses linear space and (roughly) time linear in the number of interest- ing itemsets. It significantly departs from exist- ing algorithms. Experiments show it beats FP- Growth above small support thresholds when used for FIM.
+
+In Section 2 we put our framework and GLIMIT in context of previous work. Section 3 presents our itemvector framework. Section 4 gives the the two data structures that can be used by GLIMIT. In Section 5 we first give the main facts exploited by GLIMIT and follow up with a comprehensive exam- ple. We prove the space complexity and give the pseudo-code. Section 6 contains our experiments.
+
+We conclude in Section 7.
+
+2 Previous Work  Many itemset mining algorithms have been pro- posed since association rules were introduced [2].
+
+Recent advances can be found in [3] and [4]. Most algorithms can be broadly classified into two groups, the item enumeration (such as [2, 5, 9]) and the row enumeration (such as [7, 12]) techniques. Broadly speaking, item enumeration algorithms are most ef- fective for datasets where |T | >> |I|, while row enu- meration algorithms are effective for datasets where |T | << |I|, such as for microarray data [7].
+
+Item enumeration algorithms mine subsets of an itemset I ? before mining I ?. Only those itemsets for  which all subsets are frequent are generated ? mak- ing use of the anti-monotonic property of support.
+
+Apriori-like algorithms [2] do this in a breadth first manner and use a candidate generation step. They use multiple passes, at most equal to the length of the longest frequent itemset. Our algorithm does not perform candidate generation, and generates associ- ation rules in a depth first fashion using a single pass over the transposed dataset.
+
+FP-Growth type algorithms [5, 9] generates a compressed summary of the dataset using two passes in a highly cross referenced tree, the FP-tree, before mining itemsets by traversing the tree. Like our al- gorithm it does not perform candidate generation and mines the itemsets in a depth first manner while still mining all subsets of an itemset I ? before mining I ?.
+
+It is very fast at reading from the FP-tree, but the downside is that the FP-tree can become very large and is expensive to generate, so this investment does not always pay off. Our algorithm uses only as much space as is required.
+
+Row enumeration techniques effectively intersect transactions and generate supersets of I ? before min- ing I ?. Although it is much more difficult for these al- gorithms to make use of the anti-monotonic property for pruning, they exploit the fact that searching the row space in data with |T | << |I| becomes cheaper than searching the itemset-space. GLIMIT is simi- lar to row enumeration algorithms since both search using the transpose of the dataset. However, where row enumeration intersects transactions (rows), we effectively intersect itemvectors (columns). But this similarity is tenuous at best. Furthermore, exist- ing algorithms use the transpose for counting con- venience rather than for any insight into the data, as we do in our itemvector framework. Since GLIMIT searches through the itemset space, it is classified as an item enumeration technique and is suited to the same types of data. However, it scans the original data column-wise (by scanning the transpose row- wise), while all other item enumeration techniques scan it row-wise. The transpose has never, to our best knowledge, been used in an item enumeration algo- rithm. In summary, we think it is about as similar to other item enumeration techniques as FP-Growth is to Apriori.
+
+Efforts to create a framework for support exist.
+
+Steinbach et al. [11] present one such generalisation, but their goal is to extend support to cover continuous data. This is very different to transforming the orig- inal (non-continuous) data into a real vector-space (which is one of our motivations). Their work is  0-7695-2701-9/06 $20.00  ? 2006    geared toward existing item enumeration algorithms and so their ?pattern evaluation vector? summarises transactions (that is, rows). Our framework operates on columns of the original data matrix. Furthermore, rather than generalising the support measures so as to cover more types of datasets, we generalise the oper- ations on itemvector and the transformations on the same dataset that can be used to enable a wide range of measures, not just support.
+
+To our best knowledge, Ratio Rules are the clos- est attempt at combining SVD (or similar techniques such as Principal Component Analysis) and rule min- ing. Korn et al. [6] consider transaction data where items have continuous values associated with them, such as price. A transaction is considered a point in the space spanned by the items. By performing SVD on such datasets, they observe that the axes (orthogo- nal basis vectors) produced define ratios between sin- gle items. We consider items (and itemsets) in trans- action space (not the other way around) so when we talk of performing SVD, the new axes are linear com- binations of transactions ? not items. Hence I is un- changed. Secondly, we talk about mining itemsets, not just ratios between single items. Finally, SVD is just one possible instantiation of g(?).
+
+By considering items as vectors in transaction space, we can interpret itemsets geometrically, which we do not believe has been considered previously. As well as inspiring our algorithm, this geometric view has the potential to lead to very useful preprocess- ing techniques, such as dimensionality reduction of the transactions space. Since GLIMIT uses only this framework, it will enable us to use such techniques ? which are impossible using existing FIM algorithms.
+
+3 Theoretical Itemvector Framework  In Section 1 we used the example of frequent itemset mining (FIM) to introduce our ideas. But our work is much more general than this ? the instan- tiations of g(?), ? and f(?) are trivial for FIM. The functions and operator we formally describe in this section define the form of interestingness measures and dataset transformations that are supported by our algorithm. Not only can many existing measures be mapped to this framework, but we hope the geomet- ric interpretation will inspire new ones.
+
+Recall that xI? is the set of transaction identifiers of the transactions containing the itemset I ? ? I .
+
+Call X the space spanned by all possible xI? . Specif- ically, X = P({t.tid : t ? T}).
+
+Definition 1 g : X ? Y is a transformation on the original itemvector to a different representation yI? = g(xI?) in a new space Y .
+
+Even though g(?) is a transformation, it?s output still ?represents? the itemvector. To avoid too many terms, we also refer to yI? as an itemvector.
+
+Definition 2 ? is an operator on the transformed itemvectors so that yI??I? = yI? ? yI? = yI? ? yI? .
+
+That is, ? is a commutative operator for combining itemvectors to create itemvectors representing larger itemsets. We do not require that yI? = yI? ? yI? 5.
+
+Definition 3 f : Y ? Rk is a set of k measures on itemsets, evaluated on transformed itemvectors. We write mI? = f(yI?). k is fixed.
+
+Definition 4 interestingness : P(I) ? R is an interestingness measure (order) on all itemsets.
+
+Suppose we have a measure of interestingness of an itemset that depends only on that itemset (eg: support). We can represent this as follows, where I ? = {i1, ..., iq} and k = 1: interestingness(I ?) = f(g(x{i1}) ? ... ? g(x{iq}))  (1) So the challenge is, given an interestingness  measure, find suitable and useful g,? and f so that the above holds. For support, we know we can use ? = ?, f = | ? | and g as the identity function.
+
+We now return to our motivation. First assume that g(?) trivially maps xI? to a binary vector. Us- ing x{1} = {t1, t2} and x{5} = {t1, t3} from Figure 1(a) we have y{1} = g(x{1}) = 110 and y{5} = g(x{5}) = 101. It should be clear that we can use bitwise AND as ? and f = sum(), the number of set bits. But notice that sum(y{1} AND y{2}) = sum(y{1}. ? y{2}) = y{1} ? y{2}, the dot product (.? is the element-wise product6). That is, the dot prod- uct of two itemvectors is the support of the the 2- itemset. What makes this interesting is that this holds for any rotation about the origin. Suppose we have an arbitrary 3 ? 3 matrix R defining a rotation about the origin. This means we can define g(x) = RxT  because the dot product is preserved by R (hence g(?)). For example, ?({1, 5}) = y{1} ? y{5} = (RxT{1}) ? (RxT{5}). So we can perform an arbitrary rotation of our itemvectors before mining 2-itemsets.
+
+Of course this is much more expensive than bitwise AND, so why would we want to do this? Consider  5Equivalently, ? may have the restriction that I? ? I? = ?.
+
+6(a. ? b)[i] = a[i] ? b[i] for all i, where [] indexes the vectors.
+
+0-7695-2701-9/06 $20.00  ? 2006    Singular Value Decomposition. If normalisation is skipped, it becomes a rotation about the origin, pro- jecting the original data onto a new set of basis vec- tors pointing in the direction of greatest variance (in- cidentally, the covariance matrix calculated in SVD also defines the support of all 2-itemsets7). If we ad- ditionally use it for dimensionality reduction, it has the property that it roughly preserves the dot product.
+
+This means we should be able to use SVD for dimen- sionality reduction and or noise reduction prior to mining frequent 2-itemsets without introducing too much error. The drawback is that the dot product applies only to two vectors. That is, we cannot use it for larger itemsets because the ?generalised dot prod- uct? satisfies sum(RxT{1}. ?RxT{2}. ? ... . ?RxT{q}) = sum(x{1}.?x{2}.? ... .?x{q}) only for q = 2. How- ever, this does not mean that there are not other use- ful ?, f(?), F (?) and interestingness measures that satisfy Equation 1 and use g(?) = SV D, some that perhaps will be motivated by this observation. Note that the transpose operation is crucial in applying di- mensionality or noise reduction because it keeps the items intact. If we did not transpose the data, the itemspace would be reduced, and the results would be in terms of linear combinations of the original items, which cannot be interpreted. It also makes more sense to reduce noise in the transactions.
+
+We could also choose g(?) as a set compres- sion function or use approximate techniques, such as sketches, to give estimates rather than exact values of support or other measures. However, we think new geometrically inspired measures will be the most promising. For example, angles between itemvectors are linked to the correlation between itemsets. Of course, we can also translate existing measures into our framework.
+
+To complete our framework we now define the family of functions F (?) and give an example.
+
+Definition 5 F : Rk?|P(I  ?)| ? R is a measure on an itemset I ? that supports any composition of mea- sures (provided by f(?)) on any number of subsets of I ?. We write MI? = F (mI?1 ,mI?2 , ...,mI?|P(I?)|) where mI?i = f(yI?i) and all I  ? i ? P(I ?).
+
+We can now support more complicated interesting- ness functions that require more than a simple (k = 1) measure on one itemset:  interestingness(I ?) = F (mI?1 ,mI?2 , ...,mI?|P(I?)|) (2)  7That is, CM [i, j] = ?({i, j}).
+
+where the mI?i are evaluated by f(?) as before. That is, MI? = F (?) is evaluated over measures mI?i where all I ?i ? I ?. If F (?) does not depend on an mI?i , we leave it out of the notation. In that sense we call F (?) trivial if MI? = F (mI?). In this case the function of F (?) can be performed by f(?) alone, as was the case in the examples we considered before introducing F (?).
+
+Example 1 The minPI of an itemset I ? = {1, ..., q} is minPI(I ?) = mini{?(I ?)/?({i})}. This mea- sure is anti-monotonic and gives high value to item- sets where each member predicts the itemset with high probability. It is used in part for spatial co- location mining [10]. Using the data in Figure 1(a), minPI({1, 2, 3}) = min{1/2, 1/3, 1/1} = 1/3. In terms of our framework g(?) is the identity function, ? = ?, f = | ? | so that mI? = ?(I ?) and MI? = F (mI? ,m{1}, ...,m{q}) = mini{mI?/m{i})}.
+
+Our algorithm uses only the framework described above for computations on itemvectors. It also pro- vides the arguments for the operators and functions very efficiently so it is flexible and fast. Because GLIMIT generates all subsets of an itemset I? before it generates the itemset I ?, an anti-monotonic prop- erty enables it to prune the search space. Therefore, to avoid exhaustive searches, our algorithm requires8  that the function F (?) be anti-monotonic9 in the un- derlying itemsets over which it operate (in conjunc- tion with ?, g(?) and f(?)10).
+
+Definition 6 F (?) is anti-monotonic if MI? ? MI? ?? I ? ? I?, where MI? = F (?) is evalu- ated as per Definition 5.
+
+In the spirit this restriction, an itemset I ? is consid- ered interesting if MI? ? minMeasure, a thresh- old. We call such itemsets F-itemsets.
+
+4 Data Structures  In this section we outline two data structures that our algorithm (optionally) generates and uses.
+
+We use the PrefixTree to efficiently store and build frequent itemsets. We represent an itemset I ? = {i1, ..., ik} as a sequence ?i1, ..., ik? by choosing a global ordering of the items (in this case i1 < ... < ik), and store the sequence in the tree. An exam- ple of a PrefixTree storing all subsets of {1, 2, 3, 4}  8If there are few items then this constraint is not needed.
+
+9Actually, prefix anti-monotonic[8] is necessary, which is  a weaker constraint. With some modification, weakly anti- monotonic F (?) can also be supported  10Note that f(?) does not have to be anti-monotonic.
+
+0-7695-2701-9/06 $20.00  ? 2006    is shown in Figure 2(a). Since each node represents a sequence (ordered itemset) we can use the terms prefix-node, itemset and sequence interchangeably.
+
+The prefix tree is built of PrefixNodes. Each PrefixN- ode is a tuple (parent, depth, m, M, item) where parent points to the parent of the node (so n.parent represents the prefix of n), depth is its depth of the node and therefore the length of the itemset at that node, m (M ) is the measure(s) of the itemset evaluated by f(?) (F (?)) and item is the last item in the sequence represented by the node. ? is the empty item so that {?} ? ? = ? where ? is an itemset. The sequence (in reverse) represented by any node can be recovered by traversing toward the root. To make the link with our itemvector frame- work clear, suppose the itemset represented at a Pre- fixNode p is I ? = {i1, i2, .., ik}. Then p.m = mI? = f(g(x{i1})?g(x{i2})?...?g(x{ik})) and p.M = F (?) where F is potentially a function of the m?s of Pre- fixNodes corresponding to subsets of I ?.
+
+The tree has the property that if s is in the Prefix- Tree, then so are all subsequences s? ? s by the anti- monotonic property of F (?). Hence we save a lot of space because the tree never duplicates prefixes. In fact, it contains exactly one node per F-itemset.
+

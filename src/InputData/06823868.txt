@@ -1,0 +1,312 @@
+Data-flow Testing in the Large
+
+Abstract?Data-flow (DF) testing was introduced more than  thirty years ago aiming at extensively evaluating a program structure. It requires tests that traverse a path in which the definition of a variable and its subsequent use, i.e., a definition- use association (dua), is exercised. While control-flow testing tools have being able to tackle big systems?large and long running programs, DF testing tools have failed to do so. This situation is in part due to the costs associated with tracking duas at run-time. Recently, an algorithm, called Bitwise Algorithm (BA), which uses bit vectors and bitwise operations for tracking intra- procedural duas at run-time, was proposed. This paper presents the implementation of BA for programs compiled into bytecodes.
+
+Previous approaches were able to deal with small to medium size programs with high penalties in terms of execution and memory.
+
+Our experimental results show that by using BA we are able to tackle large systems with more than 200 KLOCs and 300K required duas. Furthermore, for several programs the execution penalty was comparable with that imposed by a popular control- flow testing tool.
+
+Keywords?Structural testing; Data-flow testing coverage; Pro- gram instrumentation; Run-time environments; Bytecode testing;
+
+I. INTRODUCTION  An important part of current software industry, known as internet-based companies, works in perpetual development mode in which new features are made available to users on a daily basis. As a result, the systems are continuously growing and being deployed. Feitelson et al. [1] describe Facebook development and deployment process in which new code is released at high rate, several times a working day.
+
+To develop quality software at such a fast rate, these com- panies rely in part on extensive automated testing [2]. Browser- based automated testing and xUnit frameworks are used to execute thousands of tests. In addition, tools automatically collect code coverage data to assess the code produced by engineers. In this context of continuous deploying, coverage tools are only useful if able to produce coverage data at the same fast rate.
+
+Code coverage consists in determining the structural testing entities covered by test cases. Structural testing entities can be divided into two groups ? control- and data-flow testing. In the first one, the testing entities are derived from the flow graph obtained from a program. Examples of control-flow testing entities are: node, edge and path, being a node every set of statements executed in sequence, an edge the possible transfer of control between nodes, and a path corresponds to a sequence of nodes.
+
+Data-flow testing, in turn, involves the development of tests which exercise every value assigned to a variable and its  subsequent references (uses) occurring either in a computation or in a predicate. These entities are called definition-use associations (dua) [3].
+
+To determine the testing entities covered by a test case, the program (object or source) code should be instrumented. Pro- gram instrumentation inserts additional code in a program to collect coverage information during its execution. Instrumen- tation makes programs run slower and causes greater memory consumption. Furthermore, inefficient program instrumentation might turn effective software testing techniques into infeasible techniques for industrial use.
+
+Control-flow (CF) testing supporting tools have a widespread use in industry. Although the tools performance may vary depending on the characteristics of the systems, commercial (e.g., Clover1) and open-source (e.g., Cobertura2, JaCoCo3) tools have been utilized to assess control coverage of large systems. Moir reports that JaCoCo was run against 37,000 Eclipse JDT core tests with an execution overhead of 2% [4].
+
+On the other hand, despite of having been shown to be an effective testing technique [5], [6], adequate for security assessment [7], and useful to support fault localization [8], one hardly finds Data-flow (DF) testing in use at industrial settings. In part, this situation can be explained by the fact that DF supporting tools are not scalable for large systems due to the costs associated with tracking duas at run-time. Some DF testing instrumentation techniques [9], [10] were proposed to address the costs associated with monitoring duas. However, these approaches rely on complex computations and expensive data structures to collect dua coverage.
+
+Recently, a novel algorithm [11], called Bitwise Algorithm (BA), was proposed to tackle this issue. The new algorithm utilizes efficient bitwise operations and inexpensive data struc- tures to track intra-procedural duas (i.e., duas occurring within a procedure). Simulations show that BA is at least as good as the most efficient DF instrumentation techniques and that it can be up to 100% more efficient [11].
+
+The purpose of this paper is to present the BA imple- mentation for programs compiled into bytecodes. Such an im- plementation is realized in the BA-DUA (Bitwise Algorithm- powered Definition-Use Association coverage) tool. BA-DUA follows BA original description with optimizations only related to bitwise operations. For example, if an operand in a union operation is empty, we removed this operation; in a subtraction  1http://www.atlassian.com/software/clover/ 2http://cobertura.sourceforge.net/ 3http://www.eclemma.org/jacoco   DOI 10.1109/ICST.2014.19     operation, the logical negation of the subtrahend is carried out at instrumentation time. Part of these optimizations were utilized in the simulations presented in [11]. The goal was to assess BA original formulation without further optimizations.
+
+Our evaluation comprehends two types of penalties im- posed by instrumenting programs with BA: execution over- head, given by the extra time needed to execute the instru- mentation code with respect to an uninstrumented program; and memory overhead, represented by the growth of the object code due to the insertion of BA code. The subjects of our experiment consisted of ten programs varying from 672 to 209,482 LOC with a total number of duas from 1220 to 314,369. The test suites of these programs were run without any instrumentation and with BA-DUA and JaCoCo instrumentation.
+
+Our results indicate that the BA-DUA execution overhead varied from negligible to 172%, being the average 38%. Inter- estingly, the BA-DUA overhead was over 50% for only two subjects in ten programs. Furthermore, for several programs the BA-DUA execution penalty was comparable with that imposed by JaCoCo. In terms of program growth, the BA memory overhead ranges from 33% to 118%, being the average 61%.
+
+Previous approaches for dua monitoring were able to deal only with small to medium size programs with sizeable penal- ties. By using BA-DUA we are able to tackle large systems with more than 200 KLOCs and 300K required duas with fairly moderate overheads. Our experimental data suggests that BA allows intra-procedural data-flow testing to be used in a much bigger class of systems.
+
+The contributions of this paper are summarized below:  ? the description of a scalable intra-procedural data-flow testing tool which utilizes the Bitwise Algorithm (BA) for dua monitoring;  ? an evaluation of the penalties caused by BA in a wide class of programs including small, medium, and large programs;  ? a comparison between the penalties imposed by BA and by a control-flow testing tool (JaCoCo) largely used in industry.
+
+The remaining of the paper is organized as follows. The next section contains the definition of the most used control- and data-flow testing criteria. The related work is discussed in Section III. The Bitwise Algorithm (BA) for dua monitoring is presented in Section IV. Section V describes BA-DUA coverage tool. The experiment carried out and the results obtained are presented in Section VI. In Section VII, the results are analyzed. Finally, Section VIII contains our conclusions and future work.
+
+
+
+II. BACKGROUND  In this section, we make a concise presentation of structural testing criteria concepts. Let P be a program mapped into a flow graph G(N,E, s, e) where N is the set of blocks of statements (nodes) such that once the first statement is executed all statements are executed in sequence, s is the start node, e is the exit node, and E is the set of edges (n?,n), such  that n? ?= n, which represents a possible transfer of control between node n? and node n. A path is a sequence of nodes (ni, . . ., nk, nk+1, . . ., nj), where i ? k < j, such that (nk, nk+1) ? E.
+
+Consider the program presented in Figure 1, obtained from [11], which determines the maximum element in an array of integers. The lines of code and nodes associated with the statements of the program are indicated in Figure 1. Figure 2 contains the flow graph obtained from the example program.
+
+Line Node Statement - - int max(int array [], int length) - 1 { 1 1 int i = 0; 2 1 int max = array[++i]; //array[i++]; 3 2 while(i < length){ - 3 { 4 3 if(array[i] > max) 5 4 max = array[i]; 6 5 i = i + 1; - 5 } 7 6 return max; - 6 }  Fig. 1. Example program max [11].
+
+In control-flow testing, the entities are derived from the flow graph of the program. The most well known control-flow testing criteria are: all nodes and all edges. A test set satisfies the all nodes (edges) criterion if it includes test cases that traverse at least once every node (edge) of the program. The nodes (edges) traversed by a test set are said to be covered by it. Table I presents the entities required by all nodes and all edges criteria for the max program.
+
+Data-flow testing requires that selected test cases exercise paths in a program between every point a value is assigned to a variable and its subsequent references. When a variable receives a new value, it is said that a definition has occurred; a use of a variable happens when its value is referred to. A distinction is made between a variable referred to compute a value and to compute a predicate. When referred to in a predicate computation, it is called a p-use and is associated  def = {i}  p?use={i,length}  def = {max}  array} c?use = {max}  c?use = {i}        def={i,array,length,max}  p?use={i,length}  c?use={i,  array,max} p?use={i,  array,max} p?use={i,  Fig. 2. Annotated flow graph of the example program [11].
+
+with edges; otherwise it is called a c-use when associated with nodes. A definition-clear path with respect to (wrt) a variable X is a path where X is not redefined in any node in the path, except possibly in the first and last ones.
+
+Data-flow testing criteria in general require that definition- use associations (duas) be covered. The triple D = (d, u, X), called c-use dua, represents a data-flow testing requirement involving a definition in node d and a c-use in node u of variable X such that there is a definition-clear path wrt X from d to u. Likewise, the triple D = (d, (u?, u), X), called p-use dua, represents the association between a definition and a p-use of a variable X . In this case, a definition-clear path (d,. . .,u?,u) wrt X should exist.
+
+The all uses data-flow testing criterion [3] requires the set of paths executed by the test cases of a test set T to include a definition-clear path for each dua (d, u, X) or (d, (u?, u), X) of a program P . The duas exercised by a test set are said to be covered by it. Table I contains the duas required for program max.
+
+TABLE I. ENTITIES REQUIRED BY THE ALL NODES, ALL EDGES AND ALL USES CRITERIA FOR PROGRAM MAX.
+
+All nodes All edges All uses 1 (1,2) (1, 6, max) (4, 6, max) (1, (3,4), max) 2 (2,3) (1, (3,5), max) (4, (3,4), max) (4, (3,5), max) 3 (2,6) (1, 4, i) (1, 5, i) (1, (2,3), i) 4 (3,4) (1, (2,6), i) (1, (3,4), i) (1, (3,5), i) 5 (3,5) (5, 4, i) (5, 5, i) (5, (2,3), i) 6 (4,5) (5, (2,6), i) (5, (3,4), i) (5, (3,5), i)  (5,2) (1, 4, array) (1, (3,4), array) (1,(3,5), array) (1,(2,3), length) (1, (2,6), length)
+
+III. RELATED WORK  Our discussion regarding the related work is two-fold.
+
+Firstly, the techniques to track duas are described. The tools developed to support DF testing are compared next.
+
+A. Dua Tracking Techniques  The first approach to track duas was based on finite state automata (FSA) [12]. In this strategy, each dua D = (d, u, X) or (d, (u?, u), X) is mapped into an automaton. When a node is visited, every automaton associated with a dua D is checked whether it has reached the final state. In this case, the dua is set as covered and the automaton is not checked anymore.
+
+Ostrand and Weyuker [13], in turn, propose to track memory positions to determine precisely which duas were covered.
+
+Horgan and London [14] resort to a strategy known as last definition. Tables contain information about which variables are defined and used in a given block. Their strategy keeps track, for each variable, of the block at which it was defined.
+
+When a block that uses a defined variable is reached the last definition of that variable is verified and the corresponding dua is recorded in a trace file.
+
+Misurda et al. [9] utilize a demand-driven strategy to instrument programs to track down duas. The idea is to instrument the object code at initial points (called seeds).
+
+The seeds are probes inserted at nodes d in which there are definitions of variable; they are called def probes and one def probe is inserted at d if there exists at least one dua D = (d,u, X) (or D = (d,(u?,u), X)). When a def probe is reached,  d is recorded as the last definition of X and a respective use probe for every D is inserted at u. A use probe, when reached, checks whether the last definition is d; if true, it records the coverage of the respective dua. After its execution, the use probe is removed. To track p-use duas (e.g., D = (d,(u?,u), X)), probes are inserted to record the last node visited; they are only covered if d is the last definition of X and u? is the previous node visited.
+
+Santelices and Harrold proposed an approximate solution to track duas [10]. Their idea is that there are edges whose exercise implies the exercise of duas. They analyze the code to determine the sets of duas whose exercise is inferable from the exercise of an edge and the set of duas conditionally inferable from the exercise of the edge. Conditionally inferred duas mean that they are likely to have been exercised. The set of duas not inferable by the exercise of any edge is also determined. At run-time this approach tracks edges, not duas, which requires a less costly instrumentation. After the program execution, the set of exercised edges is processed to infer the duas actually and conditionally exercised. We call this strategy dua inference.
+
+The same authors proposed a matrix-based strategy [10].
+
+This mechanism is able to precisely track duas at run-time.
+
+They create a coverage matrix m initialized with zeroes where each column corresponds to a use and each cell in a column represents a definition for that use. Although not all cells correspond to a dua, this approach allows quick access of the matrix by using two indexes ? a use ID and a definition ID.
+
+At run-time, probes track the ID of the last executed definition for that variable. At each use, the instrumenter inserts code that reads the last definition ID and uses it as the row index when accessing the corresponding cell in the matrix.
+
+B. DF Testing Tools  Since the DF testing inception, it was clear that its ap- plication was impossible without tool support. As a result, many tools?ASSET [15], TACTIC [13], ATAC [14], POKE- TOOL [16], JaBUTi [17], Jazz [18], DUA-FORENSICS [10], and DFC [19]?were developed at academic and research settings to support DF testing. To the best of our knowledge, the only two tools independently developed to support DF testing are Coverlipse 4 and JMockit 5. Table II summarizes our comparison of the DF testing tools. It lists whether a tool tracks inter- or intra-procedural duas or both, the technique it relies on to monitor duas, the language it supports, and its availability.
+
+Three tools supports inter-procedural duas: DUA- FORENSICS, JaBUTi, and JMockit. DUA-FORENSICS requires a single entry point while JaBUTi restricts the level of methods invocations to determine inter-procedural requirements. JMockit implements a simplified version of the all definitions criterion [3] for instance and static non-final fields. In general, the tools implements the techniques devised by its authors to monitor duas. The exceptions are Coverlipse, DFC, and JMockit for which we could not determine the dua tracking technique utilized; though, Coverlipse records the traversed path which is then processed to determine the  4http://coverlipse.sourceforge.net/ 5http://jmockit.googlecode.com/     TABLE II. DF TESTING TOOLS  Tool name Coverage Technique Language Availability ASSET Intra Automata Pascal TACTIC Intra Memory tracking C ATAC Intra Last definition C/C++ ? POKE-TOOL Intra Automata C JaBUTi Inter/Intra Last definition Bytecode ? JMockit Inter ? Java ? Coverlipse Intra Path recording Java ? Jazz Intra Demand-driven Java DUA-FORENSICS Inter/Intra Dua inference Java ? DFC Intra ? Java  covered duas. The more recent tools support Java while the older ones focus on procedural languages, especially C.
+
+Finally, half of the tools are available for download.
+
+As already noticed by Yang et al. [20], and corroborated by our own survey, there is not a commercial tool supporting DF testing. Hassan and Andrews [21] report that they were able to find only two working DF testing tools: ATAC and DUA-FORENSICS. Even these two tools had restrictions in analyzing particular programs. These authors suggest that the high cost associated with tracking duas has discouraged tool vendors from implementing it.
+
+These are evidences that the current strategies to track duas are not able to tackle large and/or long running programs. Next we will present the Bitwise Algorithm (BA) for dua monitoring and the BA-DUA coverage tool. BA-DUA relies on BA to support scalable intra-procedural DF testing.
+
+
+
+IV. BITWISE DUA COVERAGE ALGORITHM  The Bitwise Algorithm (BA) for dua monitoring is based on a simple idea: to encode a solution for the reaching definitions data-flow problem [22] into the object code. In what follows we present a brief presentation of the algorithm since its full description can be found in [11].
+
+BA is based on sets associated with each node of the flow graph. Below we formally define the sets of born (Born(n)), disabled (Disabled(n)), potentially covered (PotCovered(n)) and sleepy (Sleepy(n)) duas for a node n ? N of a flow graph G(N,E, s, e):  Born(n): set of duas (d,u, X) or (d,(u?,u), X) such that d = n.
+
+Disabled(n): set of duas (d,u, X) or (d,(u?,u), X) such that X is defined in n and d ?= n.
+
+PotCovered(n): set of duas (d,u, X) or (d,(u?,u), X) so that u = n.
+
+Sleepy(n): set of duas (d,(u?,u), X) such that u? ?= n.
+
+To determine the covered duas, BA keeps track of three  working sets?the alive duas (Alive), the current sleepy duas (CurSleepy) and the covered duas (Covered). How these extra sets are determined is described in Algorithm 1.
+
+Before the execution of the program, the three working sets are empty (lines 1 to 3). At line 5, variable n is assigned with the node traversed in the program execution. When the program execution starts, the node traversed is the start node  s. The algorithm proceeds by processing the nodes traversed until the program execution finishes (line 9).
+
+The Alive set contains the duas that are alive in the path traversed so far in the program execution. The duas belonging to Alive are those that were born in the path and were not disabled in it (line 7). Hence, the Alive contains the duas enabled for coverage in the path, provided the respective c- use or p-use is met.
+
+Input: nodes traversed during program execution; sets Disabled(n), Sleepy(n), PotCovered(n), and Born(n)  Output: Covered set 1 Alive = ?; 2 CurSleepy = ?; 3 Covered = ?; 4 repeat 5 n = node traversed in program execution; 6 Covered = Covered  ? [[Alive - CurSleepy]  ?  PotCovered(n)]; 7 Alive = [Alive - Disabled(n)]  ? Born(n);  8 CurSleepy = Sleepy(n); 9 until program execution finishes;  10 return Covered Algorithm 1: Bitwise dua coverage algorithm.
+
+At line 6, this meeting is verified. Alive is utilized to determine the covered (Covered) duas by making the inter- section with the potentially covered duas (PotCovered) of the current node. The sleepy duas (CurSleepy) are used to avoid temporally disabled p-use duas being covered. The CurSleepy working set is updated at line 8 with the sleepy duas associated with the just visited node. Algorithm 1 correctly determines the covered duas until the program termination (see proof of correctness in [23]).
+
+To highlight the role of CurSleepy and Sleepy(n) sets in BA, consider that path (1, 2, 3, 4, 5) has been traversed in Figure 2. At node 5, the set of potentially covered duas includes the following p-use duas: (1, (3,5), i), (5, (3,5), i), (1, (3,5), max), (4, (3,5), max) and (1,(3,5), array). Yet these p- use duas cannot be covered because node 4 was visited before node 5 in the path. According to the definition of Sleepy(n), Sleepy(4) encompasses all p-use duas. After the execution of node 4, CurSleepy is updated with Sleepy(4). As a result, no p-use dua is allowed to be covered immediately after the visit of node 4. Thus, at node 5, only c-use duas will be considered covered.
+
+Typically, BA can be implemented by inserting lines 6 to 8 at the beginning of the code associated with each node. As a result, it is not necessary to keep a list of traversed nodes.
+
+All sets utilized can be implemented as bit vectors. In addition, sets PotCovered(n), Disabled(n), Born(n), and Sleepy(n) are constant values computed statically at instrumentation time.
+
+One can also see BA as a more efficient implementation of the FSA-based algorithms, being each bit a finite state automa- ton. In the next section, we present how BA is materialized in instrumentated code inserted into a bytecode program.
+
+
+
+V. BA-DUA ? BA-POWERED DUA COVERAGE  The Bitwise Algorithm (BA) for dua monitoring is realized in the BA-DUA tool, which is described next.
+
+BA-DUA is implemented as two Java programs. The in- strumenter and the analyzer. The former is responsible to instrument Java classes in order to track duas at run-time.
+
+The analyzer is responsible to report which duas were (or not) covered and the output of the instrumented program.
+
+BA-DUA can instrument classes in two different ways:  ? on-the-fly instrumentation uses the Java agent and instruments classes as they are loaded by the Java Virtual Machine (JVM). All that needs to be done is to include the BA-DUA instrumenter agent by specifying an option in the command-line;  ? off-line instrumentation changes specified classes be- fore the program starts. The instrumented classes should be in the classpath so that at run-time they are loaded instead of the original classes.
+
+The instrumenter works as follows. For each method, a flow graph is built based in the sequence of the method bytecodes.
+
+Initially, every instruction is a node and the edges represent the possible flow of control between the instructions. This graph is then transformed into a graph where each node is a sequence of instructions. All instructions in these nodes are always executed in sequence (except in the occurrence of exceptions). Finally, for each instruction, we compute the variables (local variables or fields) that are defined/used. This information will generate the sets of definitions/uses of each node. Duas are then computed using known data-flow analysis techniques [22].
+
+Given the annotated flow graph of a method and the set of duas, the instrumenter inserts BA code into the bytecode program. If the method does not require any dua (e.g., straight line methods), no instrumentation code is inserted. Otherwise, the instrumenter decides how to insert BA code into bytecode.
+
+Our design rationale was to avoid any unnecessary method call since we assume that method calls are more costly than inline instrumentation code.
+
+If a method has up to 32 (64) duas, we use integers (longs) to track them. Each bit in the primitive type corresponds to a dua. We do not need to worry about the size of primitive type since JVM specifies that integers (longs) are always 32-bits (64-bits) wide.
+
+Alive, CurSleepy and Covered are translated into integer or long local variables ? each of them occupies one or two slots on the local variable array of the method ? depending on the number of duas.
+
+However, if a method has more than 64 duas no primitive type can hold them. In this case our solution is to use more local variables. Our experimental data suggests that these methods constitute a small part of a program (see Table IV).
+
+BA-DUA always utilizes long variables when the number of duas of the method exceeds 64.
+
+Each one of these local variables belongs to a window. For instance, if a method has 150 duas, then the instrumentation  will allocate three windows: (dua0, dua1, ..., dua63) belongs to window0, (dua64, dua65, ..., dua127) belongs to window1, and so on. In that sense, to hold Alive, CurSleepy and Covered, methods up to 32 duas need three slots in the local variable array, methods up to 64 duas needs 6 slots and methods with more than 64 duas needs 6 ? ?|D|/64? slots in the local variable array where D is the set of duas of a method.
+
+To translate Algorithm 1 into bytecodes we insert the operations that update Covered, Alive and CurSleepy at the beginning of each node of the flow graph. The code is inserted just before the first instruction of the node. The inserted code only collects coverage information without changing the method behavior.
+
+For each node n, we compute Born(n), Disabled(n), PotCovered(n) and Sleepy(n) at instrumentation time. These sets are encoded as constants of type integer or long, depending on the number of duas. Again, if the number of duas of the method is greater than 64 a constant is encoded for each window.
+
+Suppose we are instrumenting node n of a method with up to 64 duas. The code in Figure 3 describes how a BA probe looks like. covered, alive and cursleepy are local variables of type int or long and represent Covered, Alive and CurSleepy of Algorithm 1. POT_COVERED_N, DISABLED_N, BORN_N and SLEEPY_N are constants of type int or long and represent sets PotCovered(n), Disabled(n), Born(n) and Sleepy(n) of Algorithm 1.
+
+...
+
+// Update covered 1: covered = covered | ((alive & ?sleepy)  & POT_COVERED_N); // Update alive 2: alive = (alive & ?DISABLED_N) | BORN_N; // Update sleepy 3: cursleepy = SLEEPY_N; ...
+
+Fig. 3. BA probe for a node n.
+
+The union and intersection of two bit vectors are im- plemented by the bitwise inclusive OR and AND operators, respectively. The subtraction operation is implemented by negating the subtrahend and making a bitwise AND. If a method has more than 64 duas, then the code in Figure 3 is duplicated to update/use the local variables and constants of each extra window.
+
+Since all sets of node n are static, the BA code can be optimized at instrumentation time. When POT_COVERED_N = 0, statement 1 can be removed. In statement 2, the value of ?DISABLED_N is determined at instrumentation time to save two instructions needed to negate DISABLED_N. When BORN_N = 0, statement 2 is removed because DISABLED_N = 0 too. Finally, statement 2 can be rewritten as alive = alive | BORN_N when DISABLED_N = 0.
+
+To convert the statements from BA probe to bytecode in- structions is straightforward. BA-DUA optimizes the sequence of instructions of a BA probe to reduce the operand stack size needed to execute the probe. BA probes requires a stack of size of 2 (4) for integers (longs).
+
+At the beginning of the method code, instructions are added to initialize the new local variables (covered, alive and sleepy) with the empty value. Because covered is a local variable, it is not sensitive to recursive calls nor threads.
+
+However, its scope is limited to the method call. To keep the coverage between method calls, each class has a reference to a global array of covered duas. BA-DUA implements the global array as one array of longs (long[]) per class. A method can be associated with more than an entry (for instance, if a method have more than 64 duas).
+
+Just before a return or a throw command, instructions are added to update the correspondent entries in the global array of covered duas. As mention before, the local covered variable is not thread sensitive; however, the global array entries are. Therefore, race conditions may occur when entries of the global array are updated. As a result, the coverage obtained can be slightly lower than the real coverage for programs with multiple threads. Strategies for dealing with race conditions are beyond the scope of this paper.
+
+
+
+VI. BA EVALUATION  An experiment to evaluate the penalties imposed by BA was carried out. The experiment was designed to answer the following research questions:  RQ1: How do the penalties imposed by BA impact on an instrumented program?
+
+RQ2: How much more expensive is BA monitoring in comparison with edge monitoring?
+
+Two kinds of penalties were assessed: execution overhead, given by the extra time needed to execute the instrumentation code added; and memory overhead, represented by the growth of the object code due to the insertion of instrumentation code.
+
+BA-DUA was used to assess BA performance whereas JaCoCo was utilized to assess edge monitoring. This tool was chosen because it has been used to obtain control-flow (instruction and edge) coverage of large systems. Both BA- DUA and JaCoCo require limited extra memory at run-time; thus, the program growth provides an estimate of the extra memory needed to run both instrumentation approaches. Next, the evaluation carried out and its results are described.
+
+A. Subject Programs  Table III contains the description of the programs utilized in our evaluation. We utilized several criteria to select them.
+
+The first criterion was to select programs that were previously utilized in data-flow testing instrumentation papers. The idea was to allow a rough comparison between instrumentation techniques. These programs are indicated in Table III by a star (?). Within this same criterion, we added those programs utilized in the simulations contained in [11]. They are referred to by a diamond (?).
+
+The second selection criterion was the characteristics of the systems. The goal was to have a diverse selection of programs.
+
+Five programs?Commons-Math 2.1 and 3.2, Scimark2, and Weka r5178 and r10042?perform mathematical calculations.
+
+JTopas parses arbitrary texts and XML-Security parse and manipulate XML files, and HSQLDB is a relational database  TABLE III. DESCRIPTION OF THE PROGRAMS SELECTED FOR EVALUATION.
+
+Program Description Commons-Lang Library with utilities classes for Java Commons-Math 2.1 (?) and 3.2  Library of mathematics and statistics components  HSQLDB (?) Relational database engine with in- memory and disk-based tables  JFreeChart Library to display professional quality charts in applications  JTopas (?,?) Suite for parsing arbitrary text data Scimark2 (?,?) Benchmark for scientific and numerical  computing Weka r5178 (?) and r1004  Collection of machine learning algo- rithms for data mining tasks  XML-Security (?) Library to implement XML signature and encryption standards  with a small memory footprint. Thus, these three programs perform data manipulation tasks. Finally, JFreeChart is a graphics library and Commons-Lang is a library that perform tasks related to string manipulation, concurrency, creation and serialization of objects, among others. All programs are either open-source or publicly available.
+
+The third criterion is related to the size of the programs.
+
+To assess the scalability of BA, we defined three ranges of systems: small, medium, and large. Small systems are those ranging from 150 to 2,000 LOCs; medium size systems vary from 2 KLOCs up to 30 KLOCs; and large systems were those with more than 30KLOCs. These ranges were defined by estimating the number of engineers working in the system.
+
+A small program can be easily coded by a single engineer; a medium size program can be coded by a single engineer in the bottom of the range (2 KLOCs), but more help will be needed when its size reaches the top of the range (30 KLOCs). Large systems will hardly preclude the need of a group of engineers.
+
+Table IV describes the characteristics of the selected pro- grams. It contains the number of lines of code (LOC), the number of methods and classes, the number of methods with more than 64 duas, with more than 32 up to 64 duas, with up to 32 duas, and with zero duas; it also contains the total number of duas and of edges. The percentage numbers in braces mean the coverage achieved by running the program test suite.
+
+For Commons-lang, 99.30% of classes and 93.03% methods were covered as well as 88.05% of duas and 92% of edges.
+
+The percentage of methods with a particular property (e.g., requiring more than 64 duas) with respect to the total number of methods is represented by the percentage number without braces. For example, Commons-lang has 1.58% of its methods with more than 64 duas required. Control-flow coverages were obtained with JaCoCo and data-flow coverage with BA-DUA.
+
+The lines of code were measure with JavaNCSS6.
+
+Two programs?JTopas and Scimark2?are classified as small systems. Commons-Lang, Commons-Math-2.1 and XML-Security are medium size programs; and five programs? Commons-Math 3.2, HSQLDB, JFreeChart, Weka r5172 and r10042?are large systems. With the exception of the programs  6http://www.kclee.de/clemens/java/javancss/     TABLE IV. CHARACTERISTICS OF THE SELECTED PROGRAMS.
+
+Program LOC Classes Methods Methods w. Methods w. Methods w. Methods w. Duas Edges#duas>64 64?#duas>32 32?#dua>0 #duas=0 Commons-Lang 13,743 143 2,281 36 129 907 1,209 20,594 7,395(99.30%) (93.03%) 1.58% 5.66% 39.76% 53% (88.05%) (92%)  Commons-Math 2.1 26,347 428 3,995 125 207 1,099 2,564 42,901 8,745(99.53%) (86.43%) 3.13% 5.18% 27.51% 64.18% (84.78%) (86%)  Commons-Math 3.2 52,731 845 6,886 276 370 1,745 4,495 89,678 18,576(95.03%) (85.42%) 4.01% 5.37% 25.34% 65.28% (77.08%) (85%)  HSQLDB 116,618 439 8,365 414 587 3,090 4,274 122,987 34,722(66.29%) (48.44%) 4.95% 7.02% 36.94% 51.09% (35.40%) (35%)  JFreeChart 66,895 520 8,313 274 353 2,001 5,685 77,957 21,165(82.88%) (60.60%) 3.30% 4.25% 24.07% 68.39% (44.76%) (45%)  JTopas 6184 41 475 11 17 152 295 3,773 1,233(78.05%) (75.37%) 2.32% 3.58% 32.00% 62.11% (65.52%) (62%)  Scimark2 672 10 61 5 8 23 25 1220 218(90.00%) (62.30%) 8.20% 13.11% 37.70% 40.98% (58.11%) (59%)  Weka r5178 209,482 2,068 20,727 1,142 1,297 5,477 12,811 314,369 69,420(37.86%) (35.95%) 5.51% 6.26% 26.42% 61.81% (36.15%) (36%)  Weka r10042 184,454 2,257 19,694 982 1,151 5,196 12,365 271,443 64,760(28.93%) (28.49%) 4.99% 5.84% 26.38% 62.79% (25.96%) (26%)  XML-Security 17,929 317 2,353 38 82 745 1,488 16,821 6,273(74.13%) (61.24%) 1.61% 3.48% 31.66% 63.24% (56.10%) (53%)  for which we selected two versions, the others are the latest version as of September, 2013.
+
+B. Treatments  The treatments were defined taking into account the cov- erage tool utilized, if any. Below they are defined.
+
+Baseline. This treatment regards an uninstrumented version of the program.
+
+JaCoCo. This treatment regards a JaCoCo instrumentated program tracking instructions and edges at run-time.
+
+BA-DUA. This treatment regards a BA-DUA instrumen- tated program tracking duas at run-time.
+
+C. Procedure  Our data collection utilized two procedures. One to collect execution and other to obtain memory overhead. The execution overhead was determined by executing the test suites accom- panying each program. Excepting HSQLDB and JTopas, for which failing test cases were removed, the test suites executed were those contained in the repository of the program. The memory overhead was obtained by the ratio of the total size of all instrumented classes by the size of all compiled classes of each program.
+
+For each treatment, the execution time of the subject program was obtained by averaging the time of ten executions.
+
+It was collected using the real option of the Unix time command since we were interested in obtaining the wall clock time. Exceptionally for programs whose random input data generated outliers in the time measures, we executed each program one hundred times. Only one program needed this procedure which was XML-Security.
+
+For two methods in Commons-Math 3.2 and two in HSLQDB the size of the instrumented method was larger  than 64Kbytes which hampered their execution in the JVM.
+
+Our procedure was not to instrument the classes of these methods. Thus, the coverage of these classes was not obtained for both tools. JaCoCo and BA-DUA were run in off-line mode, that is, the instrumentation was performed before the execution of the programs. All data was collected using an Intel(R) Core(TM)2 Duo CPU E4500@2.20GHz, 2,063,668 kBytes of RAM, running Debian GNU Linux 6.0.2 and Java HotSpot(TM) 32-Bit Client VM (1.7.0 40).
+
+D. Results  The execution overhead results are presented in Table V.
+
+The table contains the absolute averaged execution times for each treatment. In addition, it comprises the overhead imposed by JaCoCo and BA-DUA in percentage terms. In the second row, the data regarding Commons-lang is presented. The uninstrumented version of the program (Baseline) executed the test suite in 20.02 seconds in average; the JaCoCo instrumented version executed in 20.25 seconds; and BA-DUA version in 20.57 seconds. The overhead imposed by JaCoCo was 1.15% and BA-DUA overhead was 2.75%.
+
+In Figure 4, the ratios Baseline to JaCoCo and Baseline to BA-DUA are presented. The value 1 in the chart means that there is no overhead between the uninstrumented program and the one instrumented by the testing tool. On the other hand, a ratio equals to 1.5 means that there is 50% overhead when the instrumented version is executed. Figure 5 presents JaCoCo and BA-DUA memory overhead with respect to the Baseline; it describes the ratio between the size of all compiled classes of the uninstrumented program to the size of all JaCoCo instrumented classes and to all BA-DUA instrumented classes. Analogously, a value 1 means that there is no memory overhead; a value 2 means 100% of overhead.
+
+TABLE V. EXECUTION OVERHEAD OF THE SELECTED PROGRAMS.
+
+Program Baseline (s) JaCoCo (s) BA-DUA (s)  Commons-lang 20.02 20.25 20.571.15% 2.75%  Commons-Math 2.1 22.79 25.03 31.489.83% 38.13%  Commons-Math 3.2 179.57 214.27 487.819.46% 171.65%  HSQLDB 24.39 26.99 28.6410.66% 17.43%  JFreeChart 5.24 5.29 5.360.95% 2.29%  JTopas 50.24 148.7 68.59195.98% 36.52%  Scimark2 27.31 30.47 27.0811.57% -0.84%  Weka r5178 497.39 554.87 890.7811.56% 79.09%  Weka r10042 106.85 130.27 139.1321.92% 30.21% XML-Security 51.41 51.47 50.96  0.12% -0.88%  ?  ???  ?  ???  ?  ???  ?  ???  ??    ?????  Fig. 4. JaCoCo:Baseline and BA-DUA:Baseline execution overhead ratios.
+
+
+
+VII. DISCUSSION  Our discussion of the results is guided by the research questions. The section is concluded with the threats to validity of the experiment.
+
+A. BA Penalties  The execution overhead imposed by BA varied from - 0.88%, for XML-Security, to 171.65% for Commons-Math 3.2, being the average overhead 37.64%. More interestingly, though, is to analyze the data presented in Table V and in Figure 4. For four of the subject programs, the overhead was less than 3%, which is negligible taking into account the number of duas tracked. The overhead was between 10 and 50% for four subjects; and only two subjects had overhead  ?  ???  ?  ???  ?  ???  ???	?   ????  Fig. 5. JaCoCo:Baseline and BA-DUA:Baseline memory overhead ratios.
+
+over 50%. Thus, our data suggests that by using BA DF testing can be applied to larger class of programs with affordable execution overhead.
+
+Misurda et al.?s demand-driven approach obtained an aver- age of 127% overhead, the values varying from 4% to 279%.
+
+Hassan and Andrew report that DUA-FORENSICS imposed an overhead of 2078%, 160.4%, and 86.9% for JTopas, Scimark2, and XML-Security, respectively. Although a comparison with previous approaches should be carried out with caution due to differences in the DF testing implementation (e.g., inter- or intra-procedural testing) and JVM and hardware utilized, the results indicate that BA overhead is significantly smaller.
+
+This difference is more significant when comparing the size of the program utilized in experiments. Previously, only small to medium size programs were utilized. This is so because both approaches have to keep data structures that encompass all duas of the programs.
+
+On other hand, BA performance is governed by the number of duas in each method and by how long the execution remains in particular methods. BA-DUA bit vectors are implemented as a 64-bit long; thus, there is no difference in tracking one or 64 duas. However, a method with 65 duas will require another long and more code to update the extra long. As a result, the execution overhead increases. Table IV shows that the number of methods with more than 64 duas is small: at most 8.2% and as low as 1.58% of all methods. Even though, a small number of methods with high concentration of duas can hurt performance. For example, Commons-Math 3.2 has 276 methods with more that 64 duas; 24 of which with more than 320 duas (5 longs) and 4 with more than 1000 duas (16 longs). Thus, depending on how long the execution remains in these methods, the BA overhead will increase. Particularly, Commons-Math 3.2 has a high method coverage (85.42%), which means that they are very likely to be executed by the test suite.
+
+BA memory overhead is essentially the bit vectors created (covered, live, and cursleepy) and the extra code     inserted7. Figure 5 presents the program growth caused in BA- DUA instrumented programs in comparison to uninstrumented programs. With the exception of Scimark2, the memory over- head is around 50%. Although that can be considered a size- able memory footprint, a BA-DUA instrumented program can run in the majority of hardware platforms, with the possible exception of embedded systems with very tight memory. We purposely decided to implement BA in BA-DUA following its description in [11]. The idea was to assess the original proposition of the algorithm. However, the program growth can be reduced by instrumenting not nodes as in BA-DUA, but edges as in JaCoCo. This simple strategy will reduce the size of the instrumented program and, additionally, the execution overhead.
+
+B. BA-DUA Costs versus JaCoCo Costs  A comparison with edge monitoring implemented in tools like JaCoCo is valid since dua coverage provided by BA-DUA can be approximately inferred from edge coverage. In terms of execution overhead, both tools have a similar performance for 7 out of 10 programs. The exceptions are Commons-Math 3.2 and Weka r5178 for which JaCoCo is significantly better. For three programs, BA-DUA performed better: Scimark2, XML- Security, and JTopas. BA-DUA instrumented Scimark2 outper- forms even the uninstrumented program; this performance is possibly due to how the JVM Just-In-Time compiler optimizes register allocations and cache effectiveness for the BA-DUA instrumented code. For XML-Security, the performance are very similar and BA-DUA advantage is possibly due to the random input data.
+
+JaCoCo JTopas instrumentated version is hampered by the fact that a method without duas is called a huge amount of times. This method is not instrumented by BA-DUA; thus, it does incur in such an overhead. The decision of not to instrument zero-duas methods is because dua coverage does not subsume edge coverage in the presence of infeasible paths [15]. Thus, one will not prescind a control-flow tool if method, edge and node coverage are needed. The results suggest, though, that for several programs the execution overhead is similar.
+
+In applications in which DF testing is most indicated, namely, security and critical applications, approximate intra- procedural dua coverage will hardly be useful. The approxi- mate dua coverage can overshoot the precise coverage in up to 30% [10]. In these scenarios, one is interested in knowing which paths were not tested; thus, a precise dua coverage is needed. It can be collected by using BA at affordable overhead.
+
+BA-DUA utilizes a bit to represent a dua whereas JaCoCo uses a boolean to represent an edge (node coverage is inferred from edge coverage). JaCoCo memory overhead varies from 12% (HSLQDB) to 19% (Scimark2), which can be observed by the almost constant ratio in Figure 5. BA-DUA incurs in higher memory overhead, but its growth should be analyzed by the number of entities tracked at run-time. Scimark2, which is the worst case, with memory overhead of 118% for BA-DUA, requires around 6 times more duas to be tracked than edges.
+
+Thus, the memory overhead grows 6 times.
+
+7This is an estimate since we are not taking into account the size of the global array of covered duas created at run-time for each loaded class.
+
+C. Threats to Validity  The external validity of the experiment is arguable on the grounds that our large programs are not large enough. One may argue that a 30 KLOC program is not large or even a 200 KLOC program. Although systems with millions of lines of code are rather common, they are not monolithically coded. On the contrary, they are divided into manageable components of smaller size for which test suites are developed. Our goal was to identify programs that could be part of a system of more than 1 MLOC. In this sense, the medium size programs are also candidates to be a component of such systems. Our data suggests that BA-DUA can be applied to collect dua coverage of these components. However, it does not allow us to infer that BA-DUA can support integration testing of these huge systems.
+
+The internal validity of our experiment concerns the results provided by JaCoCo and BA-DUA. JaCoCo is widely used in industry, which is an indication that its results are trustworthy.
+
+BA-DUA has been validated with small programs and its re- sults were compared with those provided by JaBUTi. BA-DUA performs a more accurate data-flow analysis of bytecodes, but the results were similar.
+
+Regarding conclusion and construction validities, the com- parison among treatments was straightforward and a modest hardware was utilized to conduct the experiment. Regarding this latter point, the idea was to better observe the relationship between treatments. Had a top hardware configuration been utilized, the results could be more compelling, especially for the subjects with execution overhead above 50%.
+
+
+
+VIII. CONCLUSION  The goal of this paper was to show that Data-flow (DF) testing supporting tools can be implemented to tackle large programs. DF testing requires tests that traverse a path in which the definition of a variable and its subsequent use, i.e., a definition-use association (dua), is exercised.
+
+To achieve such a goal, a tool called BA-DUA (Bitwise Algorithm-powered Definition-use Association coverage) was implemented. BA-DUA utilizes a strategy to track duas at run- time called Bitwise Algorithm (BA) for intra-procedural dua monitoring [11].
+
+BA was recently proposed and was only assessed by means of simulations. It is based on a simple idea which consists of encoding a solution for the reaching definitions data-flow problem [22] into an object code. In this paper, we have described BA and how it is mapped into bytecodes. BA-DUA implements such a mapping.
+
+An experiment was conducted to assess the penalties im- posed by BA to track intra-procedural duas at run-time. Two kinds of penalties were assessed: execution overhead, given by the extra time needed to execute the instrumentation code added; and memory overhead, represented by the growth of the object code due to the insertion of instrumentation code.
+
+Ten programs with size varying from 600 LOC and 200 KLOC were utilized in the experiment. Two programs were classified as small (less than 2 KLOC), three as medium size programs (more than 2 KLOC and less than 30 KLOC),     and five were categorized as large (more than 30 KLOC).
+
+The subject programs perform mathematical functions, data manipulation tasks, graphical functions and utilities functions for Java.
+
+BA-DUA execution overhead varied from negligible to 172%, being the average 38%. However, only two subjects in ten programs had their performance impacted more than 50%; for four programs, the overhead was less than 3%. In terms of program growth, the BA memory overhead ranges from 33% to 118%, being the average 61%.
+
+BA-DUA performance was also compared with that of the JaCoCo tool?a widely used control-flow testing supporting tool. In terms of execution overhead, both tools have a similar performance for 7 out of 10 programs. JaCoCo has a smaller memory footprint, but tracks fewer entities at run-time.
+
+We purposely implemented BA in BA-DUA following its original proposition. The idea was to assess BA as it is. The results suggest that by using BA to track duas the overheads, especially the execution overhead, are significantly reduced. As a result, a larger class of program are able to be assessed by intra-procedural DF testing. BA-DUA is available for download and use at https://github.com/saeg/ba-dua.
+
+Nevertheless, there is room for improvement. The program growth and slowdown can be reduced by instrumenting edges, instead of nodes. However, the BA main drawback are methods with a high concentration of duas since they require more code to be inserted, causing higher execution and memory overheads.
+
+We intend to investigate how the subsumption relationship among duas [24] can be utilized to determine a minimal set of duas to be tracked at run-time. We conjecture that in methods with many duas this minimal set is relatively small.
+
+Other avenues of research encompass the extension of the BA algorithm to track inter-procedural duas and to tackle programs with multiple threads.
+
+As a concluding remark, we hope that the results presented in this paper encourage vendors to consider including DF testing in their set of testing tools.
+

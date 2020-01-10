@@ -1,0 +1,350 @@
+MassJoin: A MapReduce-based Method for Scalable  String Similarity Joins
+
+Abstract-String similarity join is an essential operation in data integration. The era of big data calls for scalable algorithms to support large-scale string similarity joins. In this paper, we study scalable string similarity joins using MapReduce.
+
+We propose a MapReduce-based framework, called MASSJOIN, which supports both set-based similarity functions and character? based similarity functions. We extend the existing partition-based signature scheme to support set-based similarity functions. We utilize the signatures to generate key-value pairs. To reduce the transmission cost, we merge key-value pairs to significantly reduce the number of key-value pairs, from cubic to linear complexity, while not sacrificing the pruning power. To improve the performance, we incorporate "light-weight" filter units into the key-value pairs which can be utilized to prune large number of dissimilar pairs without significantly increasing the transmission cost. Experimental results on real-world datasets show that our method significantly outperformed state-of-the-art approaches.
+
+
+
+I. INTRODUCTION  Data integration has received significant attention in the last three decades, because it can combine heterogenous data from different sources and provide a unified view of these data. The string similarity join, which, given two collections of strings, finds all similar string pairs, is an essential operation in data integration. The similarity between two strings is usually quantified by similarity functions. There are two main types of similarity functions (see Section II): set-based similarity func? tions (e.g., Jaccard) and character-based similarity functions (e.g., Edit distance). String similarity joins have many real? world applications, e.g., entity resolution, copy detection, and document clustering.
+
+Most of existing similarity-join methods used in-memory algorithms. The era of big data poses new challenges for large-scale string similarity joins and calls for new scalable algorithms. MapReduce provides a programming model for processing large-scale data, and in this paper we study scalable string similarity joins using MapReduce. A naive method is to enumerate all string pairs from the two collections and use MapReduce to process these string pairs. However this method is rather expensive for large string sets. To address this problem, Vernica et al. [15] proposed a prefix filtering based method, which used a filter-and-verification framework.
+
+In the filter step, they selected some tokens from each string and generated a set of candidate pairs who share a common token. In the verification step, they verified the candidate pairs to generate the final answers. One big limitation of this method is low pruning power. As a single token is very short and usually has low selectivity, many dissimilar pairs will share a same token and cannot be pruned.
+
+To address this limitation, we propose a MapReduce-based framework, called MASSJOlN, for scalable string similarity joins, which supports both set-based similarity functions and character-based similarity functions. We also adopt a filter? and-verification framework. In the filter step, we generate the signatures for each string and prove that two strings are similar only if they share a common signature. We utilize this property to generate the candidate pairs. In the verification step, we verify the candidate pairs to generate the final results. One big challenge is to generate high-quality signatures. PASSJOIN [12] proposed a high-quality partition-based signature scheme for the edit distance function. We extend the partition-based sig? nature scheme to support set-based similarity functions. It is worth noting that the extension is nontrivial (see Section III), because the partition number is fixed for edit distance while the partition numbers for set-based similarity functions are not.
+
+To use MapReduce, we take the signatures as keys and the strings as values to generate key-value pairs. Then we use the key-value pairs to compute the candidate pairs that share a same key (see Section IV). However this method may generate large numbers of key-value pairs and leads to huge transmission cost. For example, considering the Jaccard function, this method generates 0(?3) key-value pairs for a string with length ?. To address this issue, we merge key-value pairs to significantly reduce the number of key-value pairs but without sacrificing the pruning power (see Section V). For example, we can reduce the number from 0(?3) to 0(?).
+
+To improve the performance, we incorporate "light-wight" filter units into the key-value pairs which can be utilized to prune large numbers of dissimilar pairs without significantly increasing the transmission cost (see Section VI).
+
+In summary, we make the following contributions.
+
+? We extend the partition-based signature scheme to support set-based similarity functions. We propose a scalable MapReduce-based framework to support both set-based and character-based similarity functions.
+
+? We devise a merge-based algorithm to significantly re? duce the number of key-value pairs without sacrificing the pruning power.
+
+? We develop a light-weight filter unit based method to prune large numbers of dissimilar pairs while not significantly increasing the transmission cost.
+
+? We have implemented our method and experimental results on real-world data sets show that our method significantly outperforms state-of-the-art approaches.
+
+ICDE Conference 2014    The structure of the rest paper is as follows. We fonnulate our problem and review related works in Section II. We extend existing partition-based signature scheme to support set-based similarity functions in Section III. Section IV presents our MASSJOlN framework. We devise a merge-based method to reduce the number of key-value pairs in Section V and develop a light-weight filter unit based method to reduce the number of candidate pairs in Section VI. We show the experimental results in Section VII and give the conclusion in Section VIII.
+
+
+
+II. PRELIMINARY A. Problem Definition  The similarity join problem finds all similar string pairs from two given string collections, where the similarity between two strings is usually quantified by similarity functions. Given a similarity function SIM and a similarity threshold 6, two strings I and s are similar if and only if SIM (" s) ?: 6. There are two main types of similarity functions, set-based similarity functions and character-based similarity functions.
+
+Set-based similarity functions first tokenize each string into a set of tokens, where a token can be either a word or an-gram.
+
+In the paper we suppose each token is a tokenized word. For simplicity, strings and token sets are interchangeably used if there is no ambiguous. There are three well-known set-based similarity functions, Jaccard Similarity, Dice Similarity, and Cosine Similarity, defined as below.
+
+J ( )_lrn81 C ( )-? DICE ( )_ 21rn81 AC I, S - lrUsl' os I, s - -JRTsT ' I, S - lrl+181' where I . I denotes the size of a set. For example, suppose I ="Barack H Obama I I" and s ="Barack Obama I I". Then we have II I = 4, lsi = 3, I,nsl = 3, and I,Usl = 4.
+
+Thus, JAC (" s) = ?, COS (I, s) = vb- and DICE (" s) = ?.
+
+Character-based similarity functions are defined based on the number of character operations to transform one string to another. Edit Distance (ED) is a well-known character-based similarity function. The ED of two strings is the minimum number of edit operations needed to transfonn one string to another, where the permitted edit operations include insertion, deletion and substitution. For example, given I ="micheal" and s ="michael", we have ED(" s) = 2 .
+
+Next we formulate the similarity-join problem.
+
+Definition 1 (Similarity Joins): Given two string collec? tions nand S, a similarity function SIM (or a distance function DIS) and a similarity threshold 6 (or a distance threshold 7), a similarity join finds all string pairs (I E n, s E S) such that SIM (r, s) ?: 6 (or DIS (r, s) ? 7).
+
+For example, consider the two string sets in Table I.
+
+Suppose the Jaccard threshold is 6 = 0.8. The similarity join finds a similar pair (r2,s2 ) with JAC(r2,s2) = 0.8.
+
+B. Related Work  Partition-based Method: PASSJOlN [12], [11] is the state-of? the-art similarity-join algorithm for edit distance. It won the   TABLE l. Two STRING COLLECTIONS: RAND S id string 1"1 conference on service information management  R r2 policy on service information management r3 the policy on service I s, the conference on information management I  s L S2 service information management policy . I -.l 83 I conference on information management policy I  size  5 I 4 I 5 I  champion in the recent similarity-join competition organized by EDBT 20131. PASSJOlN employs a filter-and-verification framework. In the filter step, it generates signatures for strings.
+
+If two strings are similar, they must share a common signature.
+
+It prunes large numbers of dissimilar pairs based on this idea and the survived pairs are called candidate pairs. In the verification step, it verifies the candidate pairs to generate the final answers.
+
+One big challenge in PASSJOIN is to generate high-quality signatures for two strings. Suppose the edit-distance threshold is 7. Given two strings r and s, it partitions I into 7 + 1 disjoint segments, and proves that if s is similar to r, s must contain a substring that matches one of r's segments, based on the pigeon-hole theory. Thus for string r, it generates 7 + 1 signatures. For string s, it selects some substrings of s as its signatures.
+
+However PASSJOIN cannot support set-based similarity functions, because the number of segments (e.g., 7 + 1) is not fixed for these functions. We extend PASSJOIN to support set? based similarity functions and propose a scalable framework MASSJOlN for large-scale string similarity join using MapRe? duce. Moreover, to reduce the transmission cost, we merge the selected substrings and decrease the number of signatures from 0(13) to 0(1) for set-based similarity functions, where I is the string length, and from 0(73) to 0(min(72, l)) for character-based similarity functions.
+
+Similarity Join Using Map-Reduce: There are a lot of works on implementing database operators using Map-Reduce framework [10]. Vernica et al. [15] proposed a similarity join method using MapReduce which utilized the prefix filtering to support set-based similarity functions. They selected a subset of tokens as signatures and proved that two strings are similar only if their signatures share common tokens. For each string, they used each token in its prefix as a key and the string as a value to generate the key-value pairs. As a single token is very short and usually has low selectivity, these methods have two disadvantages. First, many dissimilar pairs may share the same token, and they will generate many false positives and thus lead to poor pruning power. Second, a single token may lead to a skewed problem and there may be large numbers of strings sharing the same key. Thus the reducer with such keys will have a heavy workload. Metwally et al. [13] proposed a 2-stage algorithm V-SMART-Join for similarity joins on sets, multi sets and vectors. They also used a single token as a key and had the same issues as [15]. Afrati et al. [1] proposed multiple algorithms to perform similarity joins in a single MapReduce stage. They analyzed the map, reduce and communication cost.
+
+However for long strings, it is rather expensive to transfer the strings using a single MapReduce stage. Kim et al. [9] addressed the top-k similarity join problem using MapReduce,  1 http://www2.informatik.hu-berlin.de/?wandeIUsearch joincompetition20 1 3    which is different from our problem. Deng et al [6] proposed to use Map-Reduce similarity joins to solve the webtable column understanding problem which is also different from our problem.
+
+In-Memory Similarity Joins: There are many studies on in? memory similarity join algorithms [21], [4], [16], [20], [2], [8], [7 ], [18], [17], [22], [23], [3], [14], [11], [22]. Bayardo et al. [3] first proposed the prefix-filter framework for similarity joins. Xiao et al. [23] improved the prefix-filter framework by introducing position filtering. ED-Join [21] extended prefix filtering to support edit distance and used location-based mismatch techniques to shorten prefixes and content-based mismatch to filter dissimilar pairs. Wang et al. [18] proposed an adaptive prefix-filter framework to dynamically select prefixes with different lengths. Wang et al. [16] proposed Trie-Join which utilizes a trie structure to recursively perform prefix filter. Arasu et al. [2] proposed PartEnum which partitions strings into pieces and enumerates deletion neighborhoods on the pieces as signature to do similarity joins. Wang et al. [20] proposed VChunkJoin to use qchunks with different lengths as signatures and employ the prefix-filter framework to do similarity joins. Wang et al. [17], [19] devised a new kind of similarity functions and proposed efficient algorithm on the new similarity functions. Qin et al. [14] proposed an asym? metric signature for both similarity join and search problems.
+
+Chaudhuri et al. [4] proposed a primitive operator for similarity joins. Xiao et al. [22] studied top-k similarity joins using adaptive prefix filtering. Jacox et al. [8] studied similarity joins under metric space. Different from these studies, in this paper we focuses on how to support large-scale similarity joins using MapReduce.
+
+MapReduce: MapReduce [5] is a famous framework proposed by Google to facilitate processing large-scale data in parallel.
+
+The MapReduce program runs on a large cluster with multiple nodes. The input data files are divided into small file splits and distributed in a distributed file system (DFS). MapReduce includes a map phase, a shuffle phase and a reduce phase to process the data. Each map node reads the file splits on the node, processes the input (key, value) pairs, and emits intermediate (key, value) pairs. The intermediate (key, value) pairs are shuffled based on the keys and transferred to the reduce nodes. All the intermediate (key, value) pairs with same key must be shuffled to the same reduce node. Each re? duce node receives a key-value pair (key,list(value)), where list( value) is a list of values sharing the same key, processes the pair, and writes its output to DFS.
+
+
+
+III. SIGNATURES FOR SET-BASED SIMILARITY FUNCTIONS  To avoid enumerating all string pairs from the two given string sets, we adopt a filter-and-verification framework. We extend the partition-based signature scheme designed for edit distance [12] to support set-based similarity functions in this section. Notice that the extension is non-trivial, because PASSJOIN relies on a given edit-distance threshold and gen? erates a fixed number of signatures. However for set-based similarity functions, the number depends on the string lengths.
+
+We need to deduce the number of signatures and devise new algorithms to generate signatures. To address this problem,   we first discuss how to generate signatures for two strings in Section III-A and then extend the method to support two string sets in Section III-B. Finally, we give the signature complexity in Section III-C.
+
+A. Signatures for Two Strings rand s  Given two token sets rand s, and a jaccard threshold 6, we sort each token set based on a universal order, e.g., alphabetical order, and obtain two sorted token lists. For simplicity, rand s are referred to their corresponding sorted token lists if there are no ambiguous. If rand s are similar w.r.t Jaccard threshold s: .  J c( ) - Irnsl - Irnsl > J: d d u, I.e., A r, s - Irusl - Irl+lsl-lrnsl _ u, we can e uce Ir n sl ? l!o(lrl + lsi). The total number of different tokens between rand s is Ir -sl + Is -rl? Since Ir -sl and Is -rl are two integers, Ir -sl :s; Irl - Ir n sl :s; llr l?isl j and Is - rl :s; Isl- Irnsl < llsl-olrlj Let U = llrl-olslj + llsl-olrlj which - 1+0 . 1+0 1+0 should be an upper bound of Ir -sl + Is -rl. We split r into U + 1 disjoint segments. Based on the pigeon-hole theory, if s is similar to r, s must contain a substring which matches a segment of r. We use the segments of r as r's signatures and select some substrings of s as s's signatures. Then if r and s are similar, they must share a common signature. Next we formally discuss how to generate the signatures for rand s.
+
+Signatures for r: There are multiple ways to partition r into U + 1 segments. Here we use an even partition scheme as an example, where all U + 1 segments have nearly the same length. Formally, given a string r with length ? = Irl, let k = ? - lU?lj * (U + 1). The last k segments of string r have a length of I u?ll and the first U + 1 - k segments have a length of l u ? 1 J. Let l (U + 1, i, ?), abbreviated as If, denote the length of the i-th segment of r. Obviously If = l U ?1 j if i :s; U + 1-k; otherwise I U?l l Let p(U + 1, i, g), abbreviated  as pf, denote the start position of the i-th segment, i.e., pi = 1 and pf = L;?? II' + 1. The i-th segment of r is the substring of r starting from pi and with length If, denoted by r[pI, lfl. Thus the signatures of r are triples (r[pf, II], i, ?) for 1 :s; i :s; U + 1.
+
+Signatures for s: If s is similar to r, it requires to have a signature matching one of signatures of r, e.g., (r[pI , lfl, i, g).
+
+Thus the signature of s should be in the form of (s [XI, Ii], i, ?) such that (r [PI, If], i, ?) = (s [XI, If], i, ?).
+
+Intuitively, the start posltion of the i-th substring of s, e.g., xI, can be any integer in [1, lsi - If + 1l. However this method will generate large numbers of signatures. To address this issue, we propose two signature generation methods, a position-aware method and a multi-match-aware method.
+
+Position-aware method. Consider the i-th signature of r with start position PI, and a signature of s that matches the i-th signature of r with start position xI. If XI < PI, we can deduce that PI -XI :s; I r -s I, because rand s are sorted by a universal order, and if r [Pj, lfl = s [XI, If] , among the first PI -1 tokens of r and the first Xi -1 tokens of s, there are at least pf -xf tokens that appear in r and do not appear in s. Since there are totally Ir -sl such tokens, PI -XI :s; Ir -sl :s; l'r??ois' j. Let Ur-s = llrl-olsl j h I' I' < U d I' > I' U ? , we ave Pi -Xi _ r-s an Xi _ Pi - r-s? Similarly if xl' > pf' we have xf' _pf' < Is - rl < llsl-olrlj. , ,- p " - - 1+0    Let Us-r = llsll?or j, we have xf ::; pf + Us-r' Thus the position-aware method sets xf E [pf -Ur-s, pf + Us-r] which will not involve false negatives as stated in Lemma 1.
+
+Lemma 1: The posltLOn-aware signature generation method will not involve false negatives.2  Proof Sketch: We prove it by contradiction. Suppose r and s are similar and s has a substring with start position xf matching the i-th segment of rand xf < pf - Ur-s' Obviously Ir -sl ?: pf - xf > Ur-s which contradicts with that Ur-s ::; Ir -sl? Similarly we can prove xf ::; pf + Us-r' ?  Multi-match-aware method. Still consider the i-th signature of r with start position pf, and a signature of s that matches the i-th signature of r with start position xf. We have xf ?: pf -(i- 1), because if xf < pf-( i-I), Ir[l, pf-1]-s[l, xf -1]1 > i-I  and there are at least i different tokens in rand s before the i-th segment based on the length difference. In other words, if they are similar, after the i-th segment, there are at most U + 1-i-1 mismatch tokens. Since there are U + 1 - i segments, there must be a matching signature after the i-th segment based on the pigeon-hole theory. Obviously we can skip this one and use the latter one. Similarly, if we consider the reversed strings of rand s, we have Isl-xf ?: Irl-pf-(U +l-i). We can deduce that xf ::; pf+lsl-Irl +(U + I-i). Thus the multi-match-aware method sets Xi E [Pf -(i -l),pf + Isl-?+ (U + I-i)] where ? = III, and this method will not involve any false negative as stated in Lemma 3.
+
+Lemma 2: The multi-match-aware signature generation method will not involve false negatives.
+
+Proof Sketch: Consider any string r with length ?. The start position of its i-th segment is pf. If the first i - I segments of r contain more than i -I different tokens from s, regardless of the i-th segment, they must share another common segment in the last U + 1 - i segments and we can drop the i-th segment. Meanwhile, if rand s are similar and s contains a substring with start position xf matching the i? th segment of r, the number of different tokens in the first i -I segments of r cannot be smaller pf - xf. Thus we have pf - xf ::; i-I, i.e., xf ?: pf -(i - 1). Symmetrically, we can get xf ::; pf + lsi -? + (U + 1 - i). ?  Interestingly, we can use the two methods simultaneously and propose a hybrid method which sets xf E [max(pf -(i - l),pf - Ur-s), min(pf + lsi - ? + (U + 1 - i),pf + Us-r)].
+
+This hybrid method will not involve false negatives as stated in Lemma 3, because the two methods are independent.
+
+Lemma 3: The hybrid signature generation method will not involve false negatives.
+
+Proof Sketch: Based on Lemma 1, we have for any two strings r and s, if s has a substring with start position xf matching the i-th segment of rand xf tf- [Pf -Ur-s, pf+us-r], Ir -sl > Ur-s or Is -rl > Us-r' That is to say r and s  cannot be similar. Thus for any two similar strings, all there matching signatures must be within the range generated by the position-aware method. Similarly this claim is also true  2For space constraints, we omit detailed proofs of lemmas in this paper   TABLE I!. BOUNDS FOR A SIMILAR STRING PAIR (r, s) WITHIN THRESHOLD 0  JAC Cos  Ur-s llrl,+oJsl J llrl-oVlrllsl Us-r llsl,+otl J llsl-oVlrllsl U Ur s + Us U l':5?lr IJ l?lrlJ /::, l':5? IrlJ + l'?f IrlJ+l 1 Lo rolsll Wisil Lu ll?J lWJ 1-0 1-0" 90 -r --;-z- to (1+0")(1-0)" (1+0")(1-0")" 63 06  r  DICE  l Irl - o(,r'i's,) J llsl - o(,r'i's,) J  l2('o-0) IrlJ l2(1;0) IrlJ + 1  r?lsll l2/lslJ 2(1-0) <5 16(1 0)" (302 -60+4 2 0,30"  ED -  - -  T  T+l  Isl- Isl+7  -  -  for the multi-match-aware method. Thus the hybrid signature generation method will not involve false negatives. ?  Thus the signatures of s with respect to r are (s [xf, If], i, ?) for 1 ::; i ::; U + 1 and -.if ::; xf ::; Tf, where  -.if = max(pf -(i - l),pf - Ur-s), Tf = min(pf + lsi -? + (U + 1 - i),pf + Us-r).
+
+Example 1: Consider two strings 11 and SI in Table I.
+
+Suppose the JAC threshold is 0 = 0.8. To generate the signatures for rl, we compute ? = Irl = 5, lsi = 5, U = 0, pf = 1 and If = 5, and obtain the signature (/1[1,5],1,5) for rl. To generate the signatures for SI, we compute Ur-s = 0, Us-r = 0, -.if = 1, and Tf = 1, and obtain the signature (sl [l, 5], 1,5) for SI.
+
+B. Signatures for Two String Sets  When we join two datasets n and S, many strings in n may be similar to many strings in S, and we need to generalize our method to support two string sets.
+
+Based on the length pruning, if a string s is similar to I, i.e., 1?8:1 ?: 0, we can deduce lsi ::; Ir U sl ::; Ir?sl ::; I? I.
+
+Similarly we can deduce lsi ?: Ir n sl ?: olr U sl ?: olrl. Thus the upper bound of lengths of the possible similar strings to r is lIrl/oj and the lower bound is lolrll Obviously for string r we need to consider the strings with lengths in the range and generate valid signatures of r for any possible similar string s with length in [Iolrll, lI/l/oj]. To this end, we derive an upper bound of the number of different tokens to r for all possible similar strings that are similar to r, denoted by U. Obviously U = max{lr -sl + Is - Ill s is similar to r}.
+
+As Ir -sl + Is -rl ::; II I + lsi -211 n sl ::; l?:;:? (lrl + ? I)j ::; l?t? (lrl + I? I).J = l l?o lrlJ ,. w? c?n deduce a bound U = lIS IrlJ. Thus ?f a strmg s IS SImIlar to I, we have Ir -sl + Is - I I ::; U. Notice that we can deduce a much  tighter bound of U for Jaccard as stated in Lemma 4.
+
+Lemma 4: We can deduce a tighter upper bound U llrl-olirl/oJj + llirl/oJ-olrlj 1+0 1+0 '  Based on the upper bound U, we can devise a partition scheme for two string sets as below.
+
+Signatures for r E R :  We partItIOn r into 6 = U + 1 segments as discussed in Section III-A. The signatures of r are triples (r[pl, II], i, ?) for 1 ? i ? 6. Similarly, we can deduce the bounds and signatures for other functions as shown in Tables II-IV.
+
+Signatures for s E S: s may be similar to many strings in R.
+
+Based on the length pruning, the upper bound of lengths of the possible similar strings to s is Lu = llsl/5J] and the lower bound is La = i51sll Thus for s, we need to consider strings with length ? E [La, Lu] and generate signatures s[xl, If] for each La ? ? ? Lu and 1 ? i ? 6.
+
+In conclusion, the signatures generated are shown in Ta? ble IV. Note that to make the formula consistent for different similarity functions, we set Ur-s = ? -lsi + (6 -i) and Us-r = i-I for ED .
+
+Example 2: Consider the two string collections R and S in Table I. Suppose the Jaccard Similarity threshold is 5 = 0.8.
+
+For r1 E R, we can deduce ? = 5, U = 1 ,  6 = 2, Ii  = 2 ,  l? = 3,  pi = 1 and p? = 3.  Thus, we need to generate two signatures (r1[l, 2], l, 5) and (r1[3 , 3], 2 , 5) for r1. For string Sl E S, we can deduce La = 4 and Lu = 6, i.e., 4 ? ? ? 6. For ? = 4, we can deduce that 6 = 2, Ii = 2, 1?2 = 2, Ur-s = 0, Us-r = 1 ? ? ? . ' ?1 = 1 ,  T 1 = 2, ?2 = 3 and T? = 4, thus It generates four signatures (Sl [1 , 2]' 1 , 4) ,  (Sl [2 , 2]' 1 , 4) ,  (Sl [3 , 2]' 2 ,  4) and (sl [4 , 2]'2 , 4) . Similarly, for ? = 5, we generate two signatures (sl [l, 2], l, 5) and (sl [3 , 3], 2 , 5) .  For ? = 6, we generate two signatures (sd1 ,  3], I, 6) and (Sl [3 , 3], 2 ,  6). In total, we need to generate eight signatures for Sl .
+
+C. Signature Complexity  For string r E S, as we generate one signature for 1 ? i ? 6, it totally has 6 signatures. For any string s, the total number of its generated signatures is O((Lu - Isl)3 + (lsi - La)3) as shown in Lelmna 5.
+
+Lemma 5: The total number of signatures for any string s is O((Lu -lsl)3 + (lsi -La)3).
+
+For example, suppose we use JAC similarity and the similarity threshold is 5, we have the total number of generated signatures for string s is O( (H83l?1-8)3 Is I3).
+
+
+
+IV. THE MASSJOIN FRAMEWORK In this section we present a scalable MapReduce-based  string similarity join algorithm, called MASSJ OIN, which can support both set-based similarity functions and character-based similarity functions. For simplicity, we use Jaccard as an example in this section. MapReduce contains two main stages: the filter stage and the verification stage. We will introduce the two stages respectively in Section IV-A and Section IV-B. Then we give the complexity in Section IV-C. Finally we discuss how to support self joins in Section IV-D.
+
+A. Filter Stage  In this filter phase, we generate candidate pairs using the filter techniques in Section III: if two strings r and s are   TABLE III. SIGNATURES GENERATED FOR r E R JAC I Cos I DICE I ED  ? Irl If L i J for i :S I::,. - (? - L '" J * 1::,.) Ii 1 for i > I::,. - (? - L i J * 1::,.) p; p? = 1 and p? = I:J<' 1? + 1 1 t ' 1 J sig (r[pl ,l,j, i, ?) for 1 < i < I::,.
+
+Isigl I::,.
+
+TABLE IV. SIGNATURES GENERATED FOR S E S (FOR ED, Ur-s = R -lsi + (6 -i) AND Us-r = i-I).
+
+JAC I Cos I DICE ED ? Lo < ? < Lu If L i J for i :S I::,. - (? - L '" J * 1::,.) Ii 1 for i > I::,. - (? - L i J * 1::,.) J..: max(pi - (i - l ),Pi - Ur 8 ) Tf min(p: + lsi - ? + (I::,. - i), p1 + Us r ) sig (s[x:,lfJ,i,?) for J..: < < < T;' 1 < i < 1::,.. Lo < ? < Lu Isigl fo Isl3 I TO  similar, r and s must share a signature. In the map phase, we use the signatures as keys and the strin?s as values. Thus for r E R, the key-value pairs are ( (r[pI, li ], i , ?) , r ) for 1 ? i ? 6. For s E S, the key-value pairs are ( (s[xl, ll], i , ?) , s) for ?1 ? xI ? TI, 1 ? i ? 6 and La ? ? ? Lu. As two similar strings must share a same key, they must be shuffled to the same reduce task. To reduce the transmission cost, in the key-value pairs, we use string ids to replace strings (an id is much smaller than its corresponding string.). The pseudo-code of our MASSJOIN algorithm is shown in Algorithm l. It first generates key-value pairs for strings in R (lines 2-4) and then for strings in S (lines 5-9).
+
+In the reduce phase, each reduce node takes a key-value pair (sig, list( sid/rid)) as input, where sig is a signature and list( sid/rid) is the list of strings that contain the signature.
+
+It first splits the list into two groups: list(sid) and list(rid) (line 11). Notice that for any pair (sid, rid) from the two lists, it is a candidate pair. To reduce the transmission cost, for each sid E list(sid), we generate a key-value pair (sid,list(rid)) (lines 12-13). The map and reduce functions are as follows.
+
+map: (sid/rid, string) -7 (signature, sid/rid) reduce: (signature,list(sid/rid)) -7 (sid, list(rid))  Comparing with existing works [15], [13] that used a single token as a key, our method utilizes signatures with multiple tokes as keys and thus has higher pruning power. Moreover, the number of pairs that share multiple tokens is smaller than that of a single token, thus our method can address the skewed token distribution problem as discussed in Section II-B.
+
+Example 3: Consider the two string collections in Table I.
+
+Suppose we use JAC function and the threshold is 5 = 0.8.
+
+Figure 1 shows the running example. The map functions in the filter stage generate 2 key-value pairs for each r1, r2 and r3 in R and 8, 4, and 8 key-value pairs for Sl , S2 and S3 in S as shown in the figure. The shuffle phase groups the intermediate (key, value) pairs and sends them to the reduce tasks. In the reduce phase, we get 18 key-value pairs. However only two of them, ( ["conference information", 1 ,  5], {r1, Sl , S3} ) and ( ["information management", 1 ,  5], {r2, S2}) can gener? ate outputs, which are (Sl , {rr}), (S2, {r2}), and (S3 , {rr}).
+
+Algorithm 1: MASSJOlN Algorithm      II the filter stage Map( (rid, r) / (sid, s)  for r E R do l for 1 < i < L do L emit( ((r[p1, If], i, g = Irl), rid);  10 Reduce ((sig, list( id?)) 11 l split list(id) into two groups list(sid) and list(rid) ; 12 foreach sid E list(sid) do 13 L output( (sid, list(rid?));  II first phase of verification stage 14 Map( (sid, I ist( rid?) / (sid, s) ) 15 L emit( (sid, list(rid?)); emit( (sid, s) ; 16 Reduce ((sid, list(list(rid) / s?)) 17 l Identify sand list(list(rid? ; 18 Compute distinct list( rid) from list( list( rid? ; 19 output (s,list(rid?) ;  II second phase of verification stage 20 Map((s,list(rid?)/(rid,r) 21 l emit((rid,r) ; 22 for each rid in list(rid) do 23 L emit( (rid, s) ; 24 Reduce ((rid,list(s/r?)) 25 l Identify rand list(s) from list(s/r); 26 foreach s E I ist( s) do 27 L if SIM(r,s);::: (j then output(((r,s),SIM(r,s?));  B. Verification Stage  In the verification stage, we verify the candidate pairs generated from the filter stage. As two strings may share multiple signatures, there may be many duplicate candidate pairs, and we want to remove the duplicate ones. In addition, we need to replace the id in candidate pairs with its real string to verify the candidate pairs. To achieve these two goals, we propose a two-phase method.
+
+In the first phase, the map function takes dataset S and (sid, list(rid)) as input and emits two types of key-value pairs (line 15). The first one is (sid, s) from the dataset S which is used to replace sid with string s. The second one is (sid, rid) which is generated from input (sid, list(rid)) gotten from the filter stage. The reduce function gathers the list list(rid) and the string s for the key sid. It first identifies the string s, and then removes the duplicates from list(rid) to generate a list of distinct rids, and finally emits key-value pair (s,list(rid)) (lines 17-19). The map and reduce functions are as follows.
+
+map: (sid, list(rid)) -+ (sid, list(rid)); (sid, s) -+ (sid, s) reduce: (sid,list(list(rid)js)) -+ (s,list(rid))  In the second phase of verification, we need to replace   the rid with string r and verify the candidate pairs. The map function takes dataset R and (s,list(rid)) as input and emits two types of key-value pairs: (rid, r) and (rid, s). The first one is generated from the dataset R (line 21). The second one is generated from (s, list (rid)) that is the output of the first phase. For each key s, it generates a key-value pair (rid, s) for each rid in list(rid) (line 23). In the reduce phase, we have a string r and a list of string s such that (r, s) is a candidate pair. We first identify the string rand list( s), then verify the candidate pairs, and finally output the final results (lines 25- 27). The map and reduce functions are as follows.
+
+map: (s, list(rid)) -+ (rid, s), (rid, r) -+ (rid, r); reduce: (rid, lister / s)) -+ ((r, s), SIMer, s))  Example 4: Recall the running example in the last sub? section and here we discuss the verification stage. In the filter step, we get three candidate pairs. In the first phase, we remove duplicates from the three pairs, re? place sid with its string and output the key-value pairs, e.g., ( "service information management policy", {r2}). In the second phase, we replace rid with its string and verify the candidate pairs. Finally, we output (r2, S2) as a result.
+
+The details are shown in Figure 1.
+
+C. Complexity  In this section, we analyze the complexity of our approach in each stage, including the space/time complexity and 10 cost of the map and reduce phase, and the transmission complexity of the shuffle phase. For each string with length ? in R, we need to generate O(U ) = O(go?) signatures, where go is the factor of ? in the formula of U as illustrated in Table II. For each string with length ? in S, we generate O((Lu - ?)3 + (? -Lo)3) = 0(Jo?3) signatures where fo is the factor of ?3 in (Lu - ?)3 + (? -Lo)3 as illustrated in Table II. Let m? (n?) denote the number of the strings with length ? in R (S). Based on the discussion in Section III, the number of generated signatures for strings in R (S) is O(L?:e?? go?m?) (O(L?:e?. fo?3n??, where ??in (??in) and ??a:m(??ax) are the nti?imum and maximum string lengths in R (S) respectively. For ease of presentation, let ?'R. ?5 N = L?:e?in go?m? and M = L?:eLn fo?3n?.
+
+Filter Stage: The map function loads the dataset from DFS and the 10 cost is O CR + S). The space/time complexity of generating one signature is 0( 1), thus the space/time complexity of the first map phase is O(N + M). As we emit one intermediate (key, value) pair for each signature and the space of each signature is 0 (1), the transmission complexity is also O(N + M). The reduce step needs to scan the lists of rids and sids in the value fields of the key-value pairs, thus the time/space complexity of the reduce phase is O(N x M).
+
+The reduce step writes the candidate pairs to disk, thus the 10 cost is also O(N x M).
+
+Verification Stage: The map function of the filter phase needs to read the dataset S and the candidate pairs, thus the 10 cost is O(N x M + S). Emitting a (key, value) takes 0(1)  time, and the space/time complexity is O(N x M + lS I). The shuffle transmission complexity is also O(N x M + S). The reduce    rl W1W2W3W4W6  51 W1W2W3W4W7  r2 W2W3W4W5W6  52 W2W3W5W6  Fig. 1 .  Running example  wr>the  <[W1W2,1,5] ,rl> <[W3Wf,W6,2,5] ,rl>  <[W1W2,1,4] ,81> <[W2W3,1,4] ,81>  <[w3Wf,,2,4] ,81> < [Wf,W';I,2,4] ,81>  <[W1W2,1,5] ,81> < [W3Wf,W';I,2,5] ,81>  < [W1W2W3, 1,6],81> < [W3Wf,W7, 2,6],81>  First Stage < [W2W3, 1,5] , r2> < [Wf,W5W6, 2,5] , r2>  < [W2W3, 1, 4],82> < [W5W6,2, 4],82>  < [W2W3, 1,5] ,82> < [W3W5W6, 2,5] ,82>  First Stage  -n =;.
+
+Vl ,...
+
+Vl =r c ...,., ...,.,  K ,;0 G) (3 C  -0  function scans the input value list once and the time complexity is O(N x M + lSI). As we at most output each original string in S once, the 10 cost is O(N x M + S).
+
+Suppose there are c distinct candidate pairs generated from the filter reduce of the verification stage, and the average size of the strings in S is Savg. As each candidate pair contains a string in S, the 10 complexity for this map phase is O(cSavg + R). The time complexity of the third map is O(c + IRI). As each candidate pair contains a string of S, the shuffle transmission complexity is O(cSavg + R). Suppose the average verification time for each candidate pair is v. The time complexity of the third reduce is O(cv). The IO cost in this stage is 0 (c(Ravg + Savg)). We show all the complexity analysis in Table V.
+
+D. Supporting Self-Join  The MASSJOIN algorithm can inherently support the self? join scenario where two data sets are the same, i.e., R = S. In this case, for each string r, we first take its segments as segment signatures and then select its substrings for strings with length between Lo and Irl as substring signatures (taking it as s). We can use a special mark to differentiate segment signatures and substring signatures. In this case, we can support self joins.
+
+
+
+V. MERGING KEy-VALUE PAIRS  Based on the complexity analysis in Section IV-C, the basic framework generates large numbers of signature-based key-value pairs for string s E S in the filter stage. In this section, we discuss how to reduce the number of key-value pairs without sacrificing the pruning power. For example, we can decrease the number from 0(lsI3) to O(lsl) for the Jaccard function. To achieve this goal, we first introduce how to merge key-value pairs in Section V-B, and then devise an efficient merging algorithm in Section V-B, and finally discuss how to incorporate the method into our framework in Section V-c.
+
+A. Merging Key- Value Pairs  For simplicity, the key-value pairs in this section refer to those generated from the map phrase in the filter stage.
+
+Dataset S <[W1W2,1,5], {rl,Sl,83?  <[W3W4W6,2,S], {rd>  <[W1W2,1,4], {81,S3?  <81, {rl}>  <82, {r2?  <83, {rll>  81 Wl W2W3Wf,W';I  92 W2W3W!iW6  83 Wl W2W3Wf,W!i < (W2W3, 1,4] , {81, 52, 83?  ? W3W4,2,4], {81,S3?  <[W4W7,2,4], {5d>  <[W3W4W7,2,S], {5d>  ? W1W2W3,1,6], (81,S3?  < (W3W4W7, 2,6] , {8d>  ? W2W3,1,5], {r2,s2?  <[W4W5W6,2,S], (r2?  ? W5W6,2,4], {82?  <[W3W5W6,2,S], (52? "J. ? W4W5,1,4], {r3? ? W6W7,2,4], {r3?  ? W4W5,2,4], {83?  <[W3W4W5,2,S], (53?  <[W3W4W5,2,6], (53?   Basic Idea. The basic framework will generate large numbers of key-value pairs for s E S: (( s [xI, If], i, ?), s) for ..i1 ::; xI ::; Tf, 1 ::; i ::; /':" and Lo ::; ? ::; Lu. We aim to merge them to generate a small number of key-value pairs. Obviously if two signatures match, e.g., (r[pf, If], i, ?) = (s[xf, If], i, g), the segment r[pf, tf] and the substring s[xi, lfl must match, i.e., r[pf,tfl = s[xl,lfl? One simple method is to take (s[xf,tf],s) as key-value pairs for sand (r[pf, If], r) as key-value pairs for r. Obviously, if r and s are similar, they must share a same key and the method will not miss a similar pair.
+
+However, this method may reduce the pruning power.
+
+This is because a substring and a segment may match with different start positions, or with different lengths. Both cases will generate more false positives. To achieve the same pruning power as the basic framework, we need to check whether the start position xf of the substring s [xf, tfl is within [..if, Tfl as well as whether the length of Irl is within [Lo, Lul. These bounds are different for various i and ?, and it is expensive to add them into the key-value pairs. Fortunately, these bounds can be efficiently computed just based on the values of i and ? in 0(1) time.
+
+For each key-value pair (s[xf, tf], s) of s, we add xf and lsi into its value field and the new key-value pair is ((s[xf,lfj),(lsl,xf,s)). For each key-value pair (r[xf,lfl,r) of r, we add i and ? = Irl in its value field and the key-value pair is ((r[PI,lfj),(i,?,r)). In the map phase, we generate these new key-value pairs. In the reduce phase, for two matching keys r[pf, tfl = s[xf, til with values (i, ?, r) and (lsi, xf, s), we first calculate ..iI, Ti, Lo and Lu based on ?, i and lsi in the value fields and <5 from the configuration file.
+
+Then we check if Lo ::; ? ::; Lu and ..if ::; xf ::; Tf. If yes, we output this pair as a candidate pair.
+
+It is easy to prove that the method ((r[pf,tfj),(i,?,r)) and ((s[xf,lfj),(lsl,xf,s)) keys generates the same candidate pairs as that ((r[pf,lfl,i,?),r) and ((s[xl,lf]'i,?),s) as keys.
+
+using as  using  It is worth noting that this method can significantly reduce the number of key-value pairs. Given any string s E S, for set-based similarity functions, we can reduce the number of key-value pairs from 0(f8IsI3) to O(lsl) as stated in Lemma 6.
+
+TABLE V. COMPLEXITY ANALYSIS OF MASSJOIN (RJS ARE THE DATASET SIZES AND IRIIISI ARE THE NUMBERS OF STRINGS IN RIS) .
+
+Stage Filter stage First phase of the verification stage Second phase of the verification stage  map Time/Space O(N+M) O(N x M+ lSI) O(c+IRI) 10 O(R+S) O(N x M+S) O(cSavg + R)  shuffle Trans O(N+M) O(NxM+S) O(cSavg + R) reduce  Time/Space O(NxM) O(N x M+ lSI) O(cv) 10 O(NxM) O(N x M+S) o ( c(Ravg + Savg) )  Lemma 6: Given a string s and a set-based similarity function threshold 0, the number of key-value pairs in the merge-based method is O(lsl).
+
+Proof Sketch: Here we use JAC as an example. For any string s and any JAC similarity threshold 0, -t. is monotonically increasing with the increasing of fl., thus the minimum and maximum value of tf is l? J and I 7,,' l respectively. I 7,,' l - l ? J + 1 ::; l 7,,' - ? J + 3 ::; 4. Thus there are at most 4 different values of tf. Since xI must be in [1, lsi ] , there are at most O(lsl) keys. Moreover, each key s[xf, PI] can solely determine the value (lsl,xI,sid). Thus the number of key? value pairs is O(lsl). Similarly, we can prove this lemma for Cos and DICE functions. ?  We can also prove that for ED,  the number of key-value pairs in this merge-based method is 0(min(lsl,72)). This is formalized in Lemma 7.
+
+Lemma 7: Given a string s and a ED threshold 7, the number of key-value pairs in the merge-based method is 0(min(lsl,72)).
+
+Proof Sketch: Based on the similar idea in Lemma 6, we can prove that the number of key-value pairs generated by s is bounded by O(lsl). Next we prove the number of key? value pairs is also bounded by 0 ( 72) . For any string s and threshold 7, -t. is monotonically increasing, thus the range of If is [l ? J, I 7,,' lJ? As I 7,,' l - l ? J + 1 ::; l2;:n + 3 ::; 4, the size of the range of If is at most 4. We also find that the size of the range of xI is at most 27 + 4 for all Lo ::; fI. ::; Lu and a fixed i E [1,6]. Thus the total number of possible xI is O( 72} Thus the number of key-value pairs is also bounded by 0(7 ). ? B. Merge Algorithm  For sting r, it is easy to generate its key-value pairs ( (r[p1,lm, (i,lrl,r)) for i E [1,6]. For string s, a straight? forward method enumerates all signatures for s as discussed in Section III-C and then merges them with the same (s[xf,lfp.
+
+However, the time complexity of this method is 0(181sl ). Here we study how to efficiently merge the original key-value pairs to obtain the new key-value pairs for string s.
+
+As proved in Lemma 6, there are only four different values for If. As xf is a position in string s, xf E [1, lsi ] . Then we can devise an efficient algorithm to directly generate the new key? value pairs as follows. For x1 E [1, lsi ] and for each If, we generate a key-value pair ( (s[xf,lm, (lsl,x1,s)). Obviously the time complexity is O(lsl). 3  3 Although this method may generate more key-value pairs than the straight? forward method, the complexity is still O(lsl). In the reduce step, we can remove such pairs based on the checking method in Section V-B.
+
+Complexity Improvement. The merge-based method can reduce the number of key-value pairs for s from 0(ls I3) to O(lsl). The total number of key-value pairs for all strings in S is from "e?ax fs:fl.3n- to "e?ax fl.n-. The time/space DC=CS. v ? D?=CS . ? complexity to generate the key-value pa1rs for string s is also from O(lsj3) to O(lsl).
+
+C. Changes on MASSJOlN Algorithm  This section discusses the changes we need to make for incorporating the merge-based method into our MASSJOlN framework. The pseudo-code shown in Algorithm 2 is the same as Algorithm 1 except for the filter stage. To generate the new key-value pairs, we replace Line 4 and Lines 6-9 in Algorithm 1 with Line 2 and Lines 3-5 in Algorithm 2 respectively. For each string s E S, we only need to scan the string once to generate all key-value pairs (Lines 3-5).
+
+In the reduce phrase, we still split the input value lists into two lists and output those pairs satisfying Lo ::; fI. ::; Lu and ..1f ::; xf ::; Tf (Lines 7-12).
+
+Example 5: Consider the strings r3 and S3 in Ta? ble I. Using the merge-based algorithm, we generate two key-value pairs for r3, i.e., ( (r3[1, 2]), (1,4, r3)) and ( (r3[3,2]), (2,4,r3)), and six key-value pairs for S3, i.e., ( (sd1, 2]), (5, I, S3)), ( (sd2, 2]), (5,2, S3)), ( (sd3, 2]), (5,3, S3)), ( (s3[4, 2]), (5,4, S3)), ( (s3[l, 3]), (5, I, S3)), and ( (s3[3, 3]), (5,3, S3)). Note that for the basic method, we generate eight key-value pairs for S3, thus the merge-based algorithm reduces the transmission cost of two key-value pairs.
+
+When using the key-value pairs to generate the candidate pairs, althoug4h r3[l, ? = s3[4,2], we do not output (r3, S3) since 4 tf. [..11 = 1, T 1 = 2].
+
+
+
+VI. USING LIGHT-WEIGHT FILTER UNIT TO REDUCE CANDIDATE PAIRS  As the transmission and computation cost in the verification stage heavily relies on the number of candidate pairs, in this section, we aim to decrease the number of candidate pairs.
+
+One simple method is to attach the original strings to the value field of each (key, value) pair in the map phase of filter stage. In the reduce phase, for each candidate pair, we calculate their real similarity and remove those pairs whose similarity is smaller than the threshold o. Although this method can reduce the transmission cost of candidate pairs, it increases the transmitting cost of original strings dramatically. To alleviate this problem, we incorporate an "light-weight filter unit" to replace the original strings. On one hand, filter units can be utilized to prune many dissimilar pairs. On the other hand, filter units should be light-weight in order not to significantly increase the transmission cost. To this end, we propose an effective filter unit in Section VI-A, and then discuss how    Algorithm 2: Merge-based Algorithm II the filtering stage  I Map( (rid, r) / (sid, s)    II Replace Line 4 in Algo 1 with emit( ( ( [pf , If ] , (i , l r l ,rid) ) ) ; II Replace Lines 6 ? 9  in Algo 1 with for 1 s: xf s: l s i  - ? do l for l ? J s: If s: I Iz' l do  L emit( ( (s [xL If]) ,  ( l s i , xL sid) ) ) ; 6 Reduce ( (sig, list( (i, ?, rid) / ( l s l , xL sid) ) ) 7 split list( (i, ?, rid) / ( l s i , xL sid) into two groups  list( (i, ?, rid) and list( ( l s i , xL sid) ) ;  II   foreach ( I s l , xf, sid) E list( ( l s l , xf, sid) do l foreach (i, ?, rid) E list( (i, ?, rid) do l if Lo s: ? s: Lu & ..if s: x s: Tf then  L list( rid) +-- rid; output( (sid, list( rid? ) ) ;  Algorithm 3 :  Light-weight Filtering II the token count stage Map( (id, string) ) L For each token in the string, emit( (token, 1 ) ) ;  3 Reduce ( ( roken, list ( l ) ) ) 4 L Output token frequency tf;  II the filtering stage 5 MapSetup 6 L Partition tokens into n groups; 7 Map( (rid, r) / (sid, s)  II Add into Algo 1 8 Compute filter unit gT / g8 for strings r / s ;  I I  Replace Line 4 i n  Algo 1 with 9 emit( ( (r [pf, lf], i, ?  = I r l ) ,  (rid, gT ) ) ) ;  I I  Replace Line 9 i n  Algo 1 with 10 emit( ( (s [xf, If], i, ?) ) ,  (sid, g 8 )  ) ) ; 1 1  Reduce ( (sig, list ( (id, g) ) ) 12 list( (id, g) -+ list( (sid, g 8 )  and list( (rid, gT ) ; 13 foreach (sid, g 8 )  E list( (sid, g8 ) )  do 14 l fore?ch (rid, gT) ? lis?( (rid, gT ) do 15 l lf 2::1Sisn I gi - gi l s: U then 16 L list( rid) -+ rid; 17 output( (sid, list (rid? ) ) ;  to integrate this technique into our MASSJOIN framework in Section VI-B.
+
+A. Light-weight Filter Unit  Basic Idea. We first consider the set-based similarity functions.
+
+Given a string, we can use an integer to replace each token in the string and take the set of integers as the filter unit of the string. Obviously two strings are similar only if their corresponding integer sets are similar. However when the number of tokens is large, this method still involves large transmission cost. To reduce the size, we can group the integers into n buckets and keep a list of n integers as a filter unit.
+
+Formally, we first partition all tokens in the two string sets into n groups, ?h , ?h , . . .  , 9n . Then for each string r ( 8 ) ,  its filter unit is (gr , g2 ' . . .  , g? )  ( (gl. , g? , . . .  , g? ) ) ,  where g[ (g'1 ) is the number of tokens in r( 8) that are in the i-th group, i.e., g'; = 1 9i n r l (gi = 1 9i n 8 1 ) . Two strings rand 8 are similar only if 2:: 1<i<n I g'; - gi l ? U as stated in Lemma 8, where U is an upper-bound of I r - 8 1 + 1 8  - rl (Section III-A).
+
+Lemma 8: Given two strings r and 8 with filter unit (gr , g2 " "  , g? )  and (gf , g? , . . .  , g? ) , if 2:: l< i<n I g'; -gi l > U, rand 8 cannot be similar. - -  Proof Sketch: We divide rand 8 into n disjoint groups using a universal grouping method. The total number of different tokens between r and 8 is the sum of the number of different tokens in the n groups. For the i-th group, the number of different tokens in it is 1 9i n r - 9i n 8 1  + 1 9i n 8 - 9i n rl = 1 9i n rl + 1 9i n 8 1  - 2 1 (9i n r) n (9i n 8) 1 ? g'; + gi - 2 max(gi , g'1 ) = I g'; - gi I ?  Thus the total number of different tokens between r and 8 cannot be smaller than 2:: 1 < i<n I g'; - gi I ?  Meanwhile, the number of different tokens in two-similar strings cannot exceed U(see Section III-A). Thus if 2:: 1::;i::;n I g'; - gi l > U, rand 8 are not similar. ?  To utilize the filter unit, we add the filter unit into the value part in the key-value pair of the map function in the filter stage. As discussed in Section III-A, the upper bound U only depends on I r l ,  1 8 1  and o. Obviously I r l  = 2:: l<i<n g'; and 1 8 1  = 2:: 1<i<n gi , thus we can compute U in the-reduce step. Thus we can utilize the filter condition to prune dissimilar pairs. Notice that the filter unit based method is orthogonal to the merge-based method and they can be used together.
+
+This method can be applied to the character-based similar? ity functions by taking each character as a token and U = 2T .
+
+Finding the Optimal Grouping Strategy. We find that different grouping methods may have different pruning power.
+
+Next we study how to evaluate a grouping strategy and how to select the optimal grouping so as to generate high-quality filter unit.
+
+Intuitively, for two strings rand 8 , the larger 2:: l<i<n I g'; - gi I ,  the two strings have higher probability to be pruned. Thus we want to maximize the value. Similarly, for all strings in R and S, we want to find an optimal grouping strategy to maximize  L L L I g[ - gi l ? TER s E S  1::;i::;n  (1)  We can prove that the optimal grouping problem is NP-hard by a reduction from the 3-SAT problem.
+
+Theorem 1: The optimal grouping problem is NP-hard.
+
+Proof Sketch: We can prove the problem by a reduction  from the 3-SAT problem. ?  We propose a heuristic approach to solve this problem. The approach is based on two observations. First, it is not good to put two tokens with large token frequencies into the same group, where the token frequency is the number of strings containing the token. This is because if we put them into the    same group, many string pairs will falsely consider them as the same token and the value I gi - gi 1 for such string pairs will not increase; on the contrary, if they are assigned into two different groups, the value will be significantly increased.
+
+Second, the sum of token frequencies is a constant. To make the overall value as large as possible, we want to make the sum of token frequency in each group nearly equal. Based on these two observations, we can devise a greedy algorithm as follows. We first sort all the tokens by their frequencies in decreasing order. Then we access each token in order and add it into the group with the minimum sum of token frequencies.
+
+We repeat this step until all the tokens have been accessed.
+
+B. Changes on the MASSJOIN Algorithm  To incorporate filter units into our method, we need make some changes on the MASSJOIN algorithm. The method can be utilized to both the basic method and the merge-based method. Here we take the basic method as an example. The pseudo-code is shown in Algorithm 3. We need to add another MapReduce phase to count token frequencies (Lines 1-4). We also modify the filter stage (Lines 5-17) as follows. We add a setup phase to read the token frequency and an approximation algorithm to divide all the tokens to n groups (Line 6). In the map phase, we load the token frequency, identify the tokens for each string, partition them into different groups based on token frequencies, and generate filter unit (Line 8). Then we emit the filter unit along with the (key, value) pairs (Lines 9- lO). In the reduce step, we only output those pairs passing the grouping filter (Lines 12-17).
+
+Example 6: Consider the two datasets in Table I. We use JAC and the threshold is <5 = 0.8. For simplicity, we use the ids of strings as shown in Figure l. In the token count stage we get the token frequencies, (W2 , 5) , (W3 , 5) , (W4 , 5) , (W5 , 4) , (W6 , 4) , (wl , 3) and (w7 , 2 ) .  Suppose the group number is 4.
+
+We can divide the tokens into 4 groups ?II = {W2 , w7 }, !h = {W3 , W l } , 93 = {W4} ,  and 94 = {W5 , W6 } .  The filter unit for rl is ( 1 , 2 ,  I, 1) and that for 8 1  is ( 2 , 2 ,  1,0). We filter pair (8 1 ,  rl ) in the reduce phase as "L;= 1 I g? - g: ' 1 = 2 > U = O.
+
+
+
+VII. EXPERIMENT We have implemented our MASSJOIN method and con?  ducted experiments on four real datasets: Enron email4, PubMed faper abstract, PubMed paper titleS and NCBI DNA sequence . The details of the datasets are shown in Table VI.
+
+TABLE VI. DATASETS  Datasets Size(MB) Cardinality Avg Size/Len 1 2:: 1 Enron Email (Set) 1 425 5 1 6,7 1 7  383 .7 36  PubMed Abstract (Set) 3 1 59 2,347,362 1 95.6 36 PubMed Title (String) 1 494 1 0,394,374 1 44.4 36  DNA Sequence (String) 2148 1 8,299,728 1 1 7.2 5  For Enron email and PubMed paper abstract datasets, we used set-based similarity functions, where strings are tokenized by non-alphanumeric characters. For PubMed paper title and DNA datasets, we used the character-based distance functions.
+
+In the following experiments, we split each dataset into two  4https:llwww.cs.cmu.edu!?enron/ 5 http://www.ncbi.nlm.nih.gov/pubmed 6http://www.ncbi.nlm.nih.gov/guide/dna-rnal   datasets with equal size to conduct R-S join. Due to space constraints, we focus on JAC and ED in the experiments and use them as default functions. We will show the results on Cos and DICE in Section VII-D.
+
+We compared with state-of-the-art method Pref ixF i l  t e r [15]. We got their source code from their home page (as? terix.ics.uci.edu/fuzzyjoin). All algorithms were implemented on Hadoop and run on a lO-node Dell cluster. Each node had two Intel(R) Xeon(R) E5420 2.5GHZ processors with 8 cores, 16GB RAM, and LTB disk. Each node is installed 64-bit Ubuntu Server lO.04, Java l.6, and Hadoop l.OA. We set the block size of the distributed file system to 16MB and allocate 2GB virtual memory to each task.
+
+3500 ?Gr?ee--cdCC-y -__ ? ... -__ .????---' ?3000 R?ndom -? ? 2500 i= 2000 m 1 500 g.1 000 [jJ 500  o 20 40 60 80 1 00 1 20 1 40 Number of Groups  (a) PubMed Abstract  Fig. 2. Evaluating light-weight filter units.
+
+A. Evaluating Our Proposed Techniques  We first evaluated our filter unit based method by varying different group numbers from lO  to 150. We implemented two grouping methods: Random and Greedy. Random computed the hash code of each token and randomly assigned it into a group.
+
+Greedy used our greedy algorithm. Figure 2 shows the results.
+
+We can see that with the increase of groups, the performance of Greedy improved first and then depraved. This is because a small group number will reduce the transmission cost but with lower pruning power, and a large group number will improve the pruning power but with large transmission cost.
+
+In addition, our algorithm outperformed the Random grouping method since we considered the token distribution. In the remainder experiments, we used the Gre edy algorithm and set the group number to 30.
+
+We then evaluated our merge-based and filter unit tech? niques. We implemented four algorithms: our basic algorithm (Bas i c) , merge-based algorithm (Merge),  light-weight filter algorithm (Light ) ,  and MASSJOIN with both merge-based and light-weight filter techniques (Merge+L ight ) .  Figure 3 shows the elapsed time for each algorithm, including the running time of different MapReduce phases. Notice that on the Enron and PubMed abstract data sets, Bas i c  and Light did not finish within 20 hours, because they had to generate large numbers of key-value pairs (0 (?3? . Light and Merge+L ight addressed this problem by merging the key-value pairs. On the PubMed title and DNA datasets, Bas i c  and Light worked well because for ED the number of key-value pairs is not large (0(73? .
+
+Notice that on all datasets, Merge+L ight achieved the highest performance, because it merged the key-value pairs to reduce transmission cost and used filter units to reduce the number of candidate pairs. In the remainder experiments, we used the Merge+L ight as the default algorithm for MASSJOIN.
+
+Fig. 3. Evaluating our proposed techniques.
+
+Fig. 4. Comparison with state-of-the-art methods(VSMARTJoin and FuzzyJoin are out of memory).
+
+en f3000 i= <J 2000 OJ If) g-1 000 [jJ  0=0.85 ...... * .... . 0=0 .8 --8-. 0=0.75 . . ? . ..
+
+4 6 8 1 0 # o f  Nodes  (a) Enron Email  _6000 If) f4500 i= ijl 3000 If) g-1 500 [jJ   0=0.85 ...... * .... . 0=0 .8 --8--0=0.75 . . .? .. ..
+
+.
+
+.
+
+4 6 8 # of Nodes  1 0  (b) PubMed Abstract  Fig. 5 .  Speedup by varying number of nodes.
+
+4 6 8 1 0 # of Nodes and Dataset size(0 . 1 x)  (a) Enron Email  2500 0=0.85 ...... * .... .
+
+?2000 o?oOi? ??::: ? 1 500 <J . .  e ? 1 000 "- 6J 500  2 4 6 8 1 0 # of Nodes and Dataset size(0 . 1  x)  (b) PubMed Abstract Fig. 6. Scaleup by increasing the dataset sizes and the number of nodes.
+
+B. Comparison with State-of-the-art Method  We compared our algorithm with state-of-the-art method, Pref ixF i l t e r  [ I S], VSMART J o in [13] and FuzzyJo in [1].
+
+For Pref ixF i l t e r ,  we used its source code on set-based similarity functions and extended the code to support character? based functions using the technique in ED-Join [21] to generate prefixes and the technique in PassJoin [12] to verify the results.
+
+We also implemented VSMART J o in and FuzzyJ o in. However they were always out of memory because they generated large numbers of key-value pairs which cannot load into the workers.
+
+Thus we did not include them in our experiment. Since Pref ixF i l  t e r  took rather long time on our large datasets,  _25000 If) Q)20000 E i= 1 5000 <J ? 1 0000 "- 6J 5000  _4000 If) f3000 i= ijl 2000 If) g-1 000 [jJ  o  <=6 ??????*????? <=8 --8-?<=1 0  . . . . ..? ....
+
+. . .... . . .  - - . .. .. -- . .
+
+2 4 6 8  # of Nodes 1 0  (c) PubMed Title  <=6 ????? *????? <=8 --8-<=1 0 ? ? ?. ?? ??  ?.. .. .. .. .. .. ? . ,  ...
+
+?  /  ..- . ?. .. .. . . . . .? "  _ ?--El \tJ=:::::::::\it== . .. iiE ???????????? ???*?? ??? ?? ? ? ?* 2 4 6 8 1 0  # o f  Nodes and Dataset size(0 . 1  x)  (c) PubMed Title  _20000 If) f15000 i= ijl l 0000 If) g- 5000 [jJ  v;4000 Q) E 3000 i= ijl 2000 If) "?? 1 000  W o  <=4 ??????*????? <=5 .-8-?<=6 . . . . ..? --  - .-- . .
+
+? ?-  .. .
+
+." "-s _ ? .? ---- -- ..
+
+* .. .  *. . .jif . . . 1t, .. ,:ji/ 4 6 8 1 0  # o f  Nodes  (d) DNA Sequence  <=4 ??????*????? <=5 --8-' <=6 --.--  4 6  . . e  8 1 0 # of Nodes and Dataset size(0 . 1  x)  (d) DNA Sequence  we used the 0.6x datasets, where is gotten by randomly sampling 60% of the original dataset. Figure 4 shows the results. Note that on the PubMed title dataset, Pref ixF i l  t e r did not finish within 30 hours. We can see that our method significantly outperformed Pref ixF i l  t e r ,  even by 1 to 2 orders of magnitude. For example, on PubMed paper title dataset with Edit Distance threshold T = 6, Pref ixF i l  t e r took SO,OOO seconds while MASSJOIN only took SOO seconds.
+
+This main reason is that their signatures are less selectivity than our algorithm and they generated large numbers of key? value pairs. In the verification stage, they involved much transmission and computation time. In addition, we used filter  3S0    units to reduce candidate pairs.
+
+C. Speedup  We evaluated the speedup of our algorithm by varying the number of nodes from 2 to 10. The experimental results are shown in Figure 5. We can see that with the increase of nodes in the cluster, the performance of our algorithm significantly improved. For example, on the Enron email dataset with similarity threshold <5 = 0. 75, the running time on the cluster with 2,4,6,8,10 nodes are 3600 seconds, 1900 seconds, 1400 seconds, 1200 seconds, and 1000 seconds respectively. This is attributed to our effective signatures which can significantly prune dissimilar pairs and avoid enumerating all pairs.
+
+D. Scaleup  We evaluated the scaleup of our algorithm by increasing both dataset sizes and numbers of nodes in the cluster. Figure 6 shows the results. It is worth noting that as the dataset increased, the number of results will increase by quadratic, es? pecially for small thresholds for set-based similarity functions and large thresholds for character-based similarity functions.
+
+Thus the running time increased slightly. For example, on the PubMed title dataset, when the Edit Distance threshold is T = 8, the running time on 2-node cluster and with 0.2x dataset is about 300 seconds ; on lO-node cluster and with Ix dataset the time is about 900 seconds.
+
+We also evaluated the scaleup on the other two set-based similarity functions Cos and DICE. Figure 7 shows the results on the PubMed abstract dataset. MASSJOIN got similar results on Cos and DICE as JAC because their difference is the verification method which took little time.
+
+Fig. 7 .
+
+_1 000 If) Q) 800 E i= 600 "0 ? 400 0. ITl 200  Jaccard ??????lIE ?????? Dice '-'-8-'?  Cosine . . . . ..? .. -  -==.?  2 4 6 8 1 0  # of Nodes and Dataset size(O . l  x)  (a) PubMed Abstract Evaluating set-based similarity functions.
+
+
+
+VIII. CONCLUSION We proposed a MapReduce-based framework for scalable  string similarity joins, which supports both set-based simi? larity functions and character-based similarity functions. We extended existing partition-based signature scheme to sup? port set-based similarity functions. We utilized the signatures to generate key-value pairs on MapReduce. We proposed a merge-based method to significantly reduce the number of key? value pairs without sacrificing the pruning power. To improve the performance, we incorporated light-weight filtering units into key-value pairs to reduce the number of candidate pairs while not significantly increasing the transmission cost. Exper? imental results on real-world datasets show that our method outperforms state-of-the-art approaches.
+
+Acknowledgement. This work was partly supported by the National Natural Science Foundation of China under   Grant No. 61272090 and 61373024, National Grand Fun? damental Research 973 Program of China under Grant No. 2011CB302206, Beijing Higher Education Young Elite Teacher Project under grant No. YETP0105, a project of Tsinghua University under Grant No. 20 I I I  081 073, Tsinghua? Tencent Joint Laboratory for Internet Innovation Technology, and the "NExT Research Center" funded by MDA, Singapore, under Grant No. WBS:R-252-300-001-490.
+

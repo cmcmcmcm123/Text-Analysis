@@ -1,0 +1,144 @@
+Elastic Replication on the Metadata in Object-based Storage Systems
+
+Abstract?The operations of the metadata account for more than half of the load in the object-based storage system, while the replication strategy can improve the performance.
+
+Therefore, an elastic replication strategy is proposed in this paper, which is based on the communication model consisting of the physical nodes and logical elements in the object-based storage system. The replication environment is formalized and the hot degree of the metadata is defined. Afterwards, based on the capability of the metadata server (MDS), the metadata is adaptively replicated across the MDS cluster according to the access frequency of the corresponding data object, including the numbers of the replications and their storage locations.
+
+Through analysis and evaluation, it is proved that the replication strategy can improve the service efficiency of the metadata in the object-based storage system, which can further improve the performance of the system.
+
+Keywords-object-based storage system; elastic replication; metadata; scalability
+
+I. INTRODUCTION Object-based storage systems [1] embody strong  scalability and reliability, as well as high performance, which have been greatly adopted as the base data storage in the cloud computing platforms, such as Swift in openstack [2], GFS in Google Cloud [3], Dynamo in Amazon [4], etc.
+
+Metadata servers, object storage devices (OSD) and clients are the basic elements of the object-based storage systems. To access the data, the clients first communicate with the metadata server to obtain the metadata, according to which the data objects are accessed. The management to the metadata is independent of that of the data object, while the previous study shows that the operation of the metadata holds 30%-70% of the total operation in the filesystem [5].
+
+Therefore, the metadata without replications may result in the I/O bottleneck for the clients, which will further reduce the performance and scalability of the object-based storage systems.
+
+Furthermore, to support cloud computing platforms, object-based storage systems must meet the feature of elasticity. It means that with full scalability and extensibility, it will provide high performance to the parallel load in the Internet. Based on the CAP (Consistency, Availability and Tolerance to network Partitions) theory [6], the replication  technology can improve the availability and fault-tolerance for the distributed computing system.
+
+Therefore, we utilize the replication strategy for the metadata in the object-based storage system. Based on the hot degree of the metadata, the load of the metadata server, the service capability of the metadata server and the quality of the metadata service are defined. Afterwards, the hot degree of the subtree of the metadata directory is analyzed.
+
+Then the dynamic replication to the metadata is researched. The metadata is adaptively replicated according to the access frequency of the corresponding data object, including the numbers of the replications and their storage locations. It intends to improve the concurrent service capability for the data objects, thereby to eliminate the access bottleneck for the popular data object and improve the scalability of the object-based storage systems.
+
+The rest of the paper is formulized as follows. Section 2 presents the related works, and the communication model of the discussed object-based storage system is detailed in Section 3. Based on the communication model, the elastic replication strategy for the metadata is designed in Section 4.
+
+Afterwards, analysis is carried out in Section 5. Finally, conclusions are drawn in Section 6.
+
+
+
+II. RELATED WORKS The typical object-based systems adopt replication  strategy to improve their availability, such as GFS, HDFS [7], Swift, Dynamo and Ceph [8], etc. Therein, GFS is used to support large data-intensive applications, which is composed of a master and many chunkservers. The files in the GFS are divided into trunks with fix size. For reliability consideration, each chunk is replicated into several chunkservers, one of which is the master.  All metadata is kept in the master?s memory. The master asks each chunkserver about its chunks at master startup and whenever a chunkserver joins the cluster to update the metadata.
+
+HDFS adopts the master/slave node model, where a Hadoop cluster consists of one NameNode (Master) and many DataNode (Slaves). The NameNode manages the file system namespace operations like opening, closing, and renaming files and directories and determines the mapping of blocks to DataNodes along with regulating access to files by clients. DataNodes are responsible for serving read and write requests from the file system?s clients along with perform   DOI 10.1109/CLOUDCOM-ASIA.2013.59    DOI 10.1109/CLOUDCOM-ASIA.2013.59     block creation, deletion, and replication upon instruction from the Master.
+
+Swift is the default object-based storage system for OpenStack, while Dynamo is the one for Amazon S3. They use the improved hash algorithms for the data distribution and replication, where the Quorum protocol is used to control the consistency for the replication. The same as the GFS and Hadoop, Swift and Dynamo have no specific replication strategy for the metadata.
+
+Initiated by Sage A. Weil in the University of California, Santa Cruise (UCSC), Ceph is an open source project to create the PB data center, while currently the Ceph client has been integrated into the Linux kernel since the version 2.6.35. It is believed that metadata operations often account for half of the file system?s load, therefore the replication strategies are adopted for the metadata and data objects respectively. According to its popularity, the metadata is distributed across the cluster of the metadata servers. However, it is assumed that all the metadata servers are homogeneous in Ceph.
+
+It is noted that the typical existing object based storage systems seldom focus on the replication strategy for the metadata. Taking into considerations to the load and capability of the nodes, as well as the popularity of the metadata, an elastic replication strategy is adopted based on an interactive model of the data access process in the object- based storage system. Such strategy can be applied in the heterogeneous environment, and thus improve the performance and scalability of the object-based storage systems.
+
+
+
+III. COMMUNICATION MODEL There are three types of physical nodes and three kinds of  logical data in the object-based storage systems, as shown in Formula 1. Therein, the physical nodes consist of the Object Storage Devices (OSD), the MeataData Server (MDS) and the Client (CT), which are interconnected through a high speed network. In the meantime, the logical data includes the metadata (E), the data object (O) and the file / directory (F).
+
+As intelligent equipment, OSD is responsible for the organization and storage for the data object O in the physical medium, and provides the access interface for the clients.
+
+The MDS maintains the metadata E, and manage the mapping between the user request and the data object in the OSD, as well as maintains the security authorization information. With the CT, the user accesses the file (or directory) F, which is finally executed by the MDS and the OSD.
+
+S={OSD, MDS, CT; O, E, F}  The interaction process among the elements to read/write a file in the object-based storage system S is described in Figure 1. Therein, the process of the Read (RD) operation to the file is depicted as follows:  (1) Across the CT, the user communicates with the MD with the interactive commands of the metadata, such as the  change directory command (cd), the list file command (ls), and so on.
+
+(2) On receiving the command from the CT, one server in the MDS cluster returns the metadata based on the index node (Inode), which is used to store the detailed information for the data object.
+
+(3) Then the RD operation to the file F is transformed into the operation to the ObjectExtent (shortened as OE), which is the data of the object in the OSD. That operation is represented as RD(OE).
+
+In contrast, the process of the write operation to the file is relatively complex, which is shown as follows.
+
+(i)-(ii) To perform the write (WT) operation to the object, the user should first get the corresponding Inode from the MDS, where the first two steps are the same as those in the process of the RD operation.
+
+(iii) The CT will update the original Inode from step (ii), or create a new Inode for the WT operation. Then the new Inode is cached in the CT, based on which, the WT to the file is transformed into the write to the OE for the data object, represented as WT(OE).
+
+(iv) Because there are multiple replicas for each data object, the acknowledgement (ACK) will not be returned to the CT until the WT(OE) is applied into all the relative OSDs to fit the consistent requirement.
+
+(v) The safe message (Safe) for the accomplishment of the update will be returned to the CT when the data persistence of the object with the data consistency has been processed.
+
+(vi) On receiving the Safe from the OSD, the cached Inode in the step (iii) will be applied into the MDS.
+
+Otherwise, the Inode will be discarded after a timeout.
+
+Figure 1. Communication Process among the Nodes during the Data Access  According to the process above, the Inode is the core structure for the communication between the CT and the MDS. It means that the CT communicate with the MDS to get Inode before performing the RD(OE) or WT(OE). Then the overall structure of the metadata is described with the hierarchical tree of the Inodes. It also reflects the directory hierarchical structure for the files, where each node is represented with a digital and the corresponding file / directory name  To further formulate the communicate process, the RD/WT operation of the CT is represented as P. Combined with the time serial characteristics of the operations, the     operation to the special file F at the time 1T is expressed as  1P(F, T  | CT) , where the expression ?A | B? means that the operation on A is performed in the special device B.
+
+Therefore, the operation to the file is transformed into the operation on the OE at time  2T , which is represented as formula 2.
+
+1 2P(F, T | CT) P(OE, T | OSD)? ?
+
+IV. ELASTIC REPLICATION Although the total capacity and the aggregating I/O rate  can be increased by the augment of the OSDs, the performance of the system is constrained by the metadata.
+
+On the one side, the operations of the metadata often account for more than half of the load of the file system. On the other hand, the relationship among the metadata implicitly or explicitly describes the relationship among the data objects, which indicates the operation of the metadata contains interdependence among the data objects and the replication of the metadata affects the performance of the object-based file system.
+
+A. Replication Environment According to the communication model of the object-  based storage system, the main factors in the environment that affect the load of the MDS have to be considered, where the maximum number of the clients is set as CN, the number of the MDSs is MN, the number of the files to be stored is FN. Then there is a mapping relationship between the clients and the MDS, as shown in formula 3. Therein, the operations are processed based on the Inode (shorten as I), whose information depends only on the MDS and the file F, and has nothing to do with the clients.
+
+i,j,k ,P ( , , ) ,  1 ,1 ,1 i j k j kCT MDS F I  i CN j MN k FN ?  ? ? ? ? ? ?  If MN=1, it means that there is only one MDS in the system, and that single MDS will serve all the clients and take all the loads of the metadata. According to the analysis above, that single MDS maybe the bottleneck of the system.
+
+It not only limits the scale of the system, but also reduces the scalability of the system. Therefore, we only consider the situation that there are multiple MDS in the system, e.g., M>1.
+
+For any integer, j1 and j2, if 1 2j j? , then 1 2, ,I j k j kI? , which means that the Inodes on each MDS are different from each other. It further indicates that there is no replica for every Inode. If the file F is popular, whose Inode is ,I j k , there are multiple clients with the number of r to access the metadata of the file F, the Inode of the jth MDS. If r is large enough, the jth MDS will be the bottleneck due to overload.
+
+Therefore, it is set that for the hot file F, 1 2j j?  and  1 2, , I j k j kI? , which means that the metadata of the hot data is replicated across multiple MDSs.
+
+B. Hot Degree of the Metadata The replication strategy should reflect the load of the  MDS and the popularity of the metadata, which makes the object-based storage system to adapt to the heterogeneous computing environment. Therefore, the metadata will be replicated across the MDSs according to the service capability and the current load of the MDS, where the capability of the node is dependent on the performance of the node. The hot degree is defined as the popularity of the metadata, as shown in Definition 1, which is further used to describe the load and capability of the node.
+
+Definition 1. The access frequency is used to depict the hot degree of the metadata, and each MDS in the directory hierarchy of the metadata checks its hot degree. Whenever a metadata request comes from the client, the corresponding hot degree of the MDS increases one.
+
+The hot degree of the metadata will decay with time, and formula 4 is used to calculate the decaying process with exponential time. Therein, Ho is the original hot degree of the Inode, and Hn is the new hot degree after resolving a client request. t is the time difference between the current time and the last time to calculate the hot degree, while f(t) indicates the exponential decay function, as shown in formula 5.
+
+In the hierarchical directory tree of the metadata, the hot degree ancestorH of the parent Inode of the current subtree is affected by that of the child node, as shown in formula 6.
+
+Therein,  ancester_newH and ancestor_oldH are the values after and before the affection to  ancestorH . n oH H? ? ? , which describes the changes of the hot degree of the subtree in the current Inode.
+
+n oH  = H f(t) + 1  0,               0 f(t)=  ,           0t t  e t ? ??   ??  ancester_new ancestor_oldH =H f(t)+	 ?  C. Capability of the MDS The load of the MDS is described with the hot degree of  the Inode whose overall structure is depicted with a hierarchical tree. Then the load of the MDS is reflected with accumulated information of the Inode in the tree. Each Inode is represented with a digital and the corresponding file / directory name. According to formula 6, the hot degree of the root of the subtree can be calculated recursively, and it can be expressed as HM to delegate the load of the MDS cluster.
+
+Because each MDS is influenced by its CPU, memory and network bandwidth, the capability is defined as the weighted value of them, as shown in formula 7. Therein,  cpuS , memS  and bwS  are the available values of the CPU, memory and network bandwidth, respectively, while a, b, c are the corresponding weighting coefficients of them, which are conducted according to the experiments based on the machine type of the MDS. Therefore, the quality of service of the MDS Q can be described as formula 8, which is the service capability for the load of the unit hot degree.
+
+cpu mem bwS=a S S c Sb	 ? 	 ?  Q=S/HM  D.  Replication Strategy According to the quality of service of the MDS Q defined  above, the metadata in the MDS are dynamically replicated across the MDSs. It is set that the threshold of Q is minQ , and the quality of service Q of each MDS is periodically monitored. Then the replication algorithm is shown in Figure 2, which is divided into two procedures, such as the Monitor Procedure and the Replication Procedure.
+
+Figure 2. Replication Algorithm  When the current Q of the ith MDS iMDS is less than the  predefined threshold of minQ , the replication process is launched. The hot subtree in the  iMDS  with high load will be replicated into the MDS, denoted as  jMDS , which will try to meet the condition that its quality of service will not less than minQ .
+
+If there is no MDS to fit the condition, the administrator of the system will be informed to add a new metadata server into the MDS cluster, which will accept the hot subtree that should be replicated in  iMDS .
+
+The hot degree of each node in the replicated subtree of  the metadata directory tree will be set as half of the value before the replication, while that of the parent node of the root of the subtree will be calculated as formula 6.
+
+
+
+V. ANALYSIS AND EVALUATION Combined with the schedule policy, the performance of  the elastic replication strategy is analyzed, where the user requests will be received by the proxy server and then be redirected to one of the MDS, as shown in Figure 3. Because of the computational capacity constraints of the MDS, the user request will be cached before its procession by the MDS for the hot data. In the schedule policy, the user request can be cached in the proxy server, as shown in Figure 3-(a), or be cached in each MDS locally, as shown in Figure 3-(b).
+
+It is set that the external arrival of the user request to the object-based storage system is modeled by a Poisson process with the arrival intensity ? . The time of the service to each request has an exponential distribution with a mean of ? .
+
+To serve the request to the hot data, there are c servers in the MDS cluster. With the schedule policy that the user request are cached in the proxy server, figure 3-(a) then represents a standard M/M/c queue system [9], where the parameters are set in Table 1, and the waiting probability nP of each user request are shown in formula 9, n>c.
+
+TABLE I. PARAMETERS OF THE M/M/C SYSTEM  Parameters Cache in Proxy ? Average utilization rate of the MDS service  to user requests  0P The idle probability  of the MDS cluster  sL The average length of the waiting user requests  qL Average length of the cache queue  qW The average waiting time  sW The mean residence time of each user request  nP The waiting probability of each user request  Figure 3. Schedule Policy of the User Request     In the contrast, with the schedule policy that the user requests just cached in the MDS locally, the user request will be redirected to one of the MDS in the cluster in Figure 3-(b), and each MDS can be modeled as a M/M/1 queue for the user requests. Correspondingly, the parameters are set in Table 2, where the waiting probability 'nP of each user request is shown in formula 10.
+
+TABLE II. PARAMETERS OF THE M/M/1 SYSTEM  Parameters Cache in Proxy '? The average utilization rate  of each MDS '  0P The idle probability  of each MDS '  sL The average length of the waiting user requests  ' qL The length of the cache queue in the MDS  ' qW The average waiting time '  sW The mean residence time of each user request  ' nP The waiting probability of each user request  It can be seen that the load of the one cache queue in Figure 3-(a) is divided into c equal parts each of which is possessed by one queues in Figure 3-(b). Then ' c  ?? ? . To further compare the performance, the other parameters between Figure 3-(a) and Figure 3-(b) are set as the same.
+
+Especially, we set ? =0.9, ? =0.4/minute, c=3, then the performance of the MDS cluster with the schedule policy that the user request are cached in the proxy server is shown in the Table 3.
+
+c-1 k c -1  k=0  n 0n-c  s q q n 02 n=c+1  q s  1 1 1= ,P =[ ( ) + ( ) ]c k! c! 1- 1P = ( ) ........( )  c!c ( )L =L + ,L = (n-c)P  !(1 )  W = , W =   n  c  q s  P n c  c P c  L L  ? ??? ? ? ? ? ? ?  ? ? ? ? ?  ? ?  ?  ? ?  ? ?  ? ?? ? ?? ?? ? ? ??  ?  ?  ????????  ' ' ' ' ' ' '   ' ' ' ' '  ' '  ' ' '  ' '  , 1 , (1 )  ,  1 ,  n  n  s q  s q  P P  L L  W W  ?? ? ? ? ?  ? ? ? ? ? ? ?  ? ? ? ? ?  ? ? ? ? ? ? ?  ? ?  ? ? ? ? ? ?  ? ?? ? ?? ?  ?????!"??  If there is only one MDS in the system, then the MDS service can just be modeled as one M/M/1 queue system, no matter it adopts the proxy cache policy or the MDS cache policy. However, if we do not increase the hardware configuration of the MDS, e.g. ''? =0.9 and ''? =0.4/minute, then ''? =2.25 > 1. Then the system cannot resolve the user requests. On the one hand, it can be resolved by increasing the number of the MDSs, just like those shown in Figure 3, which means that multiple MDSs can improve the performance of the MDS cluster. On the other hand, it can be resolved by increasing the service efficiency of the MDS, where the value of ?  should be increased. Therefore, by resetting the parameters of the MDS, e.g., ''? =0.9 and  ''? =1.2/minute, the performance of the system with one MDS is shown in Table 4 according to formula 10.
+
+TABLE III. PERFORMANCE OF MULTIPLE MDS SERVICE  Parameters Cache in Proxy Cache in MDS  0P vs.
+
+'  0P 0.0748 0.25 (each MDS)  nP vs.
+
+'  nP 0.57 0.75  qL vs.
+
+'  qL 1.7 2.25  sL vs.
+
+'  sL 3.95 9  qW vs.
+
+'  qW 4.39 (minutes) 10 (minutes)  sW vs.
+
+'  sW 1.89 (minutes) 7.5 (minutes)  TABLE IV. PERFORMANCE OF ONE MDS SERVICE  Parameters Values  Idle Probability ''  0P 0.25 Waiting Probability of User  Request ''  nP 0.75  Average Length of the Cache  Queue ''  qL 2.25  Average numbers of the User  Requests ''  sL 3  Average Waiting Time ''  sW 2.5 (minutes)  Average Service Time ''  sW 3.33 (minutes) `  It is shown that sW < ''  sW < '  sW , which means the performance of system can be improved by enhancing the computing performance of the MDS, or by increasing the number of the concurrent service MDSs. However, the computing performance of the MDS is confined by the limitation of the hardware configuration. Furthermore, we can get better performance by adjust the scheduling policy,     where the proxy schedule policy can attain the best performance.
+
+
+
+VI. CONCLUSIONS To improve the scalability and performance of the object-  based storage system, an elastic replication strategy on metadata has been designed.  The physical nodes and the logical elements in the object-based storage system are modeled in a communication model, based on which, the replication environment and the hot degree of the meatadata are defined and described, as well as the dynamic replication mechanism of the metadata across the MDS cluster. Through the analysis and evaluation, the elastic replication strategy with multiple MDSs can improve the system?s performance.
+
+Furthermore, with the same numbers of the MDSs, the schedule policy can further enhance the performance.
+

@@ -1,0 +1,222 @@
+Blending SQL and NewSQL Approaches  Reference Architectures for Enterprise Big Data Challenges
+
+Abstract?As it becomes ever more pervasively engaged in data driven commerce, a modern enterprise becomes increasingly dependent upon reliable and high speed transaction services. At the same time it aspires to capitalize upon large inflows of information to draw timely business insights and improve business results. These two imperatives are frequently in conflict because of the widely divergent strategies that must be pursued: the need to bolster on-line transactional processing generally drives a business towards a small cluster of high-end servers running a mature, ACID compliant, SQL relational database; while high throughput analytics on massive and growing volumes of data favor the selection of very large clusters running non- traditional (NoSQL/NewSQL) databases that employ softer consistency protocols for performance and availability.
+
+This paper describes an approach in which the two imperatives are addressed by blending the two types (scale-up and scale-out) of data processing. It breaks down data growth that enterprises experience into three classes- Chronological, Horizontal, and Vertical; and picks out different approaches for blending SQL and NewSQL platforms for each class. To simplify application logic that must comprehend both types of data platforms, the paper describes two new capabilities: (a) a data integrator to quickly sift out updates that happen in an RDBMS and funnel them into a NewSQL database, and (b) extensions to the Hibernate-OGM framework that reduce the programming sophistication required for integrating HBase and Hive backends with application logic designed for relational front ends. Finally the paper details several instances in which these approaches have been applied in real-world, at a number of software vendors with whom the authors have collaborated on design, implementation and deployment of blended solutions.
+
+Index Terms? Databases, SQL, NoSQL, NewSQL, Big Data, Clustering.
+
+
+
+I. INTRODUCTION A realization that distributed databases have to make a  choice between maintaining strict consistency (ensuring ACID [7] updates) and being highly available (tolerating outages) produced an impetus a few years ago to create a new breed of clustered databases. In contrast to a traditional database or RDBMS[13][21][22][23] that implicitly delivers ACID transactions behind a SQL[7] interface, the new clustered ?NoSQL?[6] databases target high levels of availability by admitting eventual consistency updates. Applications using these NoSQL clusters take on some burden of ensuring correctness in presence of outages, but in return are able to add performance and capacity by adding new nodes. In recent years some new clustered databases have  emerged; these NewSQL[17] alternatives seek to provide the familiar relational SQL veneer and sensible consistency guarantees by introducing appropriate constraints on update transactions ? such as requiring that a transaction affect entities that are proximate, or disallowing transactions of indefinite span.
+
+To an enterprise that is dealing with the Big Data challenge of information volumes and velocities that compound at brisk rates, these alternatives pose a weighty choice. On one hand, the enterprise must maintain, or even further consolidate its RDBMS investment by beefing up the processing power of the hardware it runs on and expanding the capacity of managed  storage to which the processing hardware connects. On the other hand, it can embrace NewSQL ? undertake large and disruptive changes in platforms and practices to raise performance and capacity through clustering. What is most difficult in moving towards the NoSQL/NewSQL alternatives is the change in data model and the revamping that it forces upon business logic, which previously dealt with stable, well- encapsulated relational abstractions. Additional considerations such as power efficient, cost efficient, and time efficient expansion further complicate this decision.
+
+This paper offers a best of breed approach. It is developed on the basis of consulting that the authors are called upon to provide to a number of large software enterprises. The authors are in a software solutions expertise team at an infrastructure platforms company, and their role is to map high level business requirements of its customers to software engineering and performance requirements, and to produce reference implementations that can be evaluated, enacted, and adopted quickly by the customers. These customers? challenge is, in essence, how to systematically combine the best aspects of SQL and NoSQL/NewSQL alternatives into hybrid solutions that provide the scalability and agility of the clustered approaches without giving up the robustness and simplicity of having their mission critical data managed by mature, rugged, relational databases. The paper outlines different choices for merging SQL and NewSQL processing that the authors have conceptualized and pilot tested on behalf of and in partnership with the customers.
+
+The approaches described in this paper have allowed the customers to embrace NewSQL options swiftly without risk of disrupting their existing RDBMS based transactional activities such as purchasing or sales that are vital to business success.
+
+At the heart of the blended approaches is a basic observation: that it is generally possible to maintain a legacy approach (using conventional, RDBMS based, SQL applications) for the slow growing demand, while ushering NoSQL/NewSQL based processing for the rapidly escalating performance and storage capacity demands. An expectation implicit in such blending is that the two styles of processing can coexist -- provided that synchronous interactions between the two are made rare. In sections 2-4 we develop this divide and conquer approach by putting forward the notion that business information can be viewed as experiencing primarily one of three typical dimensions of growth: through time or sequence based accumulation, through growth in independent detail, and through growth in integral detail. We call these categories respectively chronological, horizontal, and vertical; and describe how the principal dimension of growth motivates the choice of different reference architecture for blending an appropriate NoSQL/NewSQL solution with a corresponding in-memory or disk-based RDBMS. To support blended operation, the authors have developed implementation aids that convey data and operations across the blended parts, which are described in section 5. Section 6 describes adoption cases of these reference architectures supplemented by performance data, and section 7 captures continuing work.
+
+DOI 10.1109/CyberC.2013.34     Section 8 concludes.
+
+For simplicity, we use the term NewSQL in the rest of the  paper as an inclusive term to refer to a clustered, non-RDBMS system where the distinction between NoSQL and NewSQL is not important.
+
+
+
+II. GROWTHS: CHRONOLOGICAL, HORIZONTAL, VERTICAL The growth of information that businesses experience, and  which they struggle to handle with conventional SQL databases, is multi dimensional. To be sure, the dimensions in which growth happens are not completely orthogonal; just as the volume of traffic in a city grows in tandem with the growth of its population, a growth in the number of employees or customers frequently occurs in conjunction with new products, services, or relationships a company pursues. As it grows, a modern city does not simply expand its payroll and ask each employee to perform any or all services; instead, it refines its service delivery methods and hires and trains employees in those methods so that the diverse functions of enforcing law, controlling traffic, running trains and buses on time and so on adapt to divergent requirements in each aspect of growth. In a similar way, it becomes more practical for a business to handle the overall information increase by recognizing the principal dimension of its growth and then selecting the SQL, NewSQL, or a hybrid approach that solves it.
+
+We find that most businesses experience the growth of data volume in three principal ways. We call these principal ways Chronological, Horizontal, and Vertical; and describe them in separate paragraphs below. With this classification in place, we then propose in ?4 how a different cookie cutter architecture can best meet the needs of a business whose data volume growth maps to one of these categories.
+
+Chronological Growth: We define this as the data growth due to data accumulation over days, months and years. A typical example would be detailed call records in Telecom billing system. For a middle-size province, call records for a month range into billions in number and terabytes (TBs) in size.
+
+Such accumulation is rarely significant to transactions that follow, but powerful as a data mine for planning and expansion.
+
+Horizontal Growth:  Horizontal growth usually arises from new services or processes introduced in an enterprise to meet its new business needs. A hospital information system may introduce a new process that digitizes all medical images and integrates them into clinical work flow. The resulting dramatic data increase would be a poor fit for an RDBMS and the new procedures may destabilize current systems. Instead the new varieties of semi-structured information can be housed and processed via NewSQL technologies.
+
+Vertical Growth:     Vertical growth refers to data expansion due to rise in business scale and complexity. For example higher focus on environment drives power plants to improve power transmission and consumption efficiencies ? leading to more sensors, frequent sampling, etc. The resulting need for highly concurrent real-time processing can easily choke an RDBMS and require fresh approaches for handling smart meter data differently from other relational data.
+
+The above description is qualitative. For a quantitative feel, below we tabulate the differences among the three categories of business scenarios in table 1. The radar chart below the table depicts how we rank these three business data growth scenarios along five measures of complexity.
+
+
+
+III. BLENDING RELATIONAL- NON-RELATIONAL APPROACHES  It is common to see the following three approaches depicted in Figure 2, used to process data in most enterprises:  ? Businesses typically employ a relational DBMS such as Postgres to perform online transaction processing (OLTP) and online analytical processing (OLAP) or decision support activities. In using a relational DBMS, information arising from business operations -- such as purchasing, sales, hiring, etc. is integrated into relational structures transactionally, and made available for SQL language based and highly optimized analytics [10]. The panel on the left in Fig. 2 depicts the use of relational processing.
+
+? A common approach for many businesses facing a deluge of new processing demands which make it impractical to wait for lengthy transformations, is to employ non-relational frameworks such as Hadoop [2] to distribute processing across many machines. Since data cannot be pre-parsed for efficient analytics, in general, this approach requires batch mode execution for long running queries. This is depicted in the middle panel in Fig. 2.
+
+? Where data arrives continuously ? as in stock ticker feeds, smart meter streams, and many types of micro-transactions such as short duration call charging in cellular telecom activity, neither relational nor batch-mode processing are adequate for analyzing data in real time. Streaming analytics ? in which data is operated upon ?in stream?, and stored for fast random access, is used in such applications. This is shown in the right end panel in Fig. 2. Real time response is the critical requirement in a system that needs to detect threats, fraud, outages, etc. and react instantaneously. A common technique for keeping latency low is to use memory based processing ? with the use of a clustered in- memory data store (Redis, Memcached, etc.) or alternatives such as the recently proposed Shark-Spark [26] system.
+
+TABLE I CHRONOLOGICAL HORIZONTAL VERTICAL Data Velocity increase Steady increase  Order of magnitude  Half an order of magnitude  Typical Dataset Volume 10-100 TB 100-1000 TB 1-10 TB  Attribute types variation  Almost no variation  Specializations lead to high variation  Modest variation from time to time  Transactional Complexity  Small, simple updates.
+
+Many updates focused on a few entities  Complex multi- entity transactions  Entanglement between business logic and datamodel  Quite easy to redesign applications  Moderately easy to rewrite applications  Considerable redesign required if representation changes.
+
+Figure 1: Data growth categorization   Data Velocity  Dataset  Volume  Att r. Variat ionTransact ion Complexity  Logic complexity  Chronological Horizontal Vertical     Fig. 2 also sketches idealized flows, sho arrows (?1?, ?2?, and ?3?) between the thr processing. In ?4, we propose several templ such flows, and we call them reference vision articulated by the numbered arrow emphasize respectively: (1) As shown in flo data can often be handled in a batch analytic Hadoop or a NewSQL cluster using a system[15], (2) Summaries and other aggrega batch analysis can be fed back into an RDB flow 2, and (3) once a high throughput, low- handled streaming data to perform cr transformations (e.g., fraud detection, readjustments, etc.), it can move on into st structured representations for batch or rela along flow 3. We now proceed to ?4 for a best to unify these styles of processing for th of growth discussed in ?2, without introd inconsistencies from a multiplicity of repres processing frameworks.
+
+
+
+IV. COOKIE-CUTTER REFERENCE ARC For the three types of growth that we outli  4.A through 4.C propose templates in NewSQL approaches combine to handle th scale-up and scale-out data processing needs ?4.D summarizes the strengths and weakne template architectures, and ?4.E presents approaches described in ?4.A through ?4.C.
+
+A. Reference Architecture 1: In Memory Dat  and Caching (RA1) When much of the volume and complex  due to organic factors, as in the vertical gro difficult to obtain scalable performance in a r by range partitioning (across rows) or by spl into narrower tables that each contain a subs from the original table. Even though expli difficult, in many situations one can take reality that a subset of data tends to be p  Figure 2: Data types and flows in large-s  Figure 3: Referen  own in numbered ree modes of data lates for achieving architectures. The s in Fig. 2 is to  ow 1, high volume s system ? such as a distributed file ates obtained from BMS as shown in latency cluster has ritical checks or annotation, price tructured or semi- ational processing discussion of how he three categories  ducing the risk of sentations and data  HITECTURES ined in ?2, sections which SQL and e tension between brought out in ?3.
+
+esses of the three variations on the  tabase Processing  xity growth arises owth category, it?s relational database litting a wide table set of the columns icit partitioning is advantage of the  popular. Now, the  popular subset of data may no and therefore it may not be pos conventional RDBMS (element full dataset as a single datab available operation potentially or transaction execution. T performance, we introduce a da layer (element B in Fig. 3) w memory-based caching of pop reduce the aggregate load on A from saturating. Such caching datastores such as MemcacheD object or data grid solution [11]  Fig. 3 also shows an optiona In many business scenarios ex possible to find operations in and durability guarantees can b data due to machine failure is essential (3) simple but very hi as home-location-register transa dominate, and, (4) soft real-t modeling queries dominate a BASE database or a NewSQL a distributed key-value store s divert a significant fraction ACID/RDBMS assets, and res also be cached (at element B) Implied but not explicitly show a multitude of high freque overwhelm a traditional RDBM first into a distributed memo filtering into a NewSQL datasto a traditional RDBMS on an asy  The overall strategy in Fig instead of partitioning the high caching layer to speed up trans analytics operations to a BASE ?6.1, we describe the adoption services software vendor and th B. Reference Architecture 2: Se  OLTP and OLAP processin  scale enterprise   nce Architecture 1  ot be identifiable ahead of time, ssible to divide data statically. A t A in Fig. 3) therefore hosts the base, delivering consistent and at the expense of speedy query To ameliorate the toll on atagrid ? memory based caching whose purpose is twofold: use ular rows from the dataset, and A (i.e., the RDBMS) to keep it g may be provided by caching  DB [18], MemSQL [19]; or by an ].
+
+al NewSQL cluster as element C.
+
+xperiencing vertical growth, it is  which (1) absolute consistency be relaxed a little as small loss of tolerable (2) high availability is igh frequency transactions (such actions in the TATP benchmark) time, ad-hoc data mining and  analytics. In these scenarios, a solution like Hive[3]/Hadoop or such as HBase can be used to n of work away from the sults from such processing can in order to expedite processing.
+
+wn in Fig. 3 is data arriving from ency sensors that can easily  MS. In Fig. 3, such data would go ry cache for rapid sifting and ore, and then get synopsized into  ynchronous basis.
+
+g. 3 can be summed up thus: hly interconnected dataset, use a sactional processing; and offload E/NewSQL scale-out solution In n of this approach by a telecom he results obtained.
+
+eparating Data Ranges for  ng (RA2)     When the primary cause of data vo chronological, it is possible to take advanta partitioning. As time passes, the locus of tra moves forward, while historical data from quarters, or years becomes increasingly ?r same time, there may be a need, from time some rare updates to historical data ? for i error corrections and perhaps to effect new that may be retroactive. Keeping all historica access and ready-to-update format sho unnecessary in such a system. Fig. 4 s decomposition approach in which a tra provides home for the currently transactiona (path 1). A second, MPP[24]/NewSQL optimized for low latency and high warehousing delivers capability for OLA analytical processing (along path 2). The tr also forwards the rare updates to histor MPP/NewSQL cluster (along path 3). Sin active data remains in a traditional RDB incorporation of a new MPP/NewSQL Big serving OLAP function can proceed witho ongoing business information processing. M out of the RDBMS system should also k streamlined for rapid OLTP [16] processing.
+
+The data that is housed in the MPP/NewS limited to strictly historical data.  A transac snapshot of what is housed in the traditional R funneled into the NewSQL cluster on a be achieve soft real-time operational analytic created a tool that we call SQL2NewSQL syn made available to our business partners migration and transformation.
+
+The overall strategy in Fig. 4 can be sum that is essentially chronologically accretive pa just by time range but also in how mutable and therefore largely immutable informa guarantees become a very light burden. A pr which we were able to apply this strategy is d  An actual vendor whose identity we shall is a leading provider of internet services fo services operations such as GPS track scheduling. Scaling challenges with its initi based on commercial RDBMS led the vend NewSQL cluster to capture and analyze trave fuel use, based on a GIS[5] algorithm on platform. The algorithm divides a city into re  Figure 4: Reference Architectu  olume growth is age of time-based  ansactional updates previous months,  read-only?. At the e to time, to make instance, to record  w accounting rules al data in ready-to- ould be largely ketches a simple  aditional RDBMS ally active section database cluster, throughput data  AP[4], or on-line raditional RDBMS rical data to the nce the currently BMS system, the g Data cluster for out unsettling any igrating older data  keep it small and   SQL cluster is not ctionally consistent RDBMS system is est effort basis to cs. Our team has nc, which we have to facilitate such  mmed up thus: data artitions nicely not it is. For the older ation, consistency ractical situation in described below.
+
+mask as ?TransX?  for in-vehicle fleet king and vehicle ial implementation  dor to implement a el logs, freight, and  a Hadoop-HBase egions, and stores a  time-indexed history for routes those routes for each of the r conditions become available, th guidance on which route a dr region. Traffic analysis for an Xeon? E5) cluster completes in provides another example of the C. Reference Architecture 3: U  Disjoint Business Value (RA We next consider horiz  characteristic that we draw separability of processing. To hypothetical scenario in which retailing books introduces an say software.  Where the c distributing books, it now intro more detailed tracking system of tracking customers and pro online support for the software  Anticipating much faster gr software business, the comp friendly sales and distributio solution such as Cassandra bu and transaction processing s software on currently deployed processing that was previousl application package with a trad to use the traditional RDBMS processing that were performe continue; while new processi solution quite separably and co this type of hybrid solution is way. Over time, the NewSQL relaxed consistency Create-Rea operations with much higher traditional RDBMS can deliver  Underlying the separability approach of Fig. 5 is the sim business interactions are ac considerable information that for the actual business that get shopping for a widget, a cu through online catalogs, consum add or remove items from an o go on to the act of purchasing. E   ure 2  Figure 5: Referen  s taken and transit durations for regions. As statistics on traffic hey are used to provide real-time river should take through each entire city on an 8-node (Intel?  n less than twenty minutes. ?6.2 e use of this approach as well.
+
+Using RDBMS and NewSQL for A3) zontal growth. The essential  upon from this category is o illustrate, let us consider a  h a company in the business of entirely new product category,  company had one system for oduces an entirely different and for software ? including means  oviding them with updates and they purchase.
+
+rowth of data and activity in its pany implements a scale-out on system using a NewSQL  ut also supports common billing services for both books and d traditional RDBMS. All other ly implemented using a legacy ditional RDBMS also continues  S. In other words, the data and d using the traditional RDBMS ing is done using a NewSQL oncurrently. Fig. 5 depicts how achieved in a straight forward  L cluster could also be used for ad-Update-Delete (CRUD) style performance than that which a  r.
+
+of processing that motivates the  mple business reality that many ccompanied by generation of is of value but isn?t mandatory ts transacted. For instance while stomer may browse or search me or produce product reviews, online shopping cart and finally Evidently it is important that the   nce Architecture 3     purchase transaction must result in a consi update into a business?s receivables and its but the valuable information generated by th shopping activity can be ingested into a re datastore for online analytical processing. Fo might only affect a few hundred bytes in a system, the shopping and reviewing act generate megabytes of data (including multi sent to a NewSQL OLAP store.
+
+D. Strengths and Weaknesses  Table 2 summarizes the principal strength of the above three approaches.
+
+RA1 for Vertical Growth Strength ? Little or no reorganization  approach consists of using ? Reuse of  transient data in  spill/fill against temp-table ? Supplementing an in-mem  with a NewSQL cluster ca scalability for complex, hig  Weakness ? Developer needs to ensure caching data store is emplo  ? While caching reduces RD sole back-end RDBMS c scalability, and requires a s  ? Logic redesign is requir store. Complexity varies coupling in the data.
+
+RA2 for Chronological Growth Strength ? MPP processing can scale  and support SQL interface.
+
+? SQL-like support in Pi  separate data ranges betwe decision-support logic keep  Weakness ? While it benefits fully f between information in its relational databases, it ma the other types of growth e  RA3 for Horizontal Growth Strength ? Smart separation of data a  subsets makes capacity add ? An enterprise keeps its exi  running over a RDBMS specializing to run over a B  Weakness ? Designer must be careful updates between tradition and BASE cluster.
+
+E. Variation on above Reference Architectur Minor variations to reference architecture  are discussed next with help of Fig. 6. Belo these variations and the pros-cons they repres  Vertical Growth: Instead of using a cac RDBMS (Fig. 3, ?4.A) Fig. 6.1 shows the a an in-memory database (IMDB[21]) for payments etc., and reflecting information as a NewSQL tier for other operations that don? guarantees. Where such decomposition is critical transactions gain high efficiency operations move to a more elastic platform.
+
+Chronological Growth: Fig. 6.2 adds to (Fig. 4) by periodically refreshing aggregates B into RDBMS using extraction logic ?C?.
+
+queries making limited use of historical data in this way without altering business logic.
+
+istent and durable inventory system,  he remainder of the elaxed consistency r a transaction that  an OLTP RDBMS tivities may well imedia files) to be  hs and weaknesses  n of data when the a caching data store memory rather than  espaces on disks mory ACID database an provide enormous gh volume analytics.
+
+e consistency when a oyed DBMS pressure, the can ultimately limit scale-up approach ed for a NewSQL with the degree of  e to 100?s of nodes, .
+
+ig/Hive/HBase and  een transactional and ps transition simple.
+
+from light coupling s relational and non- ay not accommodate easily  as loosely connected dition easy.
+
+isting business logic while incrementally  BASE cluster.
+
+to minimize cross-  nal (ACID) system  res es described above ow we summarize sent.
+
+che in front of an alternative of using  charging, billing, synchronously into t need strict ACID possible, business while remaining  approach of ?4.B s of data in cluster Many interactive can be speeded up  Horizontal Growth: Fig.
+
+departure from ?4.C (Fig. 5 supports both transactional and expectation that data divides in that are seldom accessed toget single node RDBMS is easier, a provisioning of cluster resource  These alternative approaches various partner companies.
+
+
+
+V. INTEGRATION A We next describe two softw  accelerate the adoption of refe ?4: (1) IDI (Instant Data Integ HBase Driver. ?5.A and ?5.B d A. Instant Data Integrator  This tool is also called by purpose -- SQL-to-NewSQL ?Extract-Transform-Load (ET changed data from a SQL da nearly instantaneously. It achie to extract changes that get com  (6.1) Ver  (6.2) Chron  (6.3) Hori Figure 6: Variations o  6.3 represents a significant 5). An MPP database cluster d analytic processing, under the nto categories (columns, tables) ther. Transition from traditional and uniformity simplifies elastic es.
+
+s are currently in evaluation with  ACCELERATION AIDS ware utilities that we created to rence architectures described in  grator) and (2) Hibernate OGM- escribe the two tools.
+
+another name that captures its Sync. It provides a streaming  TL)? capability for reflecting atabase into a NewSQL cluster eves this by parsing the redo log mmitted on the SQL side of the  rtical Growth  nological Growth  izontal Growth on reference architectures      fence. The changes are then transforme appropriate schema and then loaded into the N  As shown in Fig. 7, IDI consists of th Extractor Layer are modules, one for each database. We have currently implemented for IBM DB2 and Oracle databases; they exa and identify the data that changed, based o specification. By using the redo log on th removes the need for a developer to w cumbersome queries against voluminous data the relatively small changes over a giv Extracted changes are then transformed, agai ins in the Transformer Layer. As referenc simple ?Direct-Map plug-in? which is suffici data does not have to undergo a format tra vendor that authors work with is invited transformer module and plug it into the ID NewSQL interface, the IDI similarly provid load function in its Loader Layer. Presently plug-in modules for two very popular targ HBase store, and the other for the Hadoop fil and more are expected to become available in  In short, IDI is an extensible utility, modules for common SQL and NewSQL solu as a framework for identifying incremental ch and reflecting them on the other. Each soluti adopter can develop an Extractor, Transforme in easily to accommodate varying domain constraints, and to approach almost real-time side updates into the NewSQL cluster.
+
+B. Hibernate OGM-HBase Driver & ORM-H  The next tool (Fig. 8) we created consist that together make it easy to use common da SQL and NewSQL stores. One package exte OGM [12] family to include HBase; this is th HBase driver; the second is a utility that ad Hibernate, so that JPA-QL translates naturally  Let us summarize Hibernate and Hib background. The Hibernate framework an delivers mapping of data operations from oriented domain to the logical row-colu relational database domain. Hibernate libra transformations necessary for persisting o associations with one another and for search them automatically into/out of a relationa handles many commercial and open source  Figure 7: SQL-to-NewSQL sync o  ed into a target- NewSQL cluster.
+
+hree layers. In the h prominent SQL extractor plug-ins  amine the redo logs on the log format he SQL side, IDI write complex or asets just to extract ven time interval.
+
+in by a set of plug- e, IDI provides a ient when changed ansformation; each to create its own  DI. Finally, for its des for a modular y the IDI contains gets ?one for the le system (HDFS), n due course.
+
+with prepackaged utions. It is created hanges on one side on implementer or er, or Loader plug- requirements and  e reflection of SQL  Hive Dialect ts of two packages ata access logic for ends the Hibernate he Hibernate-OGM dds Hive dialect to y to Hive-QL.
+
+bernate OGM as  nd utilities library m Java?s object-  umn model of a aries take care of objects and their  hing and retrieving al model. It also databases through  needed SQL dialects. Ess application developers from semantic mismatch between business logic can remain unclu  For searching and retrieval query the backend store using Hibernate Search. Since Hive i optimizations we provide an mapping from JPA (Java Persis to Hive-QL.
+
+Hibernate Object Grid Mapp concept across to the case whe caching capability in front of a a natural extension to NewSQ capabilities supported out- Infinispan [14], EhCache [9], a have added the capability to t Hibernate OGM HBase driver.
+
+Since HBase and Hive are used NewSQL frameworks, the make it straight-forward for a deals with SQL data model NewSQL data model using Hib make further strides in building data grids, we will continue to m utilities.
+
+
+
+VI. R In this section, we desc  software and services vendor from ?4.A and ?4.B, and thei describes the first implemen describes the second, by Team TYDIC and Teamsun for the results.
+
+A. TYDIC Online Charging Sys TYDIC delivers software  companies serving several mil companies use its Online Cha usage fees for phone calls, mes real time. A typical transaction (e.g., a voice/video call, a 4G/3 sessionless call such as a te session call transaction on aver database. TYDIC?s traditional O consists of using a partitioned (IMDB). It suffered from (a) breaking latency targets (b) req rebalancing (c) cost and manag  overview Figure 8: Extens  sentially, Hibernate liberates having to worry about the  the two domains, so that the uttered and portable.
+
+l, by default an application can g a Hibernate component called is designed to do its own search alternate way of searching by  stence API) QL (query language)  ping (OGM) takes the Hibernate ere a data grid provides a cluster  data store; and thereby provides QL stores. The Hibernate OGM -of-the-box presently cover and MongoDB [20]. The authors target HBase by developing the  e among the most prominently e two packages in this category any MVC framework [25] that to extend easily to cover the  bernate. As JBOSS continues to g richer capabilities for targeting make matching changes in these  RESULTS cribe two situations in which rs have implemented solutions ir performance outcomes. ?6.A ntation by TYDIC, and ?6.B  msun. The authors are grateful to e permission to disclose these  stem (OCS) solutions to telecommunication llion subscribers in China. The arging System (OCS) to assess saging, and general browsing, in n applies either to a session call 3G/2G network access, etc.) or a ext or multimedia message. A age incurs over 30 actions in the OCS shown in top half of Fig. 9 in-memory (relational) database lot of cross partition activity,  quiring on-going partitioning and gement burdens of backing each   sions to Hibernate     IMDB node with a secondary.
+
+OCS requirements correspond to vertical Bottom half of Fig. 9 depicts the blended Coherence based data grid solution cac RDBMS in memory, distributed across a clu Load balancing is automatic. The actual dat only machine backed by a secondary node. F frequency but simple transactions, the v response time below 50ms, at 200,000 transa on a cluster of five Intel? Xeon? E5 system OCS operations are stored into the asynchronously for future data mining (not sh  The workload and configuration data Table 3 and performance in Fig. 10. The so using 10 concurrent clients each issuing call Each call contains over 30 operations.
+
+Fig. 10 shows performance data for one hour period ? with an average calls-per-seco of 800 ? translating to 10*800*30 = 240,00  Figure 9: TYDIC OCS architecture  Figure 10: TYDIC OCS2.0 performan  l growth category.
+
+d solution. Oracle ches a traditional uster of machines.
+
+tabase node is the For real-time, high endor achieves a actions per second ms. The results of NewSQL cluster  hown in Fig. 9).
+
+is summarized in olution was tested l requests to OCS.
+
+e client over an 8 ond (CPS) volume 00 transactions per  second on the OCS applicatio utilization of 30%. The laten between 20 and 30 millisecond in Fig. 10, which is a tenth of th   CPU        5 x Data nodes, each  GHz) with 128 GB Network 1x Cisco 1 Gbps swi Operating System  Red Hat Enterprise L  JVM 1.7.0_05-b05 ?XX+U XX:MaxGCPauseMi  Coherence Version 3.7.1, offhe backup, Async write threads for extend pr for JPA (Hibernate).
+
+Table 3: Hardware and sof B. Teamsun  We discuss a usage case in platform for a freight logistics integrated IT Service Provider i  Previously the customer us high end RISC machine to perf in primary-key based retrieval The need grew to 50 billion re queries (scan intensive), to be h can work on data that is recent e  For this chronological grow in Fig. 11 is being deployed. Th continues to handle the on-th feeds changes into an HBase c sync utility described in ?5.
+
+Hibernate-OGM for Hive and even the simple analytics quer RDBMS creates significant h evaluate its effectiveness, we u typical workload scenarios: Scenario Description Data Loading (A)  Load data into H cluster via the H  Simple Queries (B)  Retrieve by prim and verify match RDBMS, HBase  Fixed Composite Queries (C)  3 query mix: com over 6 attributes  Ad-hoc Complex Queries (D)  Arbitrary selectio multiple attribute  Table 4: Us  ? evolution  ce results  ?????	?  ??Teamsun  on cluster. We observed a CPU ncy for transactions fluctuated ds as shown by the second graph hat required by the customer.
+
+h: Intel? Xeon? E5-4650 (8C, 2.7  tch Linux 6.2,  64 bit  UseG1GC  - illis=50 ?Xmx8g  eap storage for both primary and e, 8 threads for cache service, 24 roxy, and 20 DB connection pool  ftware configuration  n a custom content management customer of Teamsun, a leading in China.
+
+sed a commercial RDBMS on a form transactions that abounded on a 2.5 billion records dataset.
+
+ecords and much more complex handled with latencies ?? 10s, but enough (less than a minute old).
+
+wth mode, an architecture shown he original commercial RDBMS  he-go business transactions and cluster using the SQL2NewSQL .A. Analytics queries use the HBase (see ?5.B). Removal of  ries away from the commercial headroom at the RDBMS. To used a mix of the following four  Metrics HBase  Base API Average  speed across different dataset sizes  mary key h across e  Average query time  mparisons and ranges.
+
+Total execution time across entire dataset.
+
+ons over es  Total execution time across entire dataset.
+
+ser scenarios  ? ?s solution architecture     The HBase cluster is powered by 8 Intel? Xeon? E5 machines. The results from the above evaluation are as tabulated below: Scenario Original (RDBMS only)  solution Composite solution  (A) Not applicable 16,600 records/second (B) 1 second 0.05 seconds (C) 1-2 seconds. 1 second (D) Not supported < 5 seconds  Table 5: Performance comparison results The solution is in production use, and the RDBMS server  has much needed headroom freed up for continued growth.
+
+C. TYDIC Unified Service Platform (UCS)  TYDIC, introduced in ?6.A also provides a unified service platform (USP) for another telecom services vendor. USP supports scale out processing with a horizontal growth pattern.
+
+A typical use is for subscribers to deposit into their accounts, prepay, or pay-on-demand ? causing large numbers of simple transactions and XML-format log data rate of 2 TB/day ?which was previously log-trimmed away. The vendor now requires log retention for a year, and targets continuous analysis over full log data with  response time in minutes. RA3 (Fig. 3, ?4.C) approach is used for USP: MySQL handles the transactions, and MongoDB stores XML logs. Implementation is ongoing and performance results are expected near end of 2013.
+
+
+
+VII. CONTINUING AND FUTURE WORK The solution vendors with whom we partner in developing  the reference designs for big data are experiencing ever more disparate requirements being placed on handling of data.
+
+While the classification of growth modes into vertical, chronological, and horizontal is useful in tailoring their blended solutions, the growth in the volume, velocity, and variety of information stresses each of the solutions we have described. In particular, expectations continue to trend towards near instantaneous operation of all phases?acquisition, organization, and analysis of information. Whether it is: a) a deluge of data captured by millions of high frequency sensors and sent into a complex event processing engine; b) clickstream and text data from numerous computers against which sentiment analysis must be performed hundreds of times a second; c) thousands of update transactions whose results must become available every second for ad-hoc operational analytics, the problems that must be solved demand a combination of in-memory and massively parallel computing. Our immediate next steps are to work on blending SQL IMDBs with distributed, fault-tolerant, memory-centric NewSQL stores including such systems as the Shark-Spark framework. A second challenge arising in very high volume data processing is in highly scalable but lower cost object storage systems. We are formulating mixed approaches in which a modern distributed store (such as GlusterFS or Ceph) is used in combination with high performance local SSDs, in a policy-based storage tiering framework.
+
+
+
+VIII. CONCLUSION Through tremendous engagement with enterprise ISVs and  end users, we categorized the principal growth in enterprise into Chronological, Horizontal, and Vertical and accordingly proposed 3 reference architectures blending traditional and non-traditional to solve the challenges. We also developed two software utilities as simplification aids to accelerate the transition to new architectures. The reference architectures described in this paper have met the flexible solution needs our ISV partners articulated, and we have stepped up our  collaboration with partners in order to target the aspiration for near real-time operational analytics in high data volume environments. Big data is emerging not merely as a significant challenge for infrastructure redesign, but also as a huge, transformative opportunity for signature innovations in information storage and retrieval.
+
+
+
+IX. REFERENCES [1] Apache HBase: http://hbase.apache.org [2] Apache Hadoop: http://hadoop.apache.org/ [3] Apache Hive: http://hive.apache.org/ [4] P. Boncz, S. Manegold, M. Kersten, Database Architecture  Evolution: Mammals Flourished long before Dinosaurs became Extinct. PVLDB 2(2): 1648-1653 (2009).
+
+[5] G. Bonham-Carter, Geographic information systems for geoscientists: modeling with GIS. Computer methods in the geosciences, volume 13, 1994.
+
+[6] R. Cattell, Scalable SQL and NoSQL data stores, ACM SIGMOD Record, 2010, 39(4): 12-27.
+
+[7] C. J. Date, H. Darwen, A Guide to the SQL Standard: A user's guide to the standard database language SQL, Fourth Edition, Addison-Wesley, ISBN 0-201-96426-0, 1997.
+
+[8] J. Dean and S. Ghemawat. MapReduce: Simplified data processing on large clusters. OSDI, 2004.
+
+[9] EhCache: http://ehcache.org/ [10] T. Hastie, R. Tibshirani, J. Friedman, The Elements of Statistical  Learning: Data Mining, Inference, and Prediction, Springer Publishing Company, New York, NY, 2009.
+
+[11] A. Heydon, R. Levin, Y. Yu, Caching function calls using precise dependencies. SIGPLAN Not. 35 311-320, 2000.
+
+[12] Hibernate: http://www.hibernate.org/ [13] IBM DB2: http://www-01.ibm.com/software/data/db2/ [14] Infinispan: http://www.jboss.org/infinispan/ [15] P. Jayaraman, A Distributed File System (DFS), M.S. Thesis,  University of Florida, 2006.
+
+[16] A. Kemper, T. Neumann. HyPer: A Hybrid OLTP&OLAP Main  Memory Database System based on Virtual Memory Snapshots, ICDE 2011.
+
+[17] N. Leavitt, Will NoSQL databases live up to their promise?
+
+Computer, 2010, 43(2): 12-14.
+
+[18] MemcacheDB: http://memcachedb.org/ [19] MemSQL: http://www.memsql.com/ [20] MongoDB: http://www.mongodb.org/  Oracle RAC: http://www.oracle.com/ [21] H. Plattner, A. Zeier, In-Memory Data Management.
+
+[22] PostgreSQL: http://www.postgresql.org/ [23] R. Ramakrishnan, J. Gehrke, Database Management Systems,  2002, ISBN 0072465638.
+
+[24] B. Ramesh, T. Kraus, T. Walter, Optimization of SQL queries  involving aggregate expressions using a plurality of local and global aggregation operations: U.S. Patent 5884299.
+
+[25] T. Ting, M. Rao, C. Loo, A novel approach for unit commitment problem via an effective hybrid particle swarm optimization, IEEE Trans. Power Systems, 2006, 21(1): 411-418.
+
+[26] M. Zaharia, et al., Resilient Distributed Datasets: A Fault- Tolerant Abstraction for In-Memory Cluster Computing. NSDI 2012.
+

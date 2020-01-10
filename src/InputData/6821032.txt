@@ -1,0 +1,96 @@
+Adaptive Application Master for Elastic Web Server Farms for Cloud based on Hadoop YARN
+
+Abstract?Pepper presented, a novel, simple, low cost and elastic way of serving cloud platform. It is built by leveraging Hadoop and Zookeeper. The design of Pepper demonstrates its ability to run web applications in isolation and scale dynamically on a cluster. Pepper was designed using older version of Hadoop and hence has fewer limitations when compared with YARN.
+
+This paper discusses limitations of running Pepper over YARN and presents alternative approaches.
+
+
+
+I. INTRODUCTION  Pepper [1] was a trend setting platform as it supported the capability to run web server farms over Hadoop [4] Mapreduce [6]. It provides scalability, isolation, availability and self healing capabilities at low cost. It has an SLA(service level of agreement) of 2 minutes and can process requests in order of terabytes over a day and multiple thousands of request per second. Pepper has been in production for more that four years, serving most of the feed processing requirements at Yahoo!. Hadoop YARN [2] has undergone a complete change in terms of resource utilization and job scheduling when compared with Hadoop V1. One of the major goal with YARN is to have global ResourceManager (RM) [5] and a per-application Application Master (AM) [3].The AM is responsible for accepting job-submissions, negotiating the first container for executing the application specific Applica- tionMaster and provides the service for restarting the container of AM on failure. A typical Hadoop job will launch AM which internally starts multiple map reduce jobs and monitors them.
+
+Pepper model requires launching one map per job per web application and hence requires one AM. Hence, Pepper and other web server farms start as many number of AMs as maps, putting the same load on RM like older Hadoop versions, thereby not leveraging YARN functionality. It was observed that RM becomes unresponsive due to multiple AMs. Web farms run on shared clusters where slots and resources are limited. One has to build a platform to optimize utilization of slots as well as memory beside providing scalability, isolation and availability. We will discuss about pre YARN Pepper implementation and improvements to be made, to make it work on YARN Hadoop. The discussion, though limited to Pepper, can be applied to any web server farm providing services on top of Hadoop. Pepper had to be rewritten for YARN to effectively utilize resources and memory. We will use this terminology for Pepper to represent other web server farms applications as well.
+
+
+
+II. OLD DESIGN  Pepper uses Hadoop computational nodes to run web servers. It uses WebARchive (WAR) for packaging web applications, so that it can be easily deployed in a jetty server. Web applications are copied on to Hadoop Distributed File System (HDFS) and a web server is started per jetty instance in the form of a Hadoop job.To keep things simple and guarantee isolation, it is defined as follows: 1 Hadoop job = 1 Map task = 1 Web server  Applications are deployed onto the grid using the Job Manager. Map web engine starts web servers on demand that can come up on any of the Hadoop nodes. On successful bootstrapping, web applications register themselves to a cen- tral registry, maintained in ZooKeeper. Proxy Router acts as a router which looks up the registry and redirects each request to the appropriate web server (decided randomly to distribute load), that will serve the request in a synchronous manner.
+
+A. ZooKeeper(ZK)  ZK [8] is a high performance coordination service for distributed applications. Pepper uses it as a central registry.
+
+The information, including the host and port number of the current tasks that run the web application is maintained in ZK. ZooKeeper is chosen because it is distributed, consistent and high performing. ZooKeeper can scale up to hundreds of thousands of transactions per second on a majority read systems because of its local reads and lock-free properties.
+
+B. Job Manager(JM)  This component exposes an API to deploy a web application and copies it onto a dedicated location in HDFS. Job Manager adds the web application name as a node in the ZooKeeper hierarchy. The number of web servers to run with an optional schedule, is associated as metadata of the node (Figure 2).
+
+It then launches the corresponding number of Hadoop jobs.
+
+Job Manager registers a watcher with ZooKeeper to receive notifications, in case any of the servers become unresponsive.
+
+It also runs a monitor thread that periodically checks if, the number of web servers is consistent with the number configured in ZooKeeper. If the number of servers on Hadoop are more, it kills the difference number of jobs running the web server. And if the number is lower, it spawns new jobs.
+
+DOI 10.1109/CLOUDCOM-ASIA.2013.34    DOI 10.1109/CLOUDCOM-ASIA.2013.34     C. Map Web Engine  The implementation of a Hadoop map task is as follows.
+
+It starts, monitors, and then stops an embedded Jetty web server. Jetty is chosen because it is optimized for running on embedded mode, supports graceful shutdown and also because it is already being used in Hadoop. Our design is not tightly coupled to Jetty and it can be swapped with any web server implementing the Servlet API like Tomcat or Grizzly. A ZooKeeper session is opened for the lifetime of the web server.
+
+A free port from a predetermined range is selected and the server is started. The server registers itself with the ZooKeeper by creating a hostname:port .Ephemeral node is automatically deleted on the termination of the session (Figure 2). The server also registers a shutdown hook for graceful shutdown on receiving a job kill signal. Since the web application can run on any machine in the cluster, the generated log files are spread across the grid. A custom log4j appender is deployed to each web farms to rolls over the logs, onto a common location in HDFS. Centralized Log Management [7] is used to collect and parse logs.
+
+D. Proxy Router(PR)  This is the single entry point of the system where clients send their requests. It listens on a unique port and is seen by clients, as a standard web server. On receiving a request, Proxy Router gets the list of available web servers (hostname:port) that can run the web application from ZooKeeper hostnames node (Figure 2). It then forwards the request to one of the available web servers. It has a retry mechanism to handle the race condition, in case the web server has just gone down or busy.
+
+
+
+III. PROPOSED APPROACH  The client interface of Hadoop YARN hasn?t changed much in comparison to Hadoop V1. Beside extending it?s processing model in YARN, Hadoop has modified its resource utilization model. YARN has global ResourceManager (RM) and a per- application Application Master. A good way to optimize the YARN cluster usage is by minimizing number of AMs. Higher the number of AMs, higher will be load on the cluster and consequently the memory usage. As discussed earlier, Pepper launches an AM for each web server, hence not leveraging YARN upgraded functionality.
+
+We will propose multiple solutions to implement Pepper on YARN Hadoop so as to optimize memory and resource utilization. The focus of discussion will be on web farms and different approaches to launch job on YARN. To effectively utilize resource, fewer number of AMs must be launched and at same time preserve web farms scalability, isolation, availability and self healing functionality.
+
+Other Pepper components like Job Manager, Zookeeper integration, Map Web Engine,Proxy Router etc. remain the same.
+
+We will use ?n? to represent average number of web farms needed by feeds processing workflow and ?w? to represent total number of feeds processing workflow. There will be a total of w * n web farms(jetty server, Hadoop maps) running.
+
+A. Multiple map tasks  In this approach, a single AM is started with multiple maps.
+
+A Hadoop job is submitted with ?n? maps for each feed processing workflows. This is done use FileInputFormat as InputFormats, and passing ?n? dummy input files as input to start a single job with ?n? mappers.
+
+Each map is a jetty server capable of serving requests for the work flow.
+
+1 Hadoop job = 1 AM = ?n? Map task = ?n? Web servers This is definitely better in terms of capacity utilization.
+
+It needs same number of AM as discrete workflow in the system( unlike traditional approach). Though the approach takes care of isolation and AM efficiency, it is not particularly good for maintainability, reusability, scalability and proper resource utilization. If the system wants to increase maps for an application, because of high load ( ex: events like the FIFA World Cup), it needs to start a new job with ?n? + ?p? maps, ( where p is the added maps) At that given point of time the map utilization of Pepper will be almost double. This approach has a another issue.If one of the tasks got killed multiple times because of feed issue or environment issue, the whole web farm for that workflow is down and whole feed processing will down for around 5 min i.e for getting notification, starting a job and registering to zookeeper.
+
+B. Uberized  With this approach each Hadoop job is configured to start mapper with AM, thus decreasing the memory needs. Both AM and web-farms(jetty server) use same JVM and hence the same memory. Though it has slight improvement in terms of memory, this approach still needs same number of AMs as web farms and thus putting the similar kind of load as in traditional approach.
+
+1 Hadoop job = 1 AM = 1 Map task = 1 Web server Total discrete AMs used are ?n?*?w?.
+
+C. Adaptive Application master(AM).
+
+Hadoop job is configured to start custom AM, that starts with in-built jetty server, whose IP address and port are registered in Zookeeper.Components of Adaptive AM are in illustrated Figure 1 and Figure 2 represents Zookeeper node for hierarchy.Custom AM starts initial set of maps(web-farms) needed for the workflow. AM custom web server listens over http protocol to allocate, deallocate web farms or kill the job. JM reads AM addresses for a given workflow from ZK and notify the AM to allocate/de-allocate i.e kill jobs. Feed processing requests come to Proxy Router(PR) which reads ZK to get the list of registered web-farms and directs the feed processing to one of the registered web farms. This approach adheres to the YARN approach where a single AM launches multiple Map(s)/Reduce and manage their life cycle. Resource and capacity utilization is maximum in this case. Following is how resource allocation looks like.
+
+1 Hadoop job = 1 AM = ?n? Map task = ?n? Web server Total discrete AMs used are ?w?.
+
+Figure 1: Components of Adaptive Application master(AM)  Figure 2: Zookeeper node for hierarchy Adaptive Applica- tion master(AM)
+
+IV. FEATURES COMPARISON We will present some of the Pepper features on YARN and  older Hadoop and see how much benefit we could get. Table-1 summarized features comparison of different approaches.
+
+A. Resource utilization  One of the important features of any web server farms is reduction in memory consumption. Memory utilization is important aspect when the farm grows or is using a multi tenant clusters. Memory utilization has been changed in YARN. Resource utilization occurs in terms of container of size 512 MB,. Each Map/Reduce or AM task will be allocated a memory in multiples of 512 MB. Memory required for web farms remains same for all approaches. An important issue to understand here is that more AMs will lead to increase in memory consumption.
+
+Figure 3 depicts the resource utilization by different ap- proach. Multiple map jobs and Adaptive Application mas- ter(AM) has higher memory utilization because it starts fewer number of AMs compared to other approach.
+
+Figure 3 : Memory is calculated for 75 feeds processing workflow with 12 average maps( total 900 web farms).Pepper workflow consumes 512 MB of heap size and 756 MB of phys- ical memory. AM runs with 512 MB of physical memory. So, Current implementation of YARN ,where minimum container size is 512MB.756MB is equivalent to allocated 1024MB of physical memory.
+
+B. Time to bring cluster up from scratch  This is one of the most important features of any web farm. i.e Time taken to bring back the web farm in case of catastrophic failure or after maintenance activity. Lower the time, better is the cluster efficiency.
+
+Here we discuss the total time needed to bring whole cluster up for the first time (from scratch) or in terms of a catastrophic failure. Clearly Multiple map tasks and adaptable AM approach bring the cluster up much faster (in ratio of number of map per workflow) as launching of maps happens in parallel for a given workflow.Adaptive AM is slightly slow compared to Multiple map tasks to because it has to start another jetty within AM. Traditional and Uberized approaches are comparatively more slower because they need to launch higher number of jobs and each job has only one map.
+
+Figure 4 : Time taken to start cluster of 900 web farms, 75 workflow, each running 12 web farms  C. Availability  This feature discusses the availability of web farms, in case of failure. Failures are bound to happen because of a     logical errors or any environment issues. Web farms should have high availability. Single failure of one instance should not bring down whole web farm. Traditional approach and Uberized approach, has high availability because each jetty runs a different job. So failure of one job doesn?t impact others. Adaptable AM also has high availability. Failure of one map(jetty) does not impact the other. ZK registration of web farms for ephemeral node failure, causes the callback notification to AM and it will start new web farms. Multiple maps has very low availability. Because, if one map fails, then Hadoop will kill the whole job ( treating it a failure). This leads to unavailability for whole feed processing workflows.
+
+D. Scalability Web farms should be high in terms of elasticity. In many  cases, one need to add or remove an instance of web farms based on system load or to optimize the memory usage and resource utilization. By Scalability we mean possibility to add or remove an instance of web farm. In traditional approach and Uberized approach, adding or removing a web farm is just to add new job or killing a running job. It doesn?t impact the other running jobs. Adaptable AM also has high scalability. To add or delete a web farm, AM gets a notification from Job Manager(JM) to kill or start a new web farm. Other running jobs or web farms remain unimpacted.
+
+Multiple maps approach has low extensibility. To add or remove a new map for that workflow, it has to submit a new job with new number of maps and kill the old jobs.
+
+The whole process of starting a new job and registering to zookeeper consumes additional time.
+
+Table 1: Features comparison of different approaches Tradition approach  Multiple map job  Uberized Adaptive AM  Resource utilization  Low Moderate Moderate High  Time to bring cluster  Low High Low High  Availability High Low High High Scalability High Low High High
+
+V. CONCLUSION  Clearly, Pepper works perfectly on older version of Hadoop, but it has few limitations on YARN Hadoop in terms of resource and capacity utilization. We have presented few approaches to solve these issues. Adaptive AM approach was found to be winner in terms of both resource and capacity utilization.
+
+
+
+VI. FUTURE WORK  In current implementation of Pepper, adaptable AM handles only one feed processing workflows. There are workflows for whom frequency of requests is low and they can be grouped with other similar low load web applications so as to reduce number of AMs.This will further lead to better resource and capacity utilization.
+

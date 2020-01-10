@@ -1,0 +1,154 @@
+Detecting Resource Leaks through Dynamical Mining of Resource Usage Patterns
+
+Abstract?Resource management is crucial to software pro- ductions. Resources must be carefully acquired and released, or a resource leak might occur. For open source projects, resource leaks can be easily introduced during code check- in, and it is laborious to review, identify, report, and fix such leaks. Recently, there has been a growing interest in data mining API usage patterns to discover potential bugs such as resource leaks. However, the usage patterns mined are specific to a certain library, which cannot be applied to detect bugs in other libraries. In this paper, we present an idea called MODE, ?Mine Once, Detect Everywhere?, to address the universality of such patterns, and use them to detect potential resource leaks automatically before code check-in. We propose an efficient algorithm to record the most valuable API calls that are related to resource usage during program execution, and mine resource usage patterns from the traces with a sequence miner. To verify the effectiveness of the patterns, experiments are given to use them to detect real resource leaks in large open source projects.
+
+Keywords: Resource Leak Detection, Data Mining, Dy- namical Analysis
+
+I. INTRODUCTION  Resource management is crucial to software productions.
+
+Resources, such as file handlers, database connections, and locks, must be carefully acquired and released. For example, a file on a hard drive must be eventually closed after being opened. If a resource is not correctly released, a resource leak is likely to occur. A recent study1 shows that 86% of downtime in production systems was due to resource leaks, including memory leaks, files not closed, locks that aren?t released, and so on. Even a little leak can bring down the production system if it occurs many times.
+
+Unfortunately, it is difficult to manage resources automat- ically. Although some advanced languages such as Java and C# provide efficient garbage collection to aid programmers in managing memory objects, to acquire or release other resources, it still needs to explicitly call APIs provided by third party software libraries or low level systems. For exam- ple, the Oracle 9i JDBC Developer?s Guide and Reference  1http://www.javaperformancetuning.com/news/news116.shtml  [1] warn ?If you do not explicitly close your ResultSet and Statement objects, serious memory leaks could occur.? Normally, these resource usage APIs could be summarized as resource usage patterns, and any violation to the patterns can be inferred as a resource leak. However, these resource usage patterns are not easy to extract due to their unique- ness, complexity, and lack of documentation. Usually, only those who have prior knowledge can summarize them.
+
+For open source projects, resource leaks can be easily introduced during code check-in. It has been recognized that code refactoring is a leading cause of introducing resource leaks. Careless developers may concentrate on improving functionality while forget to check the resource usage upon check-in. Therefore, it is laborious to review, identify, report, and fix such leaks. For example, it took 23 days and 87 project revisions to fix an IO resource leak, LUCENE- 21062, in Apache Lucene.
+
+To tackle these problems, a wide spectrum of research has been done in data mining API usage patterns from source codes [2]?[7], execution traces [8]?[10], or documentation [11], and use them to detect bugs such as resource leaks.
+
+Mining from source codes, which is usually called static mining, offers a fast and automatic way to discover resource usage patterns without program execution. However, it is not able to capture resource usage precisely, which is likely to bring false positives [2]. Relatively, dynamic mining from execution traces could solve such problem, but the execution trace can be incredibly huge. For example, the complete exe- cution trace size for Apache Tomcat 7.0.5 startup is 325,391 KB, and it contains 6,054,030 calls in total. The processing time of such large traces is unacceptable. In addition, the usage patterns mined by both static and dynamic mining approaches are specific to a certain library, therefore the impact is limited as the patterns cannot be applied to detect bugs in other libraries.
+
+In this paper, we present an idea called MODE, ?Mine Once, Detect Everywhere?, to address the universality of such patterns. We found that most application resource leaks  2http://issues.apache.org/jira/browse/LUCENE-2106     could eventually be attributed to violation of some base API usage patterns, i.e., standard Java API usage pattern.
+
+Once these patterns are mined, they could be used to detect resource leak in any program that built upon the base API.
+
+To achieve this goal, we propose MODEJ, an approach to detect resource leaks in Java programs. First, we record standard Java API calls during program execution. In order to minimize the execution trace size and processing time, we develop an efficient algorithm to record the most valuable Java API calls (the outermost layer of Java API calls, which will be elaborated later) that are related to resource usage.
+
+Second, we perform a sequential data mining on the calls we recorded to extract resource usage patterns. Finally, we verify these patterns with real resource leak issues from Apache Software Repository.We reproduce the leaks with existing test cases, record the traces, and check if any violation to the patterns is inferred from the traces. The result shows that our approach is able to detect resource leak issues that are difficult to identify in various projects.
+
+The remainder of this paper is organized as follows: Section II gives an example to illustrate our approach.
+
+Section III introduces the detailed approach. Experiments are given in Section IV. Section V reviews related work and Section VI concludes the paper.
+
+
+
+II. MOTIVATIONAL EXAMPLES  In this section, we give an motivational example to showcase that how we are able to detect an real world resource leak issue CASSANDRA-3133 using the pattern we mined.CASSANDRA-313 is a file descriptor leak issue which causes Cassandra to eventually crash due to too many open files. One of the developers reports that a file descriptor is not closed at each memtable rotation.
+
+We further investigated the issue and found that it was introduced due to a source code check-in in revision 789465, which refactored several lines of codes in order to make sure only one part of codes was writing logs to disk. However, it forgot to close a temporary object logWriters, which caused the leak. More importantly, the object was correctly closed before this check-in.
+
+Index: trunk/src/java/org/apache/cassandra/db/CommitLog.java  =========================================================  --- trunk/src/java/org/apache/cassandra/db/CommitLog.java(revision 797172)  +++ trunk/src/java/org/apache/cassandra/db/CommitLog.java(revision 797173)  @@ -215,6 +215,7 @@  {  IFileWriter logWriter = CommitLog.createWriter(commitLogFileName);  writeCommitLogHeader(logWriter, bytes);  + logWriter.close();  }  Fig. 1. Fix of resource leak issue CASSANDRA-313  3https://issues.apache.org/jira/browse/CASSANDRA-313  This issue was fixed in revision 797173 after 24 days and 58 project check-ins. Obviously, it costs a lot of time and effort to identify and fix the issue. The leaky source code are given in Figure 1. We may infer from the code that there exists a resource usage pattern in Cassandra library 1) IFileWriter.createWriter() 2) IFileWriter.close()  and the missing call to IFileWriter.close() is a violation to such a pattern. To extract this pattern, mining must be performed on either Cassandra source codes or its execution traces. However, this patten is not applicable to discover resource leaks in other libraries because the names of classes or methods may vary. Actually, we ran Cassandra library (revision 789465) with its unit test case org.apache.cassandra.db.CommitLogTest, analyzed the execution trace, and found that IFileWriter.createWriter() eventually called java.io.RandomAccessFile.open() while IFileWriter.close() eventually called java.io.RandomAccessFile.close() in behind. Therefore, such a leak is essentially a violation of standard Java resource API usage pattern 1) java.io.RandomAccessFile.open() 2) java.io.RandomAccessFile.close()  If we check the resource usage before code check-in, we could eliminate the leak in advance. This motivates us to extract the resource usage pattern from standard Java API calls. As these patterns do not rely on any specific library, they are universal enough to discover resource leak on any library that written in Java.
+
+
+
+III. APPROACH In this section, we describe in detail the MODE approach  to record the most valuable API calls, mine resource usage patterns, and use them to detect resource leaks.
+
+System  Hooking  Rule Generation  Frequent  Sequence  Mining  Pre-processing  Detection  Program Execution  Trace  Test case  Transaction  s  Resource  Usage  Patterns  Association  Rules  Leaky trace  Resource  Leaks  Fig. 2. Overview of framework  Figure 2 depicts the steps in our approach. First, we hook into the base system/platform to intercept base API calls during program execution. To minimize the trace size and processing time, we proposed an efficient algorithm to record the most valuable base API calls that are related to resource usage. Next, a sequential mining is applied on the calls recorded to extract resource usage patterns. Finally, the     patterns are used to detect resource leaks in projects from large open source repository.
+
+A. Extract the outermost layer of base API calls  In our approach, we assume every project is already equipped with well-covered unit test cases, which could drive a project into execution. With the help of existing system profiling interface(i.e., JVMTI4), it is straightforward to generate the complete execution trace. However, the trace might be too huge to bear. For example, the complete execution trace size for Tomcat 7.0.5 startup is 325,391 KB, and it contains 6,054,030 calls in total. We carefully analyze the traces and find that a trace can be expanded as a call tree, in which each node represents a method and all the sub-methods becomes its children, iteratively. We name any method invocation to third-party libraries as an External Call (EC), while any method invocation to base API as an Internal Call (IC). During program execution, we only care about the ICs rather than ECs. However, some frequently occurred children of an IC would overwhelm others in mining phase. For example, in Java, any object initiation would eventually call java.lang.Object.init(). Such a pattern is naive and would never fail, thus it should be ignored. In other words, we only record the outermost layer of ICs.
+
+Definition III.1. A call is defined as an outermost layer of IC, referred to as an outermost call, if and only if it itself is an IC and its parent call is an EC.
+
+A  B1  B2  B3  C1  C2  C3  C4  C5  D1  D2  D3  Fig. 3. Hierarchy of execution trace  Figure 3 describes the hierarchy of an sample execution trace ?={A,B1, C1, D1, C2, B2, C3, B3, C4, D2, C5, D3}, where each red nodes with thick borders represents an EC and each black nodes with thin borders represents an IC.
+
+In this case, A calls B1, B2 and B3. B1 calls C1 and C2.
+
+B2 calls C3. B3 calls C4 and C5. C1 calls D1. C4 calls D2. C5 calls D3. The outermost calls of trace ? actually contains only 5 calls {D1, C2, B2, C4, D3}. Note that C3  4http://download.oracle.com/javase/6/docs/platform/jvmti/jvmti.html  and D2 should be eliminated because they are children of outermost call B2 and C4, respectively.
+
+The record process is able to finish in linear time with several flags. It takes in each call one by one at runtime, decide whether a call is an outermost call in O(1) time, and output it if an outermost call is met. Here three assistant flags are maintained: the depth of current call(CCD), the depth of last IC(LICD), and the depth of deepest EC so far(MECD). We mark LICD to NULL whenever an EC is met. The idea behind is that the outermost call can only be found in two conditions: a) Last call is an EC and current call is an IC, which should satisfy: LICD = NULL and CCD ? MECD+1 (D1 and C4 in Figure 3). b) Last call is an IC and current call is also an IC, which should satisfy: LICD ?= NULL, CCD ? MECD + 1, and CCD ? LICD (C2, B2 and D3 in Figure 3).
+
+B. Resource Usage Pattern Mining  In this phase, we treat two calls that invoke the same method but from different caller objects as the same element for mining. We adopt a sequential mining algorithm, called AprioriAll [12], to mine resource usage patterns, because the sequence of calls in a pattern is critical. AprioriAll takes in a minimal support threshold min sup and a minimal confidence threshold min conf, and outputs all frequent sequence whose support is equal to or larger than min sup.
+
+For each frequent sequence, it outputs all association rules whose confidence is equal to or larger than min conf.
+
+An association rule indicates temporal relationship among different calls in a resource usage pattern.
+
+C. Resource Leak Detection  In this phase, we develop a rule checker to detect violation to the association rules we mined. A violation occurs if the pre-condition of an association rule is satisfied while the post-condition is not. Such violation indicates potential resource leaks. The rule checker works as follows: For each trace, check all the association rules. For each association rule, if the trace contains the pre-condition but does not contain the post-condition, a violation is reported.
+
+
+
+IV. EXPERIMENTAL RESULTS  To evaluate the effectiveness and efficiency of our ap- proach, we have implemented MODEJ, which consists of a outermost Java API call tracer based on JVMTI, a sequential miner, and a rule checker in Java. We apply MODEJ on 3 open source projects in Apache: Commons.io5, Lucene6, and Cassandra7. Commons.io is a fast and efficient library of utilities to assist with developing IO functionality. Lucene is a high-performance text search engine library. Cassandra  5http://commons.apache.org/io/ 6http://lucene.apache.org/ 7http://cassandra.apache.org/     is a highly scalable distributed NoSQL database, which is open-sourced in 2008 by Facebook.
+
+For each project, we randomly pick up a revision, check out the source codes, and run their unit test cases along with our tracer to record outermost call traces. We apply our sequence miner on the traces to discover resource usage patterns. To verify these patterns, we choose other specific project revisions which contains previous-known resource leak bugs. We reproduce the leaks with existing test cases, yield leaky trace using our tracer, and feed them to our rule checker to see whether those leaks can be reported.
+
+A. Tracer Performance and Result  We have developed a complete tracer, which records every single call during program execution, to compare with our outermost call tracer. We startup Tomcat 7.0.5 along with both two tracers, and measure the running time, trace size, and the number of calls recorded. Note that we directly skip some undesired calls such as java.lang.Classloader.*, junit.framework.Assert.*, etc. The programs are run on a Mi- crosoft Windows XP Professional with Intel(R) Core(TM)2 Duo CPU E8500 @ 3.16 GHz and 3.46 GB memory.
+
+TABLE I TRACER PERFORMANCE RESULT: TOMCAT STARTUP  Tracer Execution time(ms) # of calls Trace size(KB)  Complete tracer 161,296 325,391 6,054,030 Outermost call tracer 44,214 35,718 1,088,547  Delta change 72.6% 82.0% 89.0%  The result is described in Table I. The execution time, the number of calls recorded, and trace size are shown in the second, third, and fourth column, respectively. The result shows that our outermost call tracer completely outperforms the complete tracer. It is 72.6 percent faster than the com- plete tracer. Besides, the trace size and the number of calls recorded are over 80 percent smaller than that of complete tracer. Afterwards, we record the outermost trace for each project with existing test cases. Table II shows the tracing result. Column ?Version? lists the revision number. Column ?LOC? lists the total line of codes. Column ?#TC? lists the total number of test cases. Column ?#TCV? lists the number of valid test cases. A valid test case is a successfully finished test case with a non-empty sized outermost call trace. Column ?TrSize? lists the total outermost call trace size.
+
+B. Mining Performance and Result  In the experiments, we mine resource usage patterns on Java IO API(IO) and Java Concurrent API(CONC), which are two subsets of standard Java API. Our mining experiment is conducted on the following scenarios:  TABLE II PROJECT REVISIONS AND THE TRACE RESULT  Project Version LOC #TC #TCV TrSize  Commons.io 805996 25,142 78 56 81MB Lucene 478241 116,485 94 74 599MB  Cassandra 954571 70,282 74 60 149MB  ? Given min conf = 0.8, with the increase of min sup, collect the running time, the number of patterns mined, and the number of rules generated for both IO and CONC pattern mining.
+
+? Given min sup = 0.038, with the increase of min conf, collect the running time, and the number of rules generated for IO pattern mining.
+
+0.030 0.035 0.040 0.045 0.050        R un  ni ng  ti m  e (m  s)  min_sup  IO API usage pattern mining time  0.030 0.035 0.040 0.045 0.050            N um  be r o  f p at  te rn  s/ ru  le s  min_sup  Number of resource usage patterns Number of association rules  (a) Java IO API usage pattern mining result(min conf =0.8)  0.20 0.22 0.24 0.26 0.28 0.30        R un  ni ng  ti m  e (m  s)  min_sup  Concurrent API usage pattern mining time  0.20 0.22 0.24 0.26 0.28 0.30            N um  be r o  f p at  te rn  s/ ru  le s  min_sup  Number of resource usage patterns Number of association rules  (b) Java Concurrent API usage pattern mining result(min conf =0.8)  0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9            R un  ni ng  ti m  e of  a ss  oc ia  tio n  ru le  g en  er at  io n  min_conf  Running time of association rule generation  0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9           N um  be r o  f a ss  oc ia  tio n  ru le  s  min_conf  Number of association rules  (c) Java IO API association rule generation result(min sup=0.038)  Fig. 4. Mining Performance and Result  The results are shown in Figure 4. We can observe from Figure 4(a) and 4(b) that the mining time, the number of patterns, and the number of association rules all decrease with the increase of min sup. Besides, the number of patterns would be exponentially large if min sup is below 0.033 for IO patterns and 0.22 for CONC patterns. With the same order of magnitude of running time, the min sup of IO patterns is lower than that of CONC patterns, probably     because of the multiplicity of Java IO APIs over Java Concurrent APIs. Note that the y-axis of the left figure of Figure 4(a) and 4(b) is in logarithmic scale.
+
+For IO association rule generation, Figure 4(c) shows that the running time grows in a small range of fluctuation with the increase of min conf. It can be inferred that pattern mining dominate the whole process rather than rule generation. On the other hand, the number of rules generated gets approximately linear decrease with the increase of min conf. Figure 5 shows some interesting resource usage patterns mined. Note that the numbers indicates their tem- poral relationship.
+
+1) java.io.ByteArrayInputStream.<init>()  1) java.io.PrintWriter.<init>()  2) java.io.BufferedReader.<init>()   2) java.io.PrintWriter.println()  3) java.io.ByteArrayInputStream.close()  3) java.io.PrintWriter.close()  4) java.io.BufferedReader.close()    1) java.util.concurrent.locks.ReentrantLock.<init>()  2) java.util.concurrent.locks.ReentrantLock.lock()  3) java.util.concurrent.locks.ReentrantLock.unlock()  Fig. 5. Resource Usage Pattern Examples  C. Verifying Result  To verify the mined patterns, we have identified 7 IO related resource leak issues from bug tracking systems of Cassandra and Lucene. For each issue, we learn when it is introduced, when it is fixed, how many revisions and how long time it takes to fix the issue. We check out the buggy project revision, run the causing test case, and generate leaky trace using our tracer. Then, we feed the leaky trace to our rule checker. The ruler checker takes in the rules as well as the leaky traces and checks for violations. We calculate the number of issues that has been detected, as well as the number that has not been detected. For those issues that have not been detected, we analyzes why they have not been detected.
+
+The results are listed in table III. For each issue, the second column reflects the revision when it is introduced, while the third column describes the revision when it is fixed. The ?#RP? Column lists the total number of project revisions it takes to fix it. The ?Duration? Column gives its duration. The sixth column lists the files that are polluted.
+
+The seventh column explains it in natural language. The last column shows whether it is detected or not.
+
+From the table, we have the following observations: First, the duration of listed issues vary a great deal. It is to our surprise that the average #RP and durations for the 7 issues are 385 and 377 days, respectively. In the worst case, it takes 2295 revisions and 2527 days to fix issue LUCENE- 1455, although it is a simple stream not close leak. Second, among 7 issues, 4 are detected, 2 are partially detected, and 1 is not detected. In the 4 detected issues, CASSANDRA-  313, LUCENE-720, and LUCENE-1374 eventually violate the rule 1) java.io.RandomAccessFile.open() => java.io.RandomAccessFile.close()  and LUCENE-1455 eventually violates the rule 1) java.io.File.<init>() 2) java.io.FileInputStream.<init>() => java.io.FileInputStream.close()  CASSANDRA-71 and CASSANDRA-1188 are also at- tributed to missing of java.io.RandomAccessFile.close().
+
+However, we are not able to genereate the leaky trace by running any of CASSANDRA?s unit test case. Therefore, we have to manually design a test case to reproduce it.
+
+We regard these issues as partially detected. In this case, our approach is not competitive because designing such test case requires manual work and might be tricky.
+
+For issue LUCENE-2106, we have successfully generated the leaky trace by running its test case. However, no violation to any of our rules is reported. We studied the trace carefully and found that rather than calling a java.io.Reader object in standard Java API, LUCENE itself has imple- mented a reader class that has the same functionality as java.io.Reader. Therefore, no standard Java resource API usage pattern is violated, which means our approach is not applicable in this case.
+
+
+
+V. RELATED WORK To mine API usage, DynaMine [2] analyzes source  code check-ins to find highly correlated method call pairs.
+
+Michail et al. [5] mine library reuse patterns using gener- alized association rules. PR-Miner [3] uses frequent item set mining to extract implicit programming rules such as functions, variables and data types. MAPO [13] uses code search engines to gather source files and mines sequential usage patterns to a given query. Kagdi et al. [4] mine frequently appearing ordered sets patterns of function-call usages, considering control constructs such as if-statements.
+
+Acharya et al. [6] present a framework to automatically extract usage scenarios among user-specified APIs as partial orders. Williams et al. [7] mine source code repository to detect a commonly fixed bug. Chow et al. [14] conduct an empirical study to evaluate the effectiveness of data mining software code defects in large software repository.
+
+To infer specifications, Yang et al. [9] introduce a tech- nique to dynamic infer alternating patterns from execution traces. Zhong et al. [11] infer resource usage specifications from natural language API documentations. Gabel et al.
+
+[10] propose a symbolic algorithm based on binary decision diagrams to mine temporal specifications from execution traces. Igarashi et al. [15] formalize a general problem of analyzing resource usage and propose a type-based solution to the problem. Lo et al. [16] propose a specification mining architecture with trace filtering and clustering to improve     TABLE III RESOURCE LEAK ISSUES FROM BUG TRACKING SYSTEM AND VERIFYING RESULT  Issuei RI RF #RP Duration Affected Files Description Detected?
+
+LUCENE-720 478239 478241 1 1days org.apache.lucene.index.
+
+TestIndexFileDeleter.java, org.apache.lucene.index.
+
+TestBackwardsCompatibility.java  added a few missing close?s Yes.
+
+LUCENE-1374 691617 691694 1 1days org.apache.lucene.index.
+
+TestIndexWriter.java  Cannot find close method, so this looks like a descriptor leak.
+
+Yes.
+
+LUCENE-1455 150802 783595 2295 2527days org.apache.lucene.ant.HtmlDocum ent.java  A stream is not closed which may be a descriptor leak.
+
+Yes.
+
+LUCENE-2106 836154 887899 87 23days org.apach.lucene.benchmark.
+
+byTask.tasks.ReadTask.java  ReadTask does not close its Reader when OpenReader or CloseReader are not used.
+
+No.
+
+CASSANDRA-71 769874 770424 10 1days org.apache.cassandra.db.
+
+Table.java  Close FileStructs after range query. Partially.
+
+CASSANDRA-313 789465 797173 58 24days org.apache.cassandra.db.
+
+filter.CommitLog.java  Close temporary logWriters to avoid leaking FD.
+
+Yes.
+
+CASSANDRA-1188 932431 954572 246 67days org.apache.cassandra.db.filter .SSTableNamesIterator.java  Close FileStruct in SSTableName- sIterator when opened locally.
+
+Partially.
+
+i https://issues.apache.org/jira/browse/ISSUE NAME  specification miners. Weimer et al. [17] present an automatic specification mining algorithm that uses information about error handling to learn temporal safety rules. Kremenek et al. [18] use Bayesian learning to match methods with a predefined automata template for specifications.
+
+J. Bloch from Google proposes a new Java 7 feature called Automatic Resource Managements(ARM)8, which aims at automatically close resource when it is not used.
+
+With ARM, a few statements would be automatically added by complier to close declared resources within a try state- ment. This proposal is actually a syntax improvement to developers. However, ARM can only handle local resources leak within method scope. In contrast, our approach is able to report missing resource closure within class scope or across classes.
+
+
+
+VI. CONCLUSION  In order to improve the pattern universality and detect resource leak before code check-in, this paper proposes an approach to record the most valueable base API calls during program execution, and mine resource usage patterns from the API call traces. The patterns are further verified with real resource leaks from large open source projects. The results show that resource usage patterns mined by our approach are universal to detect resource leaks in various projects.
+

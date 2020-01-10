@@ -1,0 +1,120 @@
+Data Privacy and Integrity Appropriate for Disk Protection
+
+Abstract   To protect data privacy and integrity, it encrypts each protected disk sector and creates hash tree upon all the protected sectors to resist against any possible attacks. To make it an appropriate way for disk protection, it designs the required solutions of disk layout, performance optimizing and consistency maintaining. Disk layout uses a fixed disk region to preserve hash tree nodes; performance optimizing utilizes system memory to buffer those frequently used hash tree nodes to offload the big working cost; and consistency maintaining logs disk modifications to recovery the valid result after unexpected failures. The implementation cost is low and running performance is satisfiable. Analysis and experimental simulations show that it is a practical and available way to build secure disk.
+
+1. Introduction   The paper provides methods suitable for ensuring the privacy and integrity of stored data in disk device within a high level of assurance. It works in settings where an attacker might have full access to the storage medium, and prevents from various cryptographic attacks.
+
+Privacy means to protect data from unauthorized disclosure, and integrity requires detection of unauthorized data modification. Privacy protection is often fulfilled through encryption, which is a relative straightforward process. However, providing solid integrity is an intractable task, especially when online mode and resistance against replay attack are required.
+
+__________________  This work is supported by: Hi-Tech Research and Development Program of China through grant 2006AA01Z446, National Natural Science Foundation of China through grants 60736013 and 60573135.
+
+Online means to detect integrity violation before it could cause damage to the system, such as detecting malicious replacement of binary executables at the time they are read (for executing) and hence can prevent execution immediately. Resistance against replay attack is to prevent adversary from replacing the current data with an old copy.
+
+MAC (Message Authentication Code) is commonly used for integrity protection. However, MAC is brittle to replay attack, as adversary can replace the (message, MAC) pair with pairs of earlier stores without being detected. LHash/H-LHash [1] can find such replay attacks; however, they give offline verification as they perform integrity checking in scheduled intervals of time, which leaves a time-window of vulnerability. To provide both resistance against replay attack and online checking ability, hash tree (or Merkle tree [2]) is an overwhelmingly used way (and perhaps the only available way). Hash tree regards all the protected data at some point as one continuous set of data, and maintains a single (all of the data, hash) pair. Relying on its trusted root, an arbitrarily large storage can be verified and updated. However, a naive hash tree will make system too slow to use, as checking one node involves many other nodes. An efficient optimizing way is proposed as CHTree [3], which buffers the frequent nodes to shorten the checking path.
+
+There exist many systems that protect mass data.
+
+Cryptfs [4] encrypt file data; Tripwire [5] uses the principle of MAC to check the integrity of files, while trusted computing system like NGSCB [6] verifying "program hashes" is similar; SFSRO [7] uses hash of a file-data block to guarantee the integrity of content data; SUNDR [8] uses a hash of a block and hash tree to provide file system integrity; PFS [9] protects data integrity at the block level without integrated into the file system, while Arbre [10] builds hash tree into file system tightly. Recently, several important techniques to protect the locally connected hard disk have appeared; for examples: Windows-Vista BitLocker [11], IEEE P1619.x [12] and Seagate Momentus 5400 FDE.2 Hard Drives [13]. But nearly all of them are     suffered from integrity verification. Tripwire/NGSCB cannot prevent from replay attack, and checking with the granularity of the entire file isn?t enough for real usage; Arbre inherits limitations of tree-structured file systems to make synchronization requirement performs poorly; BitLocker only makes Poor-man's authentication (or pseudo-authentication; that is, changes in the ciphertext do not translate to semantically sensible changes to the plaintext); authenticated encryption of IEEE P1619.x cannot prevent from replay attack.
+
+In this paper, we propose EADISK (Encrypted and Authenticated Disk) with solid data encryption and authentication. It firstly encrypts each protected disk sector and creates hash tree upon all the protected sectors to provide the required privacy and integrity.
+
+Then, it uses solutions of disk layout, hash tree optimizing and consistency maintaining, to make the protection to be an appropriate way for disk storage device. Analysis and experiments shows that it is an efficient and feasible way to build secure disk.
+
+The rest of this paper is organized as follows.
+
+Section 2 elaborates the protection approaches. Section 3 makes performance simulations. Section 4 discusses some related things. Section 5 concludes this paper.
+
+2. Protection design   2.1. Model and motivations   Considering the case of hard disk connected to host  through local bus (such as IDE/ATA). Disk is assumed to be vulnerable to attacks. EADISK runs in the inner part of the trusted boundary, just fronting the interface to disk. The task of EADISK is: (i) encrypts any data evicted from host to store the ciphertext data into disk, and signs the data result; (ii) decrypts the data from disk, and authenticates the data loaded from a particular location of disk is the most recent value stored to the same place.
+
+We want EADISK to have the following merits: - Sufficient security. That is, all of the data residing  in disk are encrypted; and data integrity checking can resist against any tampers with online mode.
+
+- Low-level protection. Protecting directly on disk sector can protect any data in disk (including file data and meta data, as well as others like the swapped pages of virtual memory); without touching of file system, it gives a unified protection that can be transparently deployed into existing systems.
+
+- Good performance. It determines whether such protection is worthy to be implemented.
+
+- Consistency. As hard disk is permanent storage device, maintaining a consistent state in the event of a system crash is required.
+
+2.2. Basic protections   Design of EADISK aims at the protection of ?cool disk?; that is, it protects a disk disassociated from the keys which provide access to the disk (for a ?hot disk? attached on a running system with the legal key, EADISK will accept all the operations as ?valid?).
+
+Additionally, EADISK just emphasizes security and performance of data encryption and authentication, while others like key management will be simplified in this paper. Figure 1 illustrates the logical protection scheme of EADISK.
+
+Figure 1. Logical scheme to protect data privacy and integrity.
+
+In Figure 1, each disk sector flowed out of host is encrypted. With a secret key known only to EADISK, many sound ciphers can be used to fulfill such required encryption. The principle of constructing ?good? encryption is to employ the well acknowledged ciphers with their recommended modes; on the other hand, cipher used here doesn?t need extra functions like ?tweaked (such as LRW mode)? or ?authenticated?, because all such authentication abilities can be totally accomplished by hash tree. So, we choose AES-CBC (Advanced Encryption Standard with CBC mode) to encrypt each protected sector to get its ciphertext result, with consideration of both security and convenience.
+
+In Figure 1, a hash tree is constructed upon the protected disk space. Each leaf node of hash tree is created from the corresponding disk sector to be protected. The root node of hash tree is updated after each disk sector modification, and then, it authenticates the disk sectors for later usage. To enhance security, the ?hash? used by hash tree should be a keyed hash function. We use HMAC-MD5 (HMAC is ?Hash Message Authentication Code?) for hash tree. Thus, all     the nodes of hash tree are 128bit. Although collision has been found, MD5 hash function can still be safe for common applications, especially when it is keyed by HMAC function. Furthermore, the output of MD5 is 128bit, which is convenient for implementation.
+
+Related protections can be expressed as the followings.
+
+- UPDATE one disk sector: 1. Ciphertext Sector = AES-CBC (Sector) 2. Updates hash tree along the checking path until  reaching the Root node, according to the value of the Ciphertext Sector  - FETCH one disk sector: 1. Sector = AES-CBC (Ciphertext Sector) 2. Uses the Root node of hash tree to check the  integrity of the fetched Ciphertext Sector Memo: The secret key of AES cipher, the secret key  of HMAC, and the root node of hash tree should be kept in secure and non-volatile memory (they are preserved permanently and cannot be penetrated or tampered by adversary; such as storing them into TPM/Trusted-Platform-Module chip).
+
+2.3. Disk layout   To avoid spending a long time to rebuild hash tree  at each time of system starting, it should hold hash tree nodes (all or portion of them) permanently after system is power off. For a balanced m-ary hash tree, the number of the nodes is (m/(m-1)*N), where N represents the number of data blocks to be verified and m is the number of the child nodes affiliated to the same parent. As disk is mass storage device to make N a huge value, the capacity requirement of node storing will be very large. In normal computer systems, there is no other place can hold so much nodes excepting the disk itself. So, disk must present storage space for node preserving. How to construct this space should be carefully considered. During the checking process of hash tree, related nodes may be required to be immediately fetched from disk. If we put the preserved hash tree nodes into a physically continuous or adjacent disk region, the seek time of disk head can be decreased when fetching the related nodes from disk.
+
+As the seek time is the major latency of disk accessing, such deployment is helpful to improve performance.
+
+Hence, we give the disk layout of EADISK as Figure 2.
+
+Figure 2. Disk layout for data and hash tree nodes storage.
+
+In Figure 2, all the preserved hash tree nodes take  up one fixed region of the disk. Sectors in this region are called as ?Node-Sectors?. Each Node-Sector can hold 32 (512byte/128bit) hash tree nodes. ?E-Sectors? are the ciphertext results of the protected data sectors.
+
+Because the result of AES-CBC cipher can be length- preserving, the encrypted data sectors can just occupy their original spaces in disk.
+
+We set the hash tree to be 8-ary. Such branch number is actually a compromised value, considering both storage cost and performance (all the eight sibling nodes can be just placed into one 128-byte memory- chunk/cache-line). With such layout, for a 100GB protected disk space, we have that:  - the number of disk sector is 100GB/512B = 200M - the number of hash tree nodes is 200M + 200M/8 + 200M/8/8 + ...... ? 228.6M - the capacity of node storage is 228.6M * 128bit  ? 3.57GB So, node storage occupation is about 3.6%.
+
+2.4. Hash tree optimization  Hash tree has a logarithmic checking overhead of  logm(N), which can be significant as disk is mass storage device to have a huge number of N. To make sufficient optimizing, it must aim at reducing or hiding extra disk I/O caused by the checking processes of hash tree. The memory/storage hiberarchy of computer system and the local character of data accesses make node buffering to be a very effective way for hash tree optimizing. Such optimizing method works as:  System uses a node buffer to store portion of hash tree nodes. Instead of checking the entire path from the leaf to the root of the tree, verification can stop at any node that it meets in the buffer. When a node is loaded into this buffer, it is verified by its parent node that has previously been loaded; if missing its parent, the parent node will be loaded, and may cause other upper nodes     to be loaded until reaching a buffered one. The node buffer adopts LRU (least recently used) method to empty room for the newly fetched nodes. When a modified node is ejected from the buffer, it makes its parent node to be updated (it may cause its parent and/or other upper nodes to be firstly loaded and checked).
+
+A strategy of asynchronous checking can make further improvement of performance. It lets disk sector fetching can start following the last one immediately without waiting the result of integrity verification, until the queue holding those un-checked sectors is full filled. In such way, it can decrease the influence to the system caused by the delay of integrity verification when disk accesses are bursting or when system is very busy. This optimizing measure has a little meaning of offline verification, but is distinctly from other pure offline verifications. As the length of the used queue is limited to a relative small value, the possibility of attacking through ?queue-window without checking? is also limited to an acceptable level. If necessary, system can disable it temporarily when a crucial code/data is executing.
+
+2.5. Consistency maintain   According to the protection processes described  above, a consistent state of EADISK can be treated as: (i) the disk write of the encrypted sector is completed, and (ii) the corresponding hash tree update along the checking path until reaching the root node is completed.
+
+Maintaining consistency means to ensure these two steps to be synchronous.
+
+A strict synchronous will incur too many extra disk I/O, because one sector modification may cause many hash tree nodes to be changed; so, synchronizing them immediately is unfeasible for real system. Writing the modified nodes back to disk must be postponed to make the related write back more efficient. However, a postponed write back leaves big opportunities of un- consistency; for example, a sudden power-off will leave outdated hash tree nodes on disk.  To overcome such problem, we introduce buffer control and update log mechanism to maintain consistency without hurting performance.
+
+Buffer control and update log. Buffer control is to hold those modified nodes to reside in the node buffer temporarily (bypassing LRU for them), until a checkpoint process is started. Through such way, latencies caused by storing nodes back to disk can be efficiently hidden, as related updates can use other available bandwidth to be accomplished; at the same time, the amount of these write back is also reduced, as  several updates to the same node can be combined into once update.
+
+EADISK maintains a log (using a special disk region or a file) to ensure system can recover from any failure. It records each sector modification before it transfers the disk status from the old-one to the current-one. Security of the log itself must be considered; or else, adversary can tamper the log, and make attacks take effect through recovering from the log. Besides encrypting log recorders (log encryption can be omitted, as sectors have already been in their ciphertext), log is authenticated through calculating the MAC result of the entire log after each new recorder is written to it. Such MAC calculation is very efficient, because new log recorder is just appended to the end of the log. So, a MAC-chain can be simply constructed as:  MACCURRENT = HMAC (MACPREVIOUS || RecorderCURRENT) Memo: ?||? represents concatenation  Maintaining processes. Utilizing buffer control and update log, system maintains consistency as the following.
+
+During the normal running time, system does: 1. For each sector updated to disk, records it into the  update log; 2. For each modified hash tree node, keeps it in the  node buffer, even LRU strategy want to evict it out of the buffer.
+
+As soon as update log is full, or hash tree node buffer cannot hold those modified nodes any more, or there exist a spare time, system launches the checkpoint process to do:  1. Converges all the modifications of hash tree nodes to produce the new root node;  2. Writes the modified nodes of hash tree to their permanent storage place in disk;  3. Clears the update log; 4. Backups the value of the root node (the backup  value should be also stored into secure and non- volatile memory).
+
+We can see that consistency is maintained, because: since last checkpoint, all the old nodes of hash tree (including the root node) and new disk modifications are preserved. If failures occur, system can reconstruct hash tree to recover the valid (root node, protected disk sectors) pair.
+
+Pin log into NVRAM. Logging makes performance decline inevitably, because it both burdens the disk bandwidth to write more data and increases seek time to move the disk head between the physical positions of log and data. To implement low cost logging, we can use the fast-access non-volatile RAM-enhanced hybrid disk (HHD [14], hybrid hard drives). HHD provides a small but fast NVRAM/Flash in addition to     the slower, spinning disk storage. Although the bandwidth of flash-write isn?t very high, it eliminates extra seek time (flash-write needn?t to move the disk head). Additionally, it is possible to make log write (to flash) and sector write (to the magnetic-plate) to be executed concurrently. Experiments shows that flash- backed I/O requests can reduce disk write latency by up to 70% [15]. So, putting the update log into NVRAM/Flash can do great help to performance.
+
+3. Experiments   A trace-driven simulator (runs on Dell Inspiron 530  Desktop, with 2.2GHz E4500 CPU, 2GB DDR2 667MHz SDRAM, and 250GB SATA II disk) is built to evaluate performance of EADISK. A Win32 I/O class is implemented into EADISK to read/write the specified disk sectors. A 40GB disk partition is protected by EADISK simulator. For simplification, we directly use system memory as the NVRAM/Flash of HHD disk, and add latency to imitate a flash device [16, 17]. Disk trace is feed into EADISK, and the cumulated latencies caused by protection are measured as performance decline. Three kinds of disk traces are used to imitate real disk accesses. Trace-A is captured from Andrew benchmark [18] (gotten from I/O monitoring when running it on the same original PC), while Trace-B and Trace-C are edited from HP-Labs TPC-C and TPC-D trace files  [19] separately (we cut some segments and make appropriate compilation).
+
+Figure 3 is the baseline result of performance. Each trace sample compares with itself, and the performance result without protection is set to be ?1.0?.
+
+Figure 3. Baseline performance results; with 8-ary hash tree, 512KB hash tree nodes buffer, 32KB asynchronous checking queue, and 1MB update log.
+
+Figure 3 shows that the performance penalty is about 3~4% for common cases (Trace-A and Trace-B).
+
+Trace-C has a noticeable performance decline to be about 8%. The reason may be due to the lack of locality for Trace-C (it comes from decision support applications, which often scan big disk regions without reusing the original data; so, hash tree optimizing is affected).
+
+Figure 4 uses Trace-A to test different parameters of EVDISK.
+
+Figure 4. Performance results of different parameters.
+
+(a) 4-ary, 8-ary and 32-ary hash tree; (b) 128KB, 512KB and 2048KB nodes buffer; (c) 8KB, 32KB and 128KB asynchronous checking queue; (d) 256KB, 1MB and 4MB update log.
+
+Figure 4 tells that choosing appropriate parameters  is important. Too width branch number of hash tree isn?t a good selection (as shown in ?(a)?). Capacity of nodes buffer should be big enough to achieve fine performance (as shown in ?(b)?). The length of asynchronous checking queue and the length of update log needn?t to be very long (as shown in ?(c)? and ?(d)?). Although longer of them gives more chances to hide checking latencies, too long asynchronous checking queue will enlarge the time-window of attacking and too long update log will occupy too many NVRAM, while performance is only increased slightly.
+
+4. Discussions   Besides operating on disk sectors directly, another  available selection is set the block size to be equal to several continuous sectors, such as a ?cluster? (commonly used by file system as the basic data unit).
+
+This will be equivalent to providing ?low-level? protection for real usage, while it decreases the number of leaf nodes greatly to reduce the cost of node buffering.
+
+According to the allocation schemes of common file/storage systems, disk files created in a mostly empty disk are likely to occupy sequential sectors.
+
+However, they may become fragmentized after lots operations or running long times. This will affect the     efficiency of hash tree optimization, as it deteriorates the locality of disk I/O. Often running a ?Disk Defragmenter? program (which can combine some file fragments into one continuous region) may make improvement.
+
+If possible, we can make more utilizations of NVRAM. Besides log, we can separate hash tree nodes to be ?active? and ?archives?, and pin those active ones into NVRAM also. In such way, performance will be improved, as nodes can be fetched more quickly when they are required.
+
+EADISK has several potential deployments. It can be integrated into disk driver or file system. Due to the small requirement of buffer (several hundreds kilo- bytes to hold hash tree nodes), it can also be handily built into ICH (I/O Controller Hub) chip, or be equipped into the hard disk itself to build a "smart disk" that can encrypt and sign the disk content by itself.
+
+5. Conclusion   Through sector encryption and hash tree verification,  EADISK can effectively protect disk data privacy and integrity. Implemented on the sector-level, it works with characters of online mode, any data protection and unified mechanism. To make it appropriate for disk protection, solutions of disk layout, performance optimizing and consistency maintaining are proposed.
+
+The cost of implementation logic is relatively small; it just occupies several kilo-bytes of system memory as buffers. For most cases, performance penalty is only about 3~4%. Additionally, it gives a low cost log mechanism to maintain consistency by utilizing flash- backed disk I/O. As we have demonstrated and discussed, it is a practical and available approach to build a secure disk storage system.
+

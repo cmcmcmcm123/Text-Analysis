@@ -1,0 +1,140 @@
+A Scalable and High-efficiency Discovery Service In IoT Using a New Storage  Schema
+
+Abstract?Discovery Service (DS), used to trace the movement of objects along supply chains, is an important component of the Internet of Things (IoT). DS is faced with the challenge of huge volume of data as well as large amount of parallel requests of discovery and publish. This paper proposes a new central-indexing DS system using distributed NOSQL database HBase to better support big data and parallel processing. A new storage schema of DS data is designed to optimize the discovery efficiency of DS records. The new storage schema uses object ID as row key, event timestamp as column identifier and event index content as cell value. The typical recursive discovery algorithm, which is needed in DS but often neglected in previous works, is specified to realize the full tracing of object?s movement. A prototype of the DS system proposed is implemented. The experiments show that the number of concurrent discoveries the proposed DS can handle per second is about 200 times that of the DS based on RDBMS, and the number of concurrent publishes the proposed DS can process per second is about five times that of the DS based on RDBMS.
+
+Keywords-Discovery Service; HBase; EPCglobal; IoT
+
+I.  INTRODUCTION Internet of Things (IoT) is expected to provide automatic  tracking and tracing of serial-level objects? movement along the supply chain. This function of IoT will benefit the supply chain management of trade partners, help customers to verify the authenticity of articles, and enable government to better supervise the circulation of products in trade. Like web search engines by which you can get relevant webpages immediately by typing a keyword, IoT should offer a service which takes the identification of an object as input, and outputs the historical logistics information of this object in the supply chain. This function is named IoT Discovery Service (DS). Unlike webpages, information resources of IoT are not public on Internet and don?t link to each other.
+
+Thus the approaches of gathering data and retrieving information for DS are very different from web search engines.
+
+The EPCGlobal architecture framework [1] is a widely used standard in constructing IoT application. In this architecture, instant data sharing over the whole IoT network is achieved by cooperation of three components which are Information Service (IS), Object Naming Service (ONS) and Discovery Service (DS). Information Service [2] captures and stores event data in local databases. IS servers are maintained by different supply chain enterprises  independently. Object Naming Service [3] resolves an object ID and maps it to a static information resource such as a DS server or the manufacturer?s IS server. Discovery Service maps an object ID to a sequence of relevant IS servers who store relevant event data about the specific object.
+
+EPCGlobal has published the standards of IS and ONS, but the specific standard of DS is still under discussion. In 2007, the Bridge project [4] did further research on Serial- level Lookup Service based on EPCGlobal architecture framework and gave more specific definitions about DS, including the record types, input and output, security mechanism, etc. Bridge also analyzed all the possible DS interaction models and concluded with several applicable models. Wen Zhao [5] classified DS solutions into centralized warehouse mode, centralized indexing mode, and ?follow the chain? mode in the perspective of where and how the DS data are stored. IBM developed a Theseos search engine [6] to trace individual object?s movement along the supply chain by relaying query along the IS chain in order to generate e-pedigrees or achieve targeted recall.
+
+Theseos is a P2P solution of DS. There are also some other researches [7][8][9][10]  on the P2P solution of Discovery Service in which a DS query is also propagated along IS servers. Sergei [11] did comparison of several DS architectures. P2P mode can balance the work load very well but it has difficulty to promote because of an inherent chain scission problem. If there is a broken linkage in the chain caused by data loss or server broken-down or access refusal, the left part behind the broken linkage would be lost.
+
+In centralized indexing mode, when the object moves along the supply chain, the event data captured by each IS are not only stored locally, but also actively published to the DS in the form of light weighted index. In this way, DS can discover the relevant event indexes for an object from its local database. Partial data missing would not fail the whole discovery. Compared to P2P, centralized indexing mode is more practical. But centralized indexing DS is faced with huge data as well as the pressure of lots of concurrent reading and writing requests. However, few follow-up researches are working on improving its ability to maintain and retrieve from massive data as well as the ability to handle large amount of parallel requests.
+
+Most objects would be packaged into larger containers for transit in its lifecycle. The tags of individual objects inside the container cannot be read directly. When user wants to discovery the history of an individual object, not only the  2013 IEEE 37th Annual Computer Software and Applications Conference  DOI 10.1109/COMPSAC.2013.125     events relevant to the object directly are interested, but also the events happened to its container during its transportation are interested. To meet this requirement, recursive discovery should be executed. In the previous works, recursive discovery is always regarded as the responsibility of the client and few work is done about it.
+
+To solve these problems, a new storage schema of DS data based on a distributed and scalable big data storage tool HBase [12] is proposed in this paper. A typical recursive discovery algorithm is designed and specified. A DS prototype which is based on the new storage schema and offers recursive discovery service is implemented.
+
+Experiments prove that the new DS shows a significant improvement in both the query efficiency under massive data and the ability to handle parallel read and write requests compared to DS based on RDBMS.
+
+
+
+II.  BACKGROUND OF DS  A. Basic definitions about DS According to the documents of Bridge [4], a DS query  should specify an object ID (OID) of interest, the user?s authentication credentials, and optionally additional constraints. The information provided by Discovery Service in response to a query should consist of a subset of information extracted from multiple DS records concerned with the specified object.
+
+Event  IS_ID publisher eventTime publishTime businessStep  IS  IS_ID  service_addr service_type AC_Info  BasicEvent  objectList:List<OID>  AggEvent  parent:OID childList:List<OID>  TransEvent  parentList:List<OID> childList:List<OID>  signature  action action Figure 1.  Class diagram of DS event index  Figure 1 shows the typical structure of DS records. DS stores three types of events--BasicEvent, AggEvent and TransEvent. They share some common elements such as IS, publisher, timestamps, digital signature, etc. Each one has unique attributes. In a BasicEvent, the action can be ?CREATE?, ?LINK?, ?CLOSE?, ?DESTROY?, etc. A BasicEvent is concerned with a single list of OIDs. In an AggEvent, the action can be ?ADD? or ?DELETE?. An AggEvent is concerned with both a parent OID and a list of child OIDs. It records an operation that child objects are added to or deleted from the parent object. A TransEvent is concerned with both a list of parent OIDs and a list of child OIDs. It records the operation that parent objects are transformed into the child objects. BasicEvent which records event of objects leaving an IS or reaching a new IS, AggEvent and TransEvent are defined as key events for DS and should be published actively to DS by IS servers.
+
+B. HBase Apache HBase [12] is a distributed, scalable, big data store  modeled after Google?s Bigtable [13]. HBase offers strictly consistent reading and writing, automatic failover support between region servers, block cache for real-time queries, and good concurrency especially in reading.
+
+Table in HBase follows the key-value model. A data row in HBase is composed of a row key and an arbitrary number of columns. New columns can be appended to a row dynamically, but every column must belong to a predefined column family. A data cell can hold multiple versions of data distinguished by the timestamp of the update writing.
+
+Different from traditional RDBMS, HBase is more like a multi-dimensional sorted map: (Row Key, ColumnFamily: Column, Timestamp) -> CellValue. Figure 2 gives an example of data model in HBase. All the accesses to HBase table are though the row keys. Secondary indexes on columns are not provided (though you can create an extra table by yourself). Queries across multiple tables are not supported. All the above features should be taken into consideration for designing DS storage schema in HBase.
+
+Row Rowkey1{ Column Family A{  Column X: Timestamp T1: Value1 Timestamp T2: Value2  Column Y: Timpstamp T3: Value3  } Column Family B{  Column Z: Timestamp T4: Value4  } }  Figure 2.  HBase data model  C. A Discovery Service Scenario Figure 3 shows an example scenario of how a product  travels along the supply chain and how IoT tracks its movement.
+
+IS1 IS2 IS3 IS4  DS  Status change  Manufacturer 3PL Distributor Retailer  client ONS(1)  (2)  SGTIN1  (3)  Product SSCC1  Pallet SSCC2  Truck SSCC3 SSCC2  Pallet SSCC1 SGTIN1  ProductPackagePackage   Figure 3.  An example scenario  Manufacturer produces a product and identifies it by a SGTIN (Serialized Global Trade Item Number) [14] named by SGTIN1 in a barcode. This product is packed into a package identified by a SSCC (Serial Shipping Container Code) [14] named SSCC1 in a barcode. Then this package is loaded to a     pallet which is identified by SSCC2 in a RFID tag. Events happened during this period are captured and stored by the manufacturer?s IS. The pallet is then handed over to a 3PL (Third Party Logistics) for transit. The 3PL loads the pallet to a truck identified by SSCC3 in a RFID tag. The destination of the truck?s journey is a distributor. Until it reaches the distributor, the events happened are captured and stored by the 3PL?s IS. When the truck?s journey is finished, the pallet SSCC2 is offloaded from the truck, and then the package SSCC1 is offloaded from the pallet. The distributor sends the package to a retailer. Events happened during this period are captured and stored by the distributor?s IS. The retailer dismantles the package SSCC1 and takes the product SGTIN1 out. Finally the product is put on the goods shelf and sold to a customer. These events are captured and stored by the retailers? IS. In this scenario, during the whole lifecycle of this product, its status changes as ?product package  pallet  truck  pallet  package  product?.
+
+In each phases, readers usually only read the identification of the top level container. Data captured by readers and sensors are recorded as IoT events and stored in different IS servers.
+
+To realize the discovering of the whole story, four IS servers respectively publish the event indexes to a central DS. When client wants to discover the information of the product SGTIN1, first he locates the DS in charge by querying ONS.
+
+After DS received the client?s discovery request, it responds with a sequence of IS resources which is {IS1, IS2, IS3, IS4}.
+
+Then the client queries these IS servers for the detail information of the product.
+
+
+
+III. ARCHITECTURE OF DISCOVERY SERVICE  A. A new storage schema of DS data As we mentioned in Section 2, HBase is very different  from RDBMS, thus it?s impossible to move the data structure of DS in RDBMS to HBase directly. In the new storage schema, all the data concerned with discovery operation should be stored in a single table. An appropriate row key should be chosen to make data reading and writing efficient. The new storage schema should minimize the data redundancy caused by violation of the formal forms of RDBMS.
+
+Figure 4(a) and 4(b) shows the storage schema proposed for DS. OID, the key of typical discovery query, is chosen as the row key. Each cell stores an event index in a specific format. The column identifier is the timestamp of the event.
+
+It should be noticed that the timestamp used as the column identifier is the time when the event actually happens rather than the time when the writing action happens. By this schema, each OID is mapped to a time-ordered list of event indexes in the key-value model. Figure 4(c) gives an example of the content of a cell which describes an event index in a plain text. When OIDs in a list are consecutive, we can record them as ?fisrtOID-lastOID? to save memory.
+
+For each OID, all the events directly concerned with it are stored in the row of OID. Since an event is concerned with multiple OIDs, an event indexes will be written in several different rows repeatedly. When a new event index is  published, DS server parses the event index into a text in specific format and extract the set of directly related OIDs of this event. For each OID in the set, DS appends a new cell recording this event index to the row of this OID.
+
+OID1  OID2  OID3  timestamp1  event1.info  timestamp3  event3.info  timestamp5  event5.info  timestamp7  event7.info ??  timestamp1  event1.info  timestamp4  event4.info  timestamp6  event6.info  timestamp9  event9.info ??  timestamp2  event2.info  timestamp3  event3.info  timestamp5  event5.info  timestamp8  event8.info ??   (a)  Rowkey OID{ Column Family ?event?{  Column EventTime1: Value EventInfo_1 Column EventTime2: Value EventInfo_2 ? Column EventTimeN: Value EventInfo_N  } }  EventInfo example: action=ADD IS=IS_001|IS|http://www.001.com/IS eventTime=2012-08-06 13:58:19.0 parent=z001 childList={x001-x010,y001-y020} publisher=Tom ?  (b)                                                          (c)  Figure 4.  DS storage schema in HBase  In this storage schema, the time cost of discovering the related events of a specific OID is minimized. Besides, though the replications of event indexes in different rows cause data redundancy, the size of each event index text is quite small. For DS based on RDBMS, when the data size is huge, it?s necessary to store mappings from OID to event IDs in an extra table, otherwise the time cost of a discovery will be intolerable. Comparing the memory costs of the storage schema proposed and the storage schema in RDBMS with an <OID, eventID> mapping table, we will see that the gap is not large. This will be proved by experiments in section 4.
+
+HBase is a distributed database in the master-slave mode and provides good concurrency in both reading and writing.
+
+A big table is distributedly stored at different slave servers in a balanced way. When a request of reading or writing is sent to HBase, it locates the slave server which is in charge of the target data area and dispatches the request to the slave server. This strategy enables HBase to handle concurrent reading and writing very effectively. Moreover, HBase offers block cache for real-time query. With these advantages, the new persistence layer of DS obtains good performance.
+
+B. Business logic There are two business operations that DS will execute  frequently. The first one is accepting publish of new event indexes from authorized IS servers. This second one is discovering relevant event indexes for OIDs specified in queries from users.
+
+1) Publish an event index DS accepts publish request of new events from authorized  IS servers in real time. A valid publish request should     consist of the publisher?s authentication credentials, service type and service address of the IS, action type, event time, list of concerned object IDs, and digital signature to the new event index. When DS accepts a publish request, it first validates the authentication of the publisher and the digital signature, then processes the event index and appends it to the rows concerned with relevant object IDs.
+
+2) Recursive Discovery Most objects would be packaged into larger containers for  transit in the supply chain. When they are packaged into larger containers, the tags of these objects cannot be read directly. When user wants to discovery the history of an individual object, not only the events captured by reading the object?s tag directly are interested, but also the events happened to its container are interested. To meet this requirement, recursive discovery is necessary.
+
+Lifecycle end  Lifecycle unfinished  Level_1 Container  Level_2 Container  Level_N ContainerADD  DELETE  ADD  DELETE  ADD  DELETE  No SuccessorNo Successor No Successor No Successor  CLOSE|DESTROY|TRANS  CREATE|TRANS  BASIC BASICBASICBASIC  start Single Object  No Successor   Figure 5.  Recursive Discovery Model in DFA  We designed a typical recursive discovery algorithm and implemented it in our DS prototype system. Figure 5 shows the diagram describing the rule of typical recursive discovery.
+
+The recursive discovery is operated as the following steps: Step 0: Initialize the status as Level_0.
+
+Step 1: An OID and a discovery time range (ST, ET) are input. DS reads the row of OID from HBase and gets the list L of cells (event indexes) whose timestamps are in (ST, ET).
+
+Step 3: Read the event indexes in L one by one.
+
+If it?s an event index in which current OID is added to a container, transfer to status Level_x where x = current status level+1, and recursively execute discovery on (OID of the container, timestamp of this event, ET). Get the result R* and append R* to the result set. If the tail event of R* equals to the next event in L, continue. Otherwise, it denotes that the lifecycle of OID is not completed by this moment, then close the discovery and return the result set.
+
+If it?s an event index in which the previous OID are deleted from current OID as a child, transfer to the status Level_x where x = current status level?1, add this event into the result set, and return the result set.
+
+If it?s an event index in which the OID is closed or destroyed or transformed to other things, close the discovery and return the result set.
+
+If it?s a basic event index of other actions, add it to the result set and continue.
+
+Step 4: If the result set has not been returned after all the event indexes in L have been processed, it denotes that the lifecycle of OID is not completed by this moment, close the discovery and return the result set.
+
+
+
+IV. EXPERIMENT AND EVALUATION We implemented a DS prototype proposed in this paper  and named it as ?Mode 3? in experiments. Another two DS prototypes based on RDBMS are also implemented for comparison with the proposed DS. They are named as ?Mode 1? and ?Mode 2?. The service interfaces and business logics of the three prototypes are similar.
+
+IS  BasicRecord  AggRecord  TransRecord  ChildListForBasic  ChildListForAgg  ParentListForTrans ChildListForTrans  1..*  1..*  1..*1..*     IS_ID  serviceType serviceAddr  ...
+
+record_idOID  OID record_id  OID record_id  OID record_id  action  time  record_id  ...
+
+IS_ID  action  time  record_id  IS_ID  parent  ...
+
+time  record_id  ...
+
+IS_ID   Figure 6.  Database schema of Mode 1  In Mode 1, the database schema is designed following the class diagram of DS events (Fig. 1), and is shown in figure 6. The full information of an event index has to be separately stored in several tables. In Mode 2, besides all the tables in Mode 1, an extra indexing table whose structure is shown in table 1 is built to accelerate the discovery.
+
+TABLE I.  OID INDEX TABLE  Attributes OID Event_Type Record_ID Event_Time DataType String Enum{Basic, Agg, Trans} Long Timestamp  A. Experiment Environment In the prototypes of Mode 1 and Mode 2, a machine is  served as the DS server. The model of the machine?s CPU is Intel(R) Core(TM) i5-2400 CPU @3.10 GHz. The RAM memory size of the machine is 4 GB. The software of RDBMS is Mysql Ver 14.14 Distrib 5.5.20.
+
+In the prototype of Mode 3, three machines of the same configuration compose the HBase cluster. In each machine, CPU model is Inter(R) Core(TM)2 Duo CPU E8400 @3.00GHz, the RAM memory size of each machine is 4 GB, and the software used for HBase are Hadoop-0.20.2, zookeper-3.3.5 and hbase-0.90.5.
+
+B. Dataset We surveyed a famous clothing factory and collected  some information about the data DS may handle: 1) About 10,000,000 clothes are produced every year.
+
+2) 20-30 clothes are packed into a box.
+
+3) An auto container carries at most about 150 boxes.
+
+4) An auto container experiences several ADD or  DELETE events during a shipping process.
+
+5) An article travels through 3-5 supply chain links in  its lifecycle, and 10-20 DS events in the perspective of IoT information discovery.
+
+According to these features, we generate the dataset for experiment. The dataset contains about 1,100,000 nested event indexes and describes the history of 1,000,000 objects? movement along the supply chain. Readers may notice that 1,100,000 is much smaller than the product of 1,000,000 and 10. That is because the number of relevant objects to each event varies from 1 to 150 in this scenario.
+
+C. Experiment 1 of the average time cost Experiment 1 examines the average time cost of a single  recursive discovery under three modes. The number of traced objects increases from 10,000 to 1,000,000. For a single object, 12-18 DS events are discovered by a recursive discover query. Figure 7 shows how the average time costs of a recursive discovery change as the data size is increasing under three modes.
+
+Figure 7.  Comparison of avg timecost of a recursive discovery  In Mode 1, the time cost is apparently hard to tolerate, especially when the data size is large. Thus we regard this mode as a complete failure. In Mode 2, the average time cost of a query increases with the increase of data size, but it is still tolerable. In Mode 3, there is not an obvious growth trend of the discovery time curve with the increase of data  size. The average discovery time of Mode 3 is less than 10% of that of Mode 2 when the number of traced objects is larger than 700 thousand.
+
+D. Experiment 2 of the memory cost Experiment 2 records the memory cost of the data storage  as more and more events are published to the DS. The comparisons of memory cost under different modes are presented in figure 8. Under each mode, the memory cost is increasing linearly with the increasing of traced object number. Obviously, Mode 1 costs the least memory. The memory cost of Mode 2 is nearly 3 times of Mode 1, because the indexing table is very large. The memory cost of Mode 3 is about 30% larger than Mode 2. But considering the great improvement in discovery efficiency, this redundancy is acceptable.
+
+Figure 8.  Comparison of memory cost  E. Experiment 3 of parallel query Since the performance of Mode 1 is intolerable, we only  tested Mode 2 and Mode 3 in the following two experiments.
+
+Both experiment 3 and 4 are executed under the condition that event indexes tracking 1,000,000 objects? movement are stored in database. Figure 9 shows the query numbers of recursive discovery Mode 2 and Mode 3 can handle under different numbers of parallel clients. Since the maximum parallel connection number of Mysql is 100, the tests under 200 and 400 parallel clients are only executed in Mode 3.
+
+As the number of parallel clients is increasing, the QPS (query per second) of Mode 3 is also increasing drastically.
+
+In fact, the bottleneck of the performance is in the business logic layer rather than the data persistence layer in the given experiment environment. However, the QPS of Mode 2 is not increasing with the number of parallel clients. It can only handles around 10 queries per second which is only about 0.5% of Mode 3.
+
+F. Experiment 4 of parallel publish Experiment 4 records the request numbers of event  publish DS can handle per second under different modes     with the increase of parallel clients. Every event index published in test is of the same size, and every event is relevant to 20 objects. In Mode 2, when DS accepts a publish request, it writes the information about this event index into several tables and then updates the OID index table. While in Mode 3, DS appends the event index to the rows of the concerned OIDs. Figure 10 shows the experiment results of parallel publishes. Tests under 200 and 400 parallel clients are only executed on Mode 3 for similar reason in Experiment 3. The maximum number of parallel publishes that Mode 2 can handle per second is less than 80, while the maximum number of parallel publishes that Mode 3 can handle is nearly 400.
+
+Figure 9.  Comparison of parallel queries handled per second   Figure 10.  Comparison of parallel publishes handled per second  Experiment 1 to experiment 4 proved that both the ability to discover information from a big volume of DS records and the ability to handle concurrent requests of the proposed DS system are much better than DS based on RDBMS and its extra memory cost is acceptable.
+
+
+
+V. CONCLUSION This paper works on improving the central-indexing DS  which is faced with the challenge of massive data and large amount of parallel requests. The paper presents a new storage schema of DS data based on HBase. The new storage schema uses OID as row key, event time as column  identifier, and event index as cell value to improve the discovery efficiency. A recursive discovery algorithm is specified to realize the full tracing of object which consists of both the events happened to the specific object and the events happened to its containers. The recursive discovery is included in the DS system as a service to reduce the client?s workload. A prototype of the proposed DS system is implemented. A series of comparison experiments are conducted to prove the performance advantage of the proposed DS system in both efficiency and concurrency.
+

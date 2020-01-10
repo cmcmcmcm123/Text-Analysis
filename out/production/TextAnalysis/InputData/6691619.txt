@@ -1,0 +1,194 @@
+A Stream Partitioning Approach to Processing Large Scale Distributed Graph Datasets
+
+Abstract?RDF datasets are an important source of big data.
+
+Many of them, however, are too large to fit on a single machine. One approach to address this is to partition the RDF graph across multiple machines, with each component residing on a single machine. A poor partition can incur significant communication costs, however, if as a result many queries involve multiple machines. A number of existing partitioning schemes seek to reduce these costs by finding partitions that avoid cutting edges in the RDF graph. While these can successfully find good partitions the partitioning process itself is often not very scalable, and not capable of handling incrementally-generated RDF data. In this paper, we develop a more scalable, effective and low complexity approach, online graph dataset partitioning, to produce high quality dataset partitions with fewer links between partitions. We show experimentally that it works well in reducing the communication cost of query processing, while at the same time improving scalability of the partitioning itself.
+
+Index Terms?communication cost; dataset partitioning; on- line algorithm; graph partitioning; large scale; RDF dataset
+
+I. INTRODUCTION Resource Description Framework (RDF) [11] datasets are  a significant source of big data. For example, the open data movement initiated by the W3C publishes data in RDF format on the Web. By 2011, the Linked Open Data (LOD) project had published 295 datasets consisting of over 31 billion RDF triples, interlinked by around 504 million RDF links [1].
+
+To query, manage, and store these datasets, one option is to store each RDF triple as a row in a table, and use a relational database. This incurs substantial overhead for join operations, however, which are required when following edges. When extensive joins are required, the relational DB model breaks down. However, in a database where the RDF graph is explicitly modeled as a graph (graph DB), the join operation is easy to perform because the edges between graph elements make the relationships within the data explicit. The benefit of the graph DB model is that traversing is very efficient and it yields a style of problem-solving known as the graph traversal pattern. Graph DB techniques have been widely used in different types of applications such as social, biological, transportation, and language.
+
+The size of these datasets, however, may preclude storing and processing one of them on a single machine. As a result, a number of distributed graph DB approaches have been developed, including Microsoft?s Trinity [2], Google?s Pregel [3], and Facebook?s Tao [4]. Typically, these systems store the data as a graph, and then hash some aspect of the data and use the resulting hash code to partition the RDF graph across nodes of a computer cluster. The hashing approach is easy to implement, and is efficient for simple data retrieval. However, it is oblivious to any structure in the data (and in fact intentionally destroys any clustering). Because  the hashing approach strives to distribute data evenly, without considering the relationships between data, it often results in a large number of edge cuts. Thus, related data is separated over several machines, and with complex data needs involv- ing joins, this incurs heavy communication costs for query messages and the transferring of intermediate results. This weakens the processing capacity of graph database systems.
+
+Intelligent partitioning thus is key to controlling com- munication costs for querying and evenly distributing the graph partitions. In order to efficiently manage a large scale dataset in a distributed system, an approach superior to hash partitioning is needed.
+
+In our previous research [5], we proposed a graph parti- tioning approach to manage large scale RDF datasets. This approach minimizes the number of RDF links between triples on different data nodes. Graph partitioning thus reduces both the number of query messages across nodes and the total number of bytes that must be transferred. A system design taking advantage of the characteristics of the partitions that have been produced further reduces system overhead. Through experiments, the results showed that graph partitioning is a promising approach to generate good partitions for distributed data processing and dataset management.
+
+Although graph partitioning is a promising method, most existing graph partitioning algorithms are offline algorithms or offline approximation algorithms, such as Metis [6]. For big data problems, loading the whole graph into memory and using traditional graph algorithms to process is not feasible.
+
+A scalable and effective way to approximate the behavior of graph partitioning, and to get comparable performance, is the key to widespread real-world adoption of graph partitioning.
+
+In this paper, we propose an online graph partitioning approach to distributing RDF resource and triples. In RDF resource partitioning, vertices (RDF resources) are assigned to graph components on-the-fly as triples stream in. In the triple allocation, triples are assigned based on different supervised strategies for better performance.
+
+There are two aspects of our research contribution. First, we adopt the streaming data model, which is crucial for many real-world scenarios. Second, online algorithms were created to approximate graph partitioning goals, which generate par- titions of roughly the same size with minimum edge cut.
+
+To evaluate our work, we used real world datasets, such as Uniprot dataset [7], LinkedCT dataset [8], and Semantic Dog Food dataset [9]. Also we built a simulation system to carry out experiments. It partitions datasets according to our algorithms, simulating querying with benchmark queries, and accumulates statistics on the load balance of each parti- tion, and system communication cost. In the experiment, we      compare the results between our online, hashing and offline approaches.
+
+As shown by our experimental results, our proposed online partitioning approach consistently outperformed hash parti- tioning on all the testing datasets for evaluation of communi- cation cost; the size balance of partitions is also better.
+
+We note that in addition to communication costs, graph processing also involves computational and local I/O costs.
+
+Controlling communication costs, however, is crucial to any overall solution and is the focus of this paper. Furthermore, though a simulation, we believe that our system accurately measures the communication costs of a distributed graph processing system for RDF data, and actually is more flexible than a working graph processing system for investigating different strategies.
+
+We also note that our approach can work on other types of dataset as well, such as the property graph model and the relational database model, as long as there is some way to represent data relationships during processing as a graph.
+
+Section II introduces background knowledge. Section III details our online graph partitioning approach to RDF dataset.
+
+Experiments in section IV presents evaluation and comparison with hashing approach, in partitioning. Section V discusses related works. Finally, section VI sums up the paper and discusses future work.
+
+
+
+II. BACKGROUND  A. RDF RDF (Resource Description Framework) is a W3C spec-  ification for modeling graph-structured data. Though origi- nally intended primarily for metadata, its use has expanded to include many forms of graph-structured data. An RDF statement, also called a RDF triple, is denoted as (Subject, Predicate, Object). The Subject and Predicate are URIs, while the Object can be a URI or literal. The URI is also called a resource. The Subject or Object also can be blank nodes, which serves to aggregate other Objects or Subjects. We consider blank nodes to be the same as resources for the purposes of this paper. The graph model for a RDF triple is that Subject and Object are represented as vertices, and the Predicate is denoted as a labeled edge directed from the Subject vertex to the Object vertex. (This model is similar to property graph model used by Neo4J [10].) Therefore, a RDF dataset can be represented by a graph. The formal definition of this graph can be found in [11]. Fig. 2 shows a RDF graph of the dataset in Fig. 1, sampled from the Semantic Web Dog Food Dataset [9]. The dataset is simplified from the original data for clarity.
+
+B. SPARQL and Query Processing SPARQL is a RDF query language, and allows for queries  consisting of triple patterns, conjunctions, disjunctions, and an optional pattern [12]. These are able to retrieve and manipulate data stored in RDF format in a database. This paper mainly uses triple patterns for benchmark queries. A triple pattern is similar to an RDF triple but allows any of the subject, predicate, and object fields to be a variable. Note that SPARQL triple patterns are also graph patterns. When querying, the graph pattern of the query is matched to sub- graphs of the RDF dataset.
+
+Snippet of ?iswc-2010.nt?: ------------------------------------------------------------------------------------ <Google-inc-germany-gmbh> <type> <Organization> .
+
+<Google-inc-germany-gmbh> <based_near> <gmbh/location> .
+
+<Google-inc-germany-gmbh> <member> <Thomas> .
+
+<Thomas> <type> <Person> .
+
+<Thomas> <homepage> <author39477.html> .
+
+<Thomas> <affiliation> <Google-inc-germany-gmbh> .
+
+<Thomas> <status> ?industry? .
+
+<Thomas> <publish_on> <ISWC2010> <Thomas> <based_near> <Germany> <Roger> <based_near> <Germany> <Sabine> <based_near> <Germany> <Sebastian> <based_near> <Germany> <Ulf> <based_near> <Germany> <Stefan> <based_near> <Germany> <Ulrich> <based_near> <Germany>  Fig. 1. Example RDF dataset [5].
+
+type  google-inc-germany-gmbh  Organization  gmbh/location  based_near  Thomas  member  affiliation  author39477.html  homepage  ISWC2010  publish_on  Person  type  Status  Industrybased_near  Germany  Sabine Stefan  Ulrich Roger  Sebastian Ulf  based_near based_near  based_near based_near  based_near  based_near  Fig. 2. RDF graph and graph partition [5].
+
+In this paper, we use SPARQL queries as benchmark queries for evaluating the performance of our approach. A query example in Fig. 3 shows how it can be converted to a graph pattern. This query asks for the person who is the member of Google GMBH and works in Germany.
+
+For query processing, existing distributed RDF stores, such as [13], have two kinds of machine nodes: a coordinator which receives and replies to queries, and data nodes which provides results for queries to the coordinator. The coordinator records the status of the sent-out queries. Since the query coordinator is involved in many phases of query processing, it can become  Query: ------------------------------------------------------------- Select ?person Where { <google-inc-germany-gmbh> <member> ?person .
+
+?person <based_near> <Germany> }  ?person  google-inc-germany-gmbh  Germany  member  based_near  Fig. 3. Example Query [5].
+
+a significant bottleneck of the system. Also how many queries the coordinator can process at a time will directly determine how many users can access the system, which influences the parallelism. In order to compare with our new design, we call the system introduced here a conventional system.
+
+When a complex query is processed in a conventional sys- tem, first it is divided into several sub-queries which are sent to the data nodes. The data nodes to send to are determined by some type of look up in various indices. Some queries require multiple rounds to execute. For example, queries following the pattern (s, ?p1, ?x)(?x, ?p2, ?y) need to receive answers for ?x from the first part before the second part can begin. A query such as (s, ?p1, ?x)(?x, ?p2, o), however, can be answered in one round. We call a query that requires one round to be a 1-level query, a query that requires 2-rounds to be a 2-level query, etc.
+
+For 1-level queries, the coordinator needs to merge the intermediate results, and often the transfer cost is higher than ideal because the returned intermediate results include data that does not make it to the final result. For 2-level queries, the coordinator is often waiting for intermediate results from part of sub-queries. This waiting time limits the throughput of the coordinator.
+
+
+
+III. ONLINE PARTITIONING OF RDF DATASETS  Before detailing the online algorithms for RDF dataset par- titioning, we?d like to formally introduce the data processing model we used in this paper, and introduce the concepts of the online algorithm we chose for partitioning.
+
+A. Data Stream Model and Online Algorithm  The data stream model is well known in the telecommu- nication field. It describes a sequence of data packets used to send or receive information that are in the process of being transmitted. In this paper we use data stream model for processing sets of RDF triples. Because when reading in the large triple dataset, the triples are read in one by one in a long time span, and are processed on the fly. The inputs are not available for random access on disk or in memory. This behavior meets the definition of data stream model.
+
+Formal definition of triple stream model is ordered se- quences of pairs, each pair being made of a RDF triple and a time stamp t can be denoted : (< subi, predi, obji >, ti).
+
+Time stamps can be regarded as annotations of RDF triples, and monotonically non-decreasing in the stream. Consecutive triples can have the same time stamp, meaning that they stream in the buffer at the same time, and are processed in the same batch.
+
+In our stream model, the triple is initially stored in a buffer with a certain window size. All triples in the buffer will be processed together once. The range of window size is limited by available memory.
+
+In contrast to our previous work using an offline algorithm, we used an online algorithm in this paper. An online algorithm processes its input incrementally as it is available, without having the entire input available from the start. Such algo- rithms are appropriate where the input may be too large to store in memory as a whole, and also limit the processing time per item. Those constraints mean that an online algorithm produces an approximate answer based on a summary or ?sketch? of the data stream in memory. Our algorithm?s focus  on the amount of memory usage allows it to be called a streaming algorithm.
+
+For stream orders, in this paper we choose to solve order- free case, because we think in real life application, the order of data is mostly undecidable. Hence designing the stream algorithm according to special order information would limit the usability of the algorithm. Although we treat the problem as order-free, our partitioning algorithm can still use the order information if it exist. In addition, we provide several allocation strategies as configuration options, which can optimize the performance according to order characteristic of different dataset.
+
+B. Vertex Partitioning The goal of this algorithm is to make a preliminary assign-  ment of a vertex (subject or object resource) to a partition 1) Before Partitioning: To partition the vertices, first, we  choose window size for the stream-in buffer, and make it as large as possible if system resources are available. A larger stream-in buffer will produce better partitions that have fewer total edge cuts.
+
+When the dataset is read in, triples are initially stored in the stream-in buffer. The data remains there until the buffer is full. For each vertex, a partial adjacency list is built based on the triples in the buffer. The vertices are sorted in descending order according to the number of edges among the vertices in the buffer. This is to handle the most connected vertex so far first, because this kind of vertex is more helpful in forming a locally highly connected sub-graph. When such a vertex is assigned to a partition, it will tend to ?attract? other vertices to its partition during the vertex partitioning, which improves the quality of the partitioning. Also this adjacency list can be built on the fly, and because the buffer size is small, this step will not be time consuming.
+
+After this, all the information needed for stream partitioning is prepared. The two steps described above will be repeated for each buffer-full of streaming triples until the whole dataset is completed. In the following section, we detailed how the streaming algorithm performs the partitioning.
+
+2) Adjacency Greedy: The essence of this algorithm is making decisions based on what is known so far. This knowledge consists of two parts: vertices already assigned to partitions and the current sub-graph in the stream-in buffer.
+
+The information about the vertices is kept in the global index, whose role is already detailed in our previous paper [5]. The sub-graph is kept in adjacency lists in the preparation step. In the following, the two parts are modeled for the purpose of illustrating the algorithm.
+
+Definition 1 (Global Index). It is denoted as I =< V,P, T,W,?>, where V is the vertex set, T denotes the type of the vertex, W denotes the assignment weight of vertex of V in a partition in P , P = {1..N}. The function ? : V ? (P, T,W ) is a mapping function for the index. There are two types of vertex, one is subject vertex that denotes the subject resource of a RDF triple; the other is object vertex that denotes the object resource of a RDF triple. This model must satisfy the following: each entry in the index is uniquely determined by a pair (v, p), v ? V , p ? P , and any entry in the global index is an instance of this quadruple model. Ii means the set of global index entries of partition i.
+
+Definition 2 (Stream-in Sub-graph). The sub-graph that is temporarily kept in the buffer is denoted as Gsub =<     Algorithm 1: adjacency-greedy(I, Gsub, v)  1: list ?Adjacency(Gsub, v) 2: For i in (1..N) do 3: 4: wi ? joini * ?i 5: assignment ? (i, max{wi|0<i?N}) 6: return assignment  ? ??? }...1,..|.{ lengthlistjVIvlistclistJoin ijji  Fig. 4. Adjacency greedy algorithm  V,AdjList >. V denotes the set of vertices in the graph, AdjList = {(v, c)|v ? V, v? ? V ? {v}, c = |(v, v?)|}. The vertices in V is sorted by the value of c in descending order.
+
+Gsub can be a disconnected directed graph.
+
+The algorithm does not consider self-edges. The number of vertices in a partition must be less than double the window size.
+
+Before discussing the algorithm, there is an important issue about balancing during the partitioning to be considered.
+
+During graph partitioning, a highly connected vertex in a partition causes more vertices to be assigned to that same partition, which can result in a bad partition balance. Hence an adjustment factor should be determined and considered in computing assignment weight to control imbalances. There are many options here, in our research we use: ?i = 1 ? pi/(|S|/N). pi is the current size of the partition i when processing a vertex in the buffer, 0 < i ? N , and N is the expected number of partitions, S is the total number of data items in the dataset. Adjacency(Gsub , v) is a function to map from a vertex v, v ? Gsub .V to a instance of AdjList. Ii.V denotes the set of vertices already assigned in partition i, and appears in index Ii. wi denotes the assignment weight of v in partition i, wi < 1.
+
+Algorithm 1 gives the method that selects a partition with the largest computed weight for a vertex v. For each partition P , it sums the weights of all edges in the buffer that connect v to a vertex that also appears in P . The partition with the highest weight is chosen. If multiple partitions have the same weight, the partition with largest join is selected, following the greedy policy. For other weight cases, we just use random.
+
+The complexity of this algorithm is O(N).
+
+This algorithm keeps the strongly connected vertices in the same partition. As a result the total edges distributed on a boundary can be reduced because most edges are distributed in partitions in the more strongly connected sub-graphs.
+
+Although this algorithm is good at clustering closely con- nected vertices as seen thus far, it is possible to make a poor decision based only on partial knowledge. Thus it is also possible to generate poor partitions with a large number of edge cuts. This is all because the assignment suggestion is based on current stream-in triples, and current sub-graphs of each partition. However, even with this weakness, experiments still show us this streaming algorithm performs better than hash partitioning even in the worst case.
+
+C. Triple Allocation After a vertex assignment suggestion is generated by adja-  cency greedy or balance based random, the final assignment of the vertex and the placement of the vertex related triples must be determined. In this step, the triple allocation strategy  can take the assignment suggestion made above, or make its own decision. In this part, we proposed two strategies to cover the above issues for the final vertex assignment decision and attached triples allocation.
+
+1) Strict Vertex Assignment Suggestion Follower: In this strategy, we make vertex assignment decisions and triple allo- cation strictly based on the vertex assignment suggestion from Greedy Adjacency or random allocation with size balance of so-far partitions. This strategy is simple with no optimization.
+
+Partition balancing only relies on the balance mechanism in the vertex assignment algorithm. The quality of the partition directly relies on the vertex assignment algorithm.
+
+2) Assignment history considered: In the model of defini- tion 1, a weight field is kept in I , which is used to keep the updated weight of a vertex assigned in a partition. Every time a vertex is assigned to a partition in which it already exists, the weight is updated according to its previous weight and the number of neighbors added by the new vertex.
+
+For this strategy, the vertex assignment history is considered when making a new assignment decision. The history here means the existed entries for the vertex in the global index.
+
+The accuracy of the adjacency greedy algorithm is decreased because vertex assignment suggestion is made based solely on the adjacency list of a vertex in the stream-in buffer and this adjacency list is not full for the vertex in the whole graph. In order to make up for this weakness, we designed a strategy to approximate the full adjacency list.
+
+
+
+IV. EXPERIMENTS In this section, we evaluated the communication cost on  three different RDF datasets with different features.
+
+We evaluated the performance of our one pass streaming  algorithm by comparing to offline algorithms. Hash partition- ing was used for performance comparison with our stream partitioning. In our benchmark evaluation, we compared the results among online, hash and offline approaches. Both our online partitioning and hash partitioning are compared to optimal algorithm performed by Metis in communication cost, and also compared with each other.
+
+The graph partitioner kemtis 5.0.2 is used as the graph partitioner with default setting for partitioning dataset mapped graph. For this default setting, partitioning scheme is mul- tilevel k-way, partitioning?s objective function is edge cut minimization, load imbalance factor is 1.136. For graph coars- ening, sorted heavy-edge matching is used; for uncoarsening, the number of iterations for the refinement algorithm is 10.
+
+The hashing-based approach has the same basic setup, and SHA-1 us used to hash the RDF subject.
+
+A. RDF Datasets In our experiment, we used three different RDF datasets.
+
+The first was Uniprot (Universal Protein Resource), a central database of protein sequence and function created by join- ing the information contained in Swiss-Prot, TrEMBL, and PIR [7]. We used part of the data from it to test the scalability of our algorithm and its performance on big data. On this dataset, we did experiments both with and without the com- mon URI removal technique, for which we removed triples which contain ?rdf : type?, ?rdf : predicate?, ?rdf : object?, and ?rdf : subject?. The second was the Linked Clinical Trial (LinkedCT), data of which is transformed from clinical trial data [8]. The profiles of the datasets are in Table I:     TABLE I PROFILES OF RDF DATASETS.
+
+Data sets No. of triples No. of connectedcomponents File size  Uniprot 300 millions 2 39G Uniprot-removed 190 millions 691703 26G LinkedCT 32.2 millions 1 6.6G           20 40 60 80 100  co m  m un  ic at  io n?  co st  ?ra tio  partition On_U1 Off_U1 H_U1 On_U2 Off_U2 H_U2 On_L Off_L H_L  Fig. 5. Communication cost with benchmark queries (ratio). Off ? denotes offline approach by Metis.
+
+B. Communication Cost  For evaluating the communication cost, we compared actual querying cost on datasets Uniprot, Uniprot-removed, and LinkedCT. For the evaluation, the datasets are partitioned to m parts in our experiments (m = 20, 40, 60, 80, 100), where m is the desired number of partitions. For online approach, we use ?history? (section III.B) as the triple allocation strategy for all m group experiments. This group of algorithm configuration performed better than other groups. All the other configuration options for experiments with each dataset are the same.
+
+In online partitioning, if the strongly-connected vertices are distributed evenly, it can seed clusters of following vertices, which produces fewer edge cuts. The standard deviations of the size of all partitions in our online partitioning are better than that of hash partitioning.
+
+For an actual querying comparison, we com- pared the results among the three partitioning approaches (online, hash, Metis) by the ratio: (real querying bytes/total benchmark query bytes).
+
+From the group of results in Fig. 5, our online approach works better than the hash approach in actual querying on all datasets. Also in this experiment, we found a group of interesting results on dataset Uniprot-removed. Its performance is better than offline approaches. By checking the number of querying bytes used for each pattern query, we found that for pattern (?x, ?p2, o), the offline approach sent many more bytes than our online one, which results in its overall communication costs being larger than online one. One reason for this is that we clustered RDF triples to partitions according to the partitioning of their RDF subject in offline dataset partitioning. Thus for this RDF object star query pattern, it does not work well.
+
+Another finding here is that, in actual querying evalu- ation, our online partitioning algorithm performs close or better than offline partitioning. By checking the number of bytes sent for querying by each query pattern, the online one sent many fewer bytes than offline ones on pattern (s, ?p1, ?x)(?x, ?p2, o) and (?x, ?p2, o). Due to the fact that the offline graph partitioning partitions graph by vertex, this means no one vertex can be assigned to two partitions without intentional replication, hence many paths in the graph are cut.
+
+However, actually our online partitioning algorithm partitions by edges, thus triples with the same RDF vertex can be allocated to different partitions. Hence many paths connected to one vertex can be kept in the same partition. And pattern (s, ?p1, ?x)(?x, ?p2, o) queries can still be treated well in the online partitioning. Here we did not consider the replication issue. Even if the algorithm produced some vertex replication, that is generated naturally by the algorithm, and not as the result of any intentional replication strategies. Indeed, from this finding, we can develop a replication strategy to keep all edges un-cut on each vertex partition.
+
+
+
+V. RELATED WORK  The dataset partitioning approach is an important way to distribute datasets into several parts for distributed processing and management. There are many popular ways to do dataset partitioning. Paper [13] gives a good summary on it, such as round robin partitioning, hash partitioning, and range partitioning. It also proposed influential factors in partitioning datasets. Accordingly, except for range partitioning, the other two simply distribute data randomly. Although range partition- ing can maintain locality, its performance strongly depends on the ordering property of the dataset that nearby data should be related.
+
+In real applications, the data of a dataset are related to each other. If we just simply partition the dataset by the above approaches, the relationships between data are broken, and processing across partitions will result in poor performance.
+
+Datasets with related data can in fact be mapped to a graph.
+
+Thus many research approaches process relational datasets with graph algorithms. For partitioning, graph partitioning is the most famous one, such as balanced graph partitioning [14] and multilevel graph partition [19]. There are also many graph partitioning tools that can scale well within a certain range, such as Metis [6] and Chaco [20].
+
+There is also research on using graph partitioning ap- proaches to distribute dataset over clusters. Paper [21] used Metis as their graph partitioner to distribute RDF dataset over a Hadoop cluster. Each node is equipped with a local RDF store. It is related to our previous work, but there is no specific index system using graph features of partitions in this paper. Although the shown results are much better than hash partitioning, scalability of using classic graph partition- ing is limited for using it for big data problems. Because graph partitioning is an NP-Hard problem, even approximate algorithm [14] will take O(log n) based on the complete knowledge of the graph. This is also the limitation of many offline algorithms for big data problems.
+
+There is some research on using parallel graph partitioning to handle large scale graphs, and speed up the partitioning process. ParMetis [22] extends the functionality provided by Metis and includes routines that are especially suited for parallel adapative mesh refinement computations and large     scale numerical simulations. Paper [23] used explicit graph information to perform incremental graph partitioning using recursive spectral bisection algorithm. It also used a linear programming approach to adjust the incremental graph with minimum vertex movement, minimum edge cut, and balanced partition. However these approaches are limited by needing the whole knowledge of the graph.
+
+Streaming algorithms are one approach to processing large scale datasets. Stream graph partitioning [24] proposed one pass k-partitioning algorithms to partition a large scale graph.
+
+Our work is related, but in their approach, they still need full knowledge of all neighbors of a vertex, and their processing space is O(n). Although it can scale for some large datasets, for big data problems, the size of the dataset would exceed available memory. In that case O(n) is unacceptable. And having the full neighbor information for a large graph dataset is also difficult, plus the data ordering in natural datasets is unpredictable. Therefore our research proposes a more flexible approach for streaming partitioning a graph in a scalable and memory friendly way.
+
+A number of papers about distributed RDF triple store proposed their own approaches to partitioning RDF dataset and designed their own querying systems. RDFPeers [16] proposed a scalable distributed RDF repository based on a structured P2P network. It places a triple on different peers by hashing on subject, predicate, and object, respectively. Each triple has three copies in the system. By this way, RDFPeers sends RDF queries to peers by hashing on the non-variable part of query patterns. As an advantage, this approach can scale up to a large triple dataset. As a deficiency, hops for querying generate more than one query message for a query so that the communication cost of the system would be high.
+
+Similar research projects building distributed RDF stores are in Atlas [25].
+
+Some graph data management and processing applications, such as YARS2 [26] and Virtuoso [27], generally hash par- tition RDF triples across multiple machines, and parallelize access to these machines as much as possible at query time. Google Pregel [3] used hashing to distribute vertex for management and processing. InfiniteGraph [28] adopted hash sharding, but made I/O between nodes parallel and faster.
+
+Neo4J [10] used cache sharding and Neo4J HA for scaling large dataset, but the full dataset is expected to be present on each database instance. Hash partitioning breaks links among data, and will result in heavy I/O among nodes for complex join queries. Cache sharding can still cause heavy I/O among servers for big data problem.
+
+
+
+VI. CONCLUSION AND FUTURE WORK  Online graph partitioning approaches to large distributed graph dataset management are a promising new approach to big data processing and integration for data-driven science and engineering. In this paper we presented an online graph partitioning approach to distribute large datasets. Vertex as- signment algorithms provide suggestions to distribute a vertex.
+
+The triple allocation strategies use the vertex assignment suggestion and previous knowledge of partitions to make vertex assignment decisions and allocate the triples. As shown in our experiments, our approach and strategies performs consistently better than hash partitioning approach. For our future work, first we plan to develop a replication approach  that can complement our partitioning approach and lower communication cost and high workload balance for a cluster system. Second we will design a new, efficient and more scal- able indexing system for applying our partitioning approach in applications.
+

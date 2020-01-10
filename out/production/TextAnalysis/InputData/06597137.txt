@@ -1,0 +1,218 @@
+SPTI: Efficient Answering the Shortest Path Query on Large Graphs
+
+Abstract?The shortest path distance computing between any two vertices in large scale graphs is an essential problem, e.g., social network analysis, route planning in road map, and has been studied over the past few decades. To answer the query efficiently, the index is widely used. However, when it comes to large scale graphs composed of millions of vertices and edges, they suffer from drawbacks of scalability. To solve these problems, we put forward SPTI, an indexing and query processing framework for the shortest path distance computing.
+
+We only select a small part of vertices from the original graph to construct index, instead of all of them. It not only can reduce the construction time and index size dramatically, but also can help speed up the-state-of-the-art approaches significantly. Our experimental results demonstrate that the SPTI can perform on graphs with millions of vertices/edges and offers apparent performance improvement over existing approaches in term of index construction time, index size and query time.
+
+Keywords-shortest path, community, trunk, distance query;
+
+I. INTRODUCTION  It is common to find data modeled as graphs in various fields, e.g., XML databases, social networks, network traffic and cheminformatics. The shortest path distance computing between any two vertices in large scale graphs is an essential problem and has been studied over the past few decades.
+
+Compare with traditional reachability query, the result of shortest path query has a more practical significance. For instance, in a social network, we can measure the close- ness between users by the shortest path distance; in road networks, the shortest path distance between cities means travel costs saving.
+
+One naive method for the shortest path problem is to execute the online Breadth First Search (BFS) on graphs.
+
+It is well known that the time complexity of this approach is O(n+m), where n is the number of vertices and m is the number of edges. It means that the query answering time grows linearly with graph size, which is too costly for very large graphs. The shortest path query can be answered in constant time, if we pre-compute and store the BFS tree for each vertex of the graph. However, the space cost is O(n2).
+
+This is still impractical for large scale graphs. Therefore, we must find the best trade-off between the two extreme approaches.
+
+In the last several years, quite a few graph indexing methods have been proposed, such as compact BFS-trees and node labeling approaches. However, these approaches can only handle medium-sized graphs which have tens or hundreds of thousands vertices and edges and todays graphs often have tens of millions vertices and edges. For example, the number of active Facebook users attained 10 billion and the edges between them are hundreds of billions in 2012.
+
+Therefore, we must find new ways to retrieve the shortest path efficiently.
+
+Ruoming Jin et al.[11] proposed a highway-centric la- beling approach for answering distance queries on large graphs. It deploys the distance labeling with a highway structure which provides better labeling size than other methods. However, it can only handle sparse graphs. When the density of graphs grows, the labeling size would increase dramatically.
+
+According to six degree of separation, set out by Frigyes Karinthy[14], everyone and everything is six or fewer steps away. Hence, we can find that most of real worlds data graphs are generally sparse in global yet dense in local. They have vertices in a group structure that the vertices within the groups have higher density of edges while vertices among groups have lower density of edges[12], [13]. This kind of structure, called community, is a very important property of graphs and can uncover many invisible features of the given graphs. For instance, in social networks, people belong to the same community often have properties in common, such as hobby, family, polity, and so on. And in a community, we can often find a few people as central figure, which have keen relationship with others. Because they are related to the overwhelming majority of topological information, if we can make good use of them, the index size may be reduced greatly.
+
+A. Our Contribution  To sum, scalability has become the biggest challenge for the shortest path distance computation. In this paper, we propose Shortest Path Trunk Indexing (SPTI), an indexing and query processing scheme for the shortest path distance query computing. Briefly speaking, the key idea of our method and our main contributions are the following:  2013 IEEE International Congress on Big Data  DOI 10.1109/BigData.Congress.2013.34     ? Shortest Path Trunk (SPT). To reduce the index size, we purposefully select a small part of vertices, instead of all the vertices, on very large graphs to form a subgraph. Every vertex can reach or be reached by at least one of these vertices in a very short distance by BFS. It not only can speed up the online search, but also can scale down the existing shortest path indices.
+
+? Trunk Spanning Tree. After the first step, we can get a very sparse weighted graph which is very suitable for adopting other algorithms[11], [15] to construct a tree-like index and answer the shortest path query in constant time on trunk.
+
+? Accessing Trunk. To answer the shortest path distance between any pair of vertices, source vertex u assesses a list of outgoing trunk vertices and target vertex v assesses a list of incoming vertices. Then the shortest path between u and v can be obtained efficiently by computing the shortest path distance between the outgoing vertices and incoming vertices..
+
+The most meaningful property of SPTI is that it can be employed recursively, that is, we can construct a multi-level trunk structure. However, we find that the first level SPT is already very scalable for those very large graphs which have millions of vertices. There are several basic research problems emphatically considered by SPTI:  1) How to formally define and efficiently construct the SPT for graphs: The SPTI not only must has reasonable size which is much smaller than original graphs, but also capture the path information as far as possible and allow the fast access by other vertices.
+
+2) How to utilize the SPT to compute the shortest path distance query efficiently: It includes two aspects: The local search of source vertex and target vertex must be minimized.
+
+We should adopt an efficient index structure for the trunk to speed up the shortest path query.
+
+The rest of this paper is organized as follows: in Section 2 we introduce the formal definition of our index structure.
+
+Section 3 and Section 4 present the detailed algorithms and the complexity analysis. The experiment results are reported in section 5. We give the related work in Section 6 and conclude in Section 7.
+
+
+
+II. PROBLEM DEFINITION  In this section, we will formally define the shortest path trunk which is the key role in our SPTI structure.
+
+A directed graph is defined as G = (V,E), where V = {1, 2, ..., n}is the vertex set, and E = (V ? V ) is the edge set. Let n = |V | is the number of vertices and m = |E| is the number of edges. For any pair vertex (u,v), We say there is the shortest path between them, denoted as u?s v, if there exists at least one path from the vertex u to the vertex v and the distance is the shortest.
+
+In this paper, we consider simple graphs only, i.e. the directed acyclic graphs without self-loops and multi-edges.
+
+Considering the performance of the shortest path query an- swering on large graphs, the index should have the features as follows:  ? It should have much lesser vertices than the original graph;  ? It should preserve all the shortest path information of the original graph;  ? It should be easy to access from any vertex in the original graph.
+
+In order to satisfy these features, we first give some definitions before the formal definition of the SPT.
+
+Definition 1: (? Neighbor) In a directed graph G, we use u?? v to denote vertex u and vertex v has a path and the hops are at most ?. Then for a given vertex v ? V and a threshold ? , N?(v) = {u|u ?? v}, N ??(v) = {u|v ?? u}, we call the set N?(v) and N ??(v) as v?s ? Neighbor.
+
+Definition 2: (Community) Let G = (V,E) be a DAG, ? is a threshold and C ? V is a vertex set. For the only vertex v, if {u|u ? C \ v ? (u ? N?(v)? u ? N ??(v))}, then we call C as a community and v as its community center .
+
+Definition 3: (Community Cover) Let G = (V,E) be a DAG, a community cover of G consists of a set of communities, {C1, ..., Ck}, where  ? 1?i?k Ci = V and  Ci ? Cj = ?, for i ? 1, j ? k and i ?= j.
+
+?  ? ?  ?  ??  ?  ?    ?     ?  ??  ??  ??  ??  ?? ??  ?  (a) Original Graph G  ?  ?     ??  ?  ?  ?  ?  (b) The SPT of G  Figure 1: Running Example  After computing a community cover of G, each vertex v ? V is assigned into a sole community. In each community, there is only one community center that can reach or be reached by other vertex in steps. Focus on utilizing these community centers we can compute the shortest path efficiently. For any pair of vertices u and v, if they are in the same community, then (u,v) is referred to as an in-community pair, otherwise it is referred to as an out- community pair. Given this, the SPT is defined as follows:  Definition 4: (Shortest Path Trunk(SPT)) Given a di- rected graph G = (V,E) and a threshold ?, the Shortest Path Trunk (SPT) of G is a weighted and directed graph G? = (V ?, E?, ?) and has the following properties:  ? V ? ? V and E? may not contain edges in E; ? Let TC(V ?) = V ? ? V ? be the transitive clo-  sure of G on V*, then the edge set E? = (u?, v?) ? TC(V ?)u? ?s v?;  ? ? is a weight function that assign each edge e? = (u?, v?) : u?, v? ? V ?, u? ?s v? in the original graph G;     ? For every out-community pair (u, v), there must (not) exist two community centers u? and v?, such that (u, u?) and (v?,v) are both in-community pairs in G and u? has the shortest path to v? in G?.
+
+We give an example of the SPT as follows: Example 1. Figure 1(b) shows a SPT of graph G (Figure  1(a)) with ? = 2. As an example, for out-community vertex pair (17,6), there is a trunk vertex 0 reached by 17 in one hop, and a trunk vertex 5 that can reach 6 in one hop.
+
+The shortest distance between 0 and 5 is 4. Therefore, the shortest distance between 17 and 6 is 6. On the other hand, if the two trunk vertices cannot reach one another, then their neighbors cannot reach to each other too. In other words, the SPT reserve all the path information and has no false positives.
+
+Apparently, the size of the SPT depends on the local threshold ?. As is shown in the empirical result Section 4, we can reduce the graph size remarkably with ? ? 3 and in many real world data graphs we can achieve ideal result even with ? = 2.
+
+Most edges in E? may not be contained by E, but there is no additional topology information added in E? besides those in the original graph G. Thus, we only need to focus on the discovering of the vertex set V ? of the SPT. If we can minimize the size of V ?, the query efficiency can be improved greatly. Here we give the definition of the minimal shortest path trunk discovery.
+
+Definition 5: (The Minimal Shortest Path Trunk (M- SPT) Discovery) Given a directed graph G = (V,E) and a threshold ?, we would like to find the minimal SPT vertex set V ? ? V which can cover the original graph G and has the minimal size in all the possible results.
+
+Unfortunately, computing MSPT is an NP-hard problem, because its corresponding decision problem is NP-complete.
+
+? ?  ?     ??  ??  Figure 2: The Modification for Vertex 8 of G Theorem 1: The MSPT discovery is an NP-hard opti-  mization problem.
+
+Proof: We reduce the famous NP-complete problem,  set-cover problem (SCP), to this problem.
+
+Apparently, when the threshold ? = 1, our approach  would degenerate into the SCP.
+
+When ? ? 2, we can modify the original graph G to G? as  follows: for each v? ? V ?, if u ? N?(v?) or u ? (N ?)?(v?) and u is not the end point of the path starting from v? in ? steps, then delete it, as an example we can see the Figure 2.
+
+After the modification, the MSPT problem degenerates into  the SCP again. Therefore, we can draw a conclusion that the MSPT problem is a special case of SCP and is NP-hard too.
+
+Obviously, the SPT is a special case of the SCP. It just increased the covered scope. So we have:  Theorem 2: Given any DAG, the MSPT computing cost is not larger than the minimum vertex set cover (MSCP), i.e., cost(MSPT ) ? cost(MSCP ).
+
+
+
+III. SPT DISCOVERY  Since the discovery of the MSPT is NP-hard, we cannot find the optimal solution in polynomial time. In this section, we propose an approximate algorithm to deal this problem.
+
+Vertex Set ? Cover: Let G = (V,E) be a directed graph, we say the vertex u (resp. v) is ? covered by the vertex v (resp. u) if u ?s v or v ?s u and the distance between them is at most ?.
+
+A. Index Construction  As is given by Theorem 1, we cannot get the SPT in polynomial time. Therefore an approximation scheme for this problem is presented. The index construction algorithm is consists of two steps (see Algorithm 1). Step 1 and 2 constitute the major part of the index construction task: get the vertex set of the SPT for G and get the edge set of the SPT for G.
+
+Algorithm 1: Computation of the SPT input : G, a directed data graph; ?, a threshold output: T, the SPT ;  1 get vertex set(G, ?); {output the vertex set V ?} 2 get edge set(G, V ?); {output the edge set E?} 3 T ? (V ?, E?)  The vertex set can be obtained by Algorithm 2. Its main idea derives from the 2-approximate minimum vertex cover algorithm. In applications, we find a phenomenon that those vertices chosen to be community center often have much more degrees than other vertices. Intuitively, to minimize the size of the SPT of G, we must select the vertices that can ? cover other vertices as much as possible.
+
+Algorithm 2 first orders the vertices by their degrees (out-degree and in-degree), and cover the vertices in G by bidirectionally BFS, constrained by threshold ?, in turn until all the vertices is covered. By this way, we can choose those vertices to be community center which have maximum degrees as much as possible.
+
+As an example, we can see the graph G in Figure 1(a).
+
+The vertices 12,8,0,5 will be handled in turn, because they have maximum degree. Before we introduce the algorithm of the computation of the edge set for the SPT, we first give a property of community centers.
+
+Property 1. The maximum distance between two com- munity centers is 2?.
+
+Algorithm 2: Computation of the SPT vertex set input : G, a directed data graph; ?, a threshold output: V ?, the vertex set of SPT ;  1 V ? ? ?; 2 O ? {the set of node ordered by degree}; 3 Queue Q; 4 for each u in O do 5 if !visited[u] then 6 V ? ? {u}; 7 Q.enqueue(u); 8 level = 0; 9 while !Q.empty() do  10 v = Q.dequeue(); 11 level? get v?s level; 12 if level < ? then 13 Bout ? v?s successors; 14 Bin ? v?s predecessors; 15 Q? Bout; 16 Q? Bin;  17 return V ?;  According to the approach of our index construction, this property is in evidence. Take advantage of this property, we propose a simple method, shown in Algorithm 3, to retrieve all the edge set for the SPT. The main idea of it is to do BFS from every vertex of the SPT, if it can reach another vertex of the SPT in 2? steps, then we create a link between them and add a cost for it. Because all this link added by us are all the path information of the original graph, there is no new reachability information introduced.
+
+Algorithm 3: Computation of the SPT edge set input : G, a directed data graph; V ?, the vertex set of  the SPT for G; output: E?, the edge set of the SPT ;  1 E? ? ?; 2 for each u ? V ? do 3 do BFS from u; 4 if u can reach v in 2? steps and v ? V ? then 5 c? the cost from u to v; 6 E? ? (u, v, c); 7 return E?;  B. Transitive Closure of the SPT After the operation in Section 3.1, we can get a subgraph  of the original graph. The index size can be reduced signifi- cantly. The shortest path distance query efficiency closely relate to the SPT. Because the total size of the SPT is comparative small, we can use the most direct method that to compute all the exact shortest path distance between all the vertex pairs of the index, such as the Dijksras algorithm [1].
+
+To improve the efficiency, we can use other algorithms to construct index for the SPT too. In the experiment result, we can find that our index framework can help improve the query efficiency of other approaches greatly.
+
+If the size of the SPT is still a bottleneck of the query performance, we can continue compute the SPT for the original SPT to further reduce the index size.
+
+C. Complexity  Index construction time. For the index construction, we have to:  ? order the vertices of the original graph G by their degrees;  ? use the vertices with high degree to cover other vertices; ? generate the edges between all the SPT vertices.
+
+For (1), it takes O(nlogn) time.
+
+For (2), Let V ? denote the set of vertices that can ? cover  all the vertices of the original graph, let N?(u) and E?(u) denote the vertices and edges in us forward ? neighbors.
+
+Let N ??(u) and E  ? ?(u) denote the vertices and edges in us  backward ? neighbors, respectively, then the procedure takes time O(  ? u?V ? (N?(u) + E?(u) +N  ? ?(u) + E  ? ?(u))).
+
+For (3), we deploy local BFS from the every SPT vertices, which costs in worst case O(V ? +  ? u?V ? E?(u)).
+
+Index size. Mostly, the SPT is a really sparse graph.
+
+Therefore, the storage cost is very small. Even if we adopt the transitive closure to store all the shortest paths between every vertices pairs of the SPT, the index size is O(K2), where k << |V |.
+
+
+
+IV. QUERY PROCESSING  We now discuss how to process the shortest path distance query by our index. First, we give an important property of the SPT about query processing.
+
+Theorem 3: Any vertex can reach a SPT vertex in 2?? 1 hops.
+
+Proof: According to theorem 3, the max distance be- tween any two SPT vertices is 2?. In the extreme case, one vertex may one hop away from the nearest backward SPT vertices. Therefore, the maximum distance between this vertex to other SPT vertex is 2?? 1.
+
+The basic scheme of the shortest path distance compu- tation, based on Theorem 3, is sketched in Algorithm 4. It consists of two basic steps:  1) Local bidirectional BFS for accessing the SPT: To get the shortest path distance of two vertices u and v, we first carry out two local BFS within 2? hops. One is forward search from u another is backward search from v. If they are matched locally, we directly answer the shortest path distance, or else, they both can reach the vertices of the SPT.
+
+Algorithm 4: Query(u,v) input : G, a directed data graph; T, the SPT for G; output: the shortest path distance between u and v ;  1 do forward BFS from u; 2 do backward BFS from v; 3 if u can reach v in 2? hops then 4 return the distance from u to v;  5 V ?1 ?the set of all the SPT vertices that u can reach; 6 V ?2 ?the set of all the SPT vertices that can reach v; 7 for each v1 ? V ?1 do 8 for each v2 ? V ?2 do 9 if v1 has the shortest path to V2 then  10 return the distance from u to v;  11 return ?; 2) Answering the query by the SPT: If the two vertices  are not in the same community, we can get the shortest path distance by test the SPT. The efficiency of this step is depend on how we handle the query on the SPT. Usually we can answer it in constant time.
+
+Complexity. For arbitrary vertex pair (u, v), each local BFS for u and v of the original graph G takes time O(N?(u) + E?(u) +N  ? ?(v) + E  ? ?(v)) and the shortest path  computation on the SPT can be done in constant time if we adopt a suitable index structure for it.
+
+
+
+V. EXPERIMENTAL EVALUATION  In this section, we empirically evaluate the performance of our SPTI framework on both real and synthetic datasets.
+
+Particularly, the following problems are considered:  ? Whether our method really reduce the index size in- deed?
+
+? Whether the data processing speed can be increased significantly by the SPTI?
+
+? Whether the SPTI can improve other algorithms per- formance?
+
+A. Experimental Setup  To answer the questions mentioned above, we study the following state-of-the-art shortest path distance query answering schemes and their SPT counterparts:  ? BFS, the classical online bread-first search; ? 2HOP, the 2HOP distance labeling approach[4]; ? HCL, the highway-centric labeling approach using ap-  proximate set cover algorithm and directed MST with Edge-Betweenness[11];  ? SPT-2HOP, the 2HOP approach combining with our SPT index;  ? SPT-HCL, the HCL approach combining with our SPT index.
+
+In each experiment, we focus on measuring three impor- tant features: index construction time, index size and query  Table I: Real Datasets Dataset Nodes Edges Diameter  p2p-Gnutella08 6,301 9215 9  p2p-Gnutella09 8,114 11,717 9  p2p-Gnutella31 62,586 73702 11  p2p-Gnutella30 36,682 43,379 10  p2p-Gnutella25 22,687 23,651 11  CiteSeer 723,131 790,552 10  wiki-Vote 8297 12,374 7  soc-Pokec 1,632,803 2,964,437 11  time. For query time, we measure it by answering 100,000 complete random queries. The index size of a SPTI approach consists of two parts: the index size of the shortest path trunk and the label size of 2HOP or HCL on the trunk. The construction time of a SPTI method consists of the time cost of constructing the shortest path trunk and the time cost of constructing the label of the trunk. All algorithms mentioned in this work are implemented in C++ based on the Standard Template Library (STL).
+
+All experiments are performed on a Windows 7 machine with AMD-3870K 3.0GHZ and 8G RAM.
+
+B. Real Datasets  To validate our approaches, we first do experiments on real-world datasets. For more attractive and convincible results, we purposively collected 8 datasets, listed in Table I with their some important characteristics. All these datasets are directed, sparse, and unweighted graphs. For those non- DAG graphs, we can transform it into a DAG by coalescing strongly connected components (SCC) into virtual vertices.
+
+This can be done simply by depth first search (DFS).
+
+The size the selected graphs range from several thousand to almost two million vertices. CiteSeer is collected by The Koblenz Network Collection (KONECT)[16], which is about the digital library for scientific and academic papers, primarily in the fields of computer and information science.
+
+The others are all collected by Stanford Large Network Dataset Collection (SNAP)[17]. Their brief introductions are as follow: 1) p2p-Gnutella08-31, a sequence of snapshots of the Gnutella peer-to-peer file sharing network from August 25 to 31 in 2002; 2)wiki-Vote, a free encyclopedia written collaboratively by volunteers around the world; 3)soc-Pokec, anonymized data of the Pokec which is the most popular on- line social network in Slovakia; 4) cit-Patents, U.S. patent dataset is maintained by the National Bureau of Economic Research.
+
+Table II shows the index construction time for different query answering approaches. From the result, we can see that our algorithm is much faster than other counterparts, especially for those large graphs. In addition, 2HOP and HCL cannot work on the graphs which have more than hun- dreds of thousands of vertices due to insufficient scalability.
+
+However, by combining our method, both 2HOP and HCL can handle large graphs with millions of vertices.
+
+Table II: Result of Real Datasets(Construction Time) Dataset 2HOP HCL SPT-2HOP SPT-HCL  p2p-Gnutella08 21,939 1,601 13 10  p2p-Gnutella09 27380 2,101 14 13  p2p-Gnutella31 4.75106 137,092 628 215  p2p-Gnutella30 1.43106 41,180 213 91  p2p-Gnutella25 365,157 18,647 117 45  wiki-Vote 223,179 15,760 101 20  CiteSeer ? ? 1.31? 106 522,590 soc-Pokec ? ? 4.35? 106 2.58? 106  Figure 3 shows the index size for different query ap- proaches. The label size for online BFS is not applicable.
+
+The 2HOP and HCL can provide comparatively reasonable index size for small and sparse graph. However, for dense graphs, such as wiki-vote, the performance of them drops dramatically. The biggest characteristic our SPT algorithm is that it can handle dense graphs efficiently. Because the SPT is really sparse for the original graph, it is very fit for 2HOP and HCL to continue construct index.
+
+Figure 3: The Index Size of Real Datasets  For query time, we can see the result in Table III. Because the query time for 2HOP and HCL is nearly constant time, we mainly compare our algorithm with the online BFS. To make the comparison result more meaningful, we do not use completely random queries, which would produce too much negative queries. Sometime, there are even no positive queries in one experiment. This is highly unlikely practical applications which pay more attention to positive queries.
+
+Therefore, we select the vertices whose out-degree is larger than 0, and select the target whose in-degree is larger than 0. This ensures that there must be some vertices visited in a query. From the result we can conclude, that our method improves the query efficiency significantly in most of the dataset especially for those large and dense graphs. This is mainly because the time cost of local BFS is almost negligible.
+
+C. Synthetic Data  We further test our method on synthetic datasets too.
+
+In this part, we mainly investigate how density affects the algorithms performance. All synthetic datasets are generated by Erdos Renyi Modes(ER), a classical random graph model.
+
+We set the density |E|/|V | from 1.5 to 3 and vary |V | from 5K to 2,000K. We still test the algorithms used above, i.e., 2HOP, HCL, STP-2HOP and STP-HCL in this experiment.
+
+Table III: Result of Real Datasets(Query Time) Dataset SPT-2HOP SPT-HCL BFS  p2p-Gnutella08 4,983 5,041 9,877  p2p-Gnutella09 4,674 4,712 12868  p2p-Gnutella31 4,467 4,534 121,717  p2p-Gnutella30 5,309 5,373 65,429  p2p-Gnutella25 3,222 3,377 32,434  wiki-Vote 2,070 2,145 2235  CiteSeer 3323 3425 4505  soc-Pokec 5704 6412 66527  Table IV: Result of Synthetic Datasets(Construction Time, |E|/|V | = 1.5)  |V | 2HOP HCL SPT-2HOP SPT-HCL 5K 2,595 1,260 9 10  10K 10,615 4,948 21 22  50K 348,523 132,990 699 204  100K 1.5? 106 518,809 2,006 917 500K ? ? 173,784 39,277  Table V: Result of Synthetic Datasets(Construction Time, |E|/|V | = 2.0)  |V | 2HOP HCL SPT-2HOP SPT-HCL 5K 14,547 7,591 12 10  10K 68,640 30,588 22 23  50K 2.32? 106 980,552 637 211 100K ? ? 4,912 870  500K ? ? 490,499 52,584  Table VI: Result of Synthetic Datasets(Construction Time, |E|/|V | = 3.0)  |V | 2HOP HCL SPT-2HOP SPT-HCL 5K 479,382 207,887 19 11  10K 2.35? 106 1.11? 106 105 60 50K ? ? 7,601 285  100K ? ? 14625 2134  500K ? ? 29,764 1.29? 106  The detailed statistics of construction time of these datasets can be seen in Table IV-VI. The result shows, with increasing the density and size of graphs, the performance of 2HOP and HCL decrease drastically. When the size of vertex comes to 100K, they cannot continue to work any longer. However, our algorithm can work well even when the size of vertex come to 1M. Especially, our approach is very applicable to high density graphs. The SPT itself is a very sparse subgraph, which can improve the construction and query efficiency of 2HOP and HCL greately.
+
+Table VII to IX report the index size of four approaches.
+
+Both SPT-2HOP and SPT-HCL reduce the index size greatly.
+
+The data shows our index size at least an order of magnitude less than 2HOP and HCL. It is very meaningful for large graphs query. In fact, our approach still work efficiently even when |V | >> 500K. Due to space limitation, we omit these data.
+
+Figure 4 shows the query time of different query ap-     Table VII: Result of Synthetic Datasets(Index Size, |E|/|V | = 1.5)  |V | 2HOP HCL SPT-2HOP SPT-HCL 5K 33,824 23,579 1,809 1,745  10K 69,119 47,003 3,956 3,613  50K 345,173 237,503 20,401 18,401  100K 700,927 482,481 40,676 36,856  500K ? ? 203,263 184,257  Table VIII: Result of Synthetic Datasets(Index Size, |E|/|V | = 2.0)  |V | 2HOP HCL SPT-2HOP SPT-HCL 5K 84,858 60,764 1,964 1,746  10K 172,572 123,230 3,650 3,294  50K 902,141 647,649 20,100 17,854  100K ? ? 41,887 37,002  500K ? ? 202,491 180,404  proaches. We vary |V | from 5K to 1000K so as to be more persuasive. Interestingly, the higher of the graphs density, the more our method is efficient. When |E|/|V | ? 3, the query time tend to constant time.
+
+(a) |E|/|V | = 1.5  (b) |E|/|V | = 2.0  (c) |E|/|V | = 3.0 Figure 4: Result of Synthetic Datasets(Query Time)  In the last part of our experiment, we test how the  Table IX: Result of Synthetic Datasets(Index Size, |E|/|V | = 3.0)  |V | 2HOP HCL SPT-2HOP SPT-HCL 5K 421,903 312,404 2,087 1,818  10K 923,216 699,404 4,821 4,225  50K ? ? 24,290 20,905  100K ? ? 48,859 41,890  500K ? ? 241,212 207,648  threshold ? affects the number of vertices and edges of the SPT. Apparently, if ? increases, the size of the SPT would reduce and the local search cost would increase accordingly.
+
+Therefore, we do not suggest set too large. In reality, for many real world data graphs, the index size would reduce significantly even when ? = 2. The result can be seen in Table X to XII. We show the dataset with the density with 4, 5, and 6 for space limitation.
+
+Table X: Size of SPT on Random Graphs(|E|/|V | = 4) |V | 2 3 4 5 6 5K 745 614 741 725 786  4,353 953 86 35 63 10K 1,469 1,262 1,479 1,491 1,513  7,874 1,715 3,351 140 63 50K 7,639 6,374 7,540 7,499 7,692  43,231 11,467 2,324 811 90 100K 151,151 12,495 15,162 151,491 15,796  86,840 26,371 4,342 1,489 516 500K 74,875 62,821 75,299 75,820 75,750  456,977 124,311 22,254 8,864 2,465 1000K 49,971 126,628 150,628 152,425 15,628  902,019 247,750 44,408 18,796 74,911  Table XI: Size of SPT on Random Graphs(|E|/|V | = 5) |V | 2 3 4 5 6 5K 610 467 612 611 606  45,521 989 75 35 18 10K 1,202 925 1,261 1,231 1,260  11,922 2,632 867 694 767 50K 5,980 4,928 6,178 6,137 6,367  60,661 15,503 1,845 1,148 452 100K 11,913 9,525 12,727 12,296 12,907  119,466 34,423 6,155 1,726 571 500K 59,729 47,091 61,648 61,865 64,159  658,330 185,288 29,017 11,674 2,448 1000K 118,876 95,193 122,709 124,457 128,875  1,290,166 36,8647 56,351 23,163 5,008
+
+VI. RELATED WORK  Many approaches have been proposed for processing source-to-target shortest path and distance query and are related to several key questions, i.e. single-source shortest path distance computation.
+
+One of the most well-known methods for this issue is Dijksras algorithm [1]. It solves the single-source shortest path problem for a graph with non-negative edge path costs, producing a shortest path tree. This algorithm is often used in routing as a subroutine in other graph algorithms, or in GPS Technology and can be implemented with O(n2) time. Another famous method is Bellman-Ford algorithm [2], which is capable of handling graphs in which some     Table XII: Size of SPT on Random Graphs(|E|/|V | = 6) |V | 2 3 4 5 6 5K 496 390 550 556 570  3,836 881 21 2 6  10K 987 758 1,090 1,084 1,120 11,434 2,751 175 146 109  50K 4,969 3,701 5,103 5,079 5,359 79,351 18,589 3,604 421 114  100K 9,671 7,425 10,269 10,357 10,757 165,256 40,460 7,293 1,534 494  500K 4,881 36,581 51,889 52,024 53,980 855,651 252,588 30,401 12,819 2,665  1000K 97,071 75,103 102,768 103,157 108,068 1,702,807 467,340 62,431 29,713 5,579  of the edge weight are negative numbers and can runs in O(nm). For unweighted graphs, we can deploy Breadth First Search, which can compute the single-source shortest path problem in O(m+n). To compute the all-pairs shortest paths, we can directly use Dijkstra n times or Floyd-Warshall algorithm [3] which all need O(n3) time. These algorithms are all not suitable for large scale graphs.
+
+The 2-HOP algorithm proposed by Conhen et al. [4] adopts labeling mechanism to answer reachability and dis- tance query. Each vertex u records a list of intermediate vertices Lout(u) which it can reach along with the shortest distance, and a list of intermediate vertices Lin(u) which can reach it along with the shortest distance. To compute the shortest distance between u and v, we simply check all the common intermediate vertices between Lout(u) and Lin(v) and choose the vertex s, such that dist(u,s)+dist(s,v) is minimized for all s ? Lout(u)Lin(v).
+
+In recent years a lot of algorithms have been proposed for graph reachability queries [5], [6], [7], [8], [9], [10]. These algorithms mainly discover the connectivity of relevant vertexes but cannot compute the shortest distance between them.
+
+Vertex cover approaches has lately become the main- stream [9], [10]. Through the selecting an approximate mini- mum vertex cover and constructing an index, the reachability query can be answered efficiently. However, they still do not consider the distance computing.
+
+Ruoming Jin et al. put forward a highway-centric labeling approach in [11] which is our counterpart in experiment.
+
+They deploy a novel labeling scheme, which select a group of vertices to construct a tree-like highway index structure, for answering distance queries in large sparse graphs. It can provides better labeling size than 2-hop. However, in our experimental result, we can find that this method cannot handle large graphs efficiently in compare with our algorithm.
+
+
+
+VII. CONCLUSION In this paper, we propose a new index construction  approach, SPTI, to answer the shortest path distance query.
+
+We find that the distribution imbalance of the edges be- tween the vertices in the real world graphs and utilize the vertices which have more connection with others as index to answer the shortest path distance query. To find a near optimal salutation, we propose to selectively choose a group of vertices from the original graph to create a trunk for preserving the shortest paths information and compact the index size. Compared with existing methods, such as 2HOP, online BFS and HCL, our algorithm can reduces the index size significantly and answers the shortest path distance query efficiently. In the future, we plan to apply our index structure on dynamic graphs.
+

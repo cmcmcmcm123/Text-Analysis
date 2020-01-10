@@ -1,0 +1,282 @@
+Antipatterns Causing Memory Bloat: A Case Study Kamil Jezek, Richard Lipka
+
+Abstract?Java is one of the languages that are popular for high abstraction and automatic memory management. As in other object-oriented languages, Java?s objects can easily represent a domain model of an application. While it has a positive impact on the design, implementation and maintenance of applications, there are drawbacks as well. One of them is a relatively high memory overhead to manage objects. In this work, we show our experience with searching for this problem in an application that we refactored to use less memory. Although the application was relatively well designed with no memory leaks, it required such a big amount of memory that for large data the application was not usable in reality. We did three relatively simple improvements: we reduced the usage of Java Collections, removed unnecessary object instances, and simplified the domain model, which reduced memory needs up to 88% and made the application better usable and even faster. This work is a case-study reporting results. Moreover, the employed ideas are formulated as a set of antipatterns, which may be used for other applications.
+
+
+
+I. INTRODUCTION  Object-oriented languages such as Java have been widely adopted among other reasons for their high abstraction. It allows developers to easily create a domain model with oper- ations on the model that instantly implements use-cases of a designed application. On the other hand, there are weaknesses in using the objects, such as a relatively high overhead just to manage the objects.
+
+Mitchell [1] defines four trends causing memory bloat. He mentions long living objects that occupy memory and short living objects that consume runtime on the other hand of the spectrum. In detail they are both problematic as Java has to implement techniques to load, instantiate and store objects in memory and consequently release them when they are not needed. Since Java automatically garbages unneeded objects, the memory consumption is effectively turned into CPU usage as the garbage collector is invoked in a separate process. In other words, an application with a high memory consumption tends to slow down as the CPU is utilized to crawl memory and detect objects to erase.
+
+When a domain model of an application is complex and its dependencies dense, the running application can easily consume gigabytes of the heap as the Garbage Collector cannot release referenced objects. Enterprise applications solve this problem by using persistent storages. Together with Object Relation Mappings, it is transparent to clients that still work with light object proxies, while the big data are persisted.
+
+However, it is impractical to employ such storages for a small, versatile and stateless library.
+
+We refactored JaCC [2], which is a byte-code parser and verification tool. This tool parses Java byte-code, stores public API in memory and tries to find inconsistencies. It turns out that the memory representation of an application having hundreds of megabytes in byte-code required almost 10GB of heap memory. We did not find any real memory leaks and improved the application just changing the number of memory instances to final consumption about 1GB for the same data. It then more closely corresponded to the size of analysed byte- code and showed that the high consumption was caused mainly by the overhead of storing the objects.
+
+Although we provide a case-study on a concrete application in this work, we generalise our findings in a set of antipatterns.
+
+The contribution of this paper is in deep analysis of three areas causing memory bloat: (1) high memory consumption of Java collections, especially HashMaps, (2) reduction of needlessly instantiated objects as the overhead of storing objects is considerable when there are millions of them in memory, (3) and reduction of object dependencies to allow for object disposal by the garbage collector.
+
+All these areas are somehow mentioned by Mitchell in his paper [1]. While he provides only anecdotes to illustrated the problem, we provide example in a real application. Some authors including Guoqing Xu [3], [4] or Yingyi Bu [5] proposed future directions of bloat detection and recovery while ago. On the other hand we propose rather informal antipatterns as they seem to be better accepted in practice.
+
+The remainder of this paper is structured as follows: Section II describes the process taken to refactor the application introduced in Section III. The refactoring detailed in Section IV discovered antipatterns that we formulate in Section V and measure their impact in Section VI. Before concluding, discussion of the state-of-the-art is provided in Section VIII.
+
+
+
+II. METHODOLOGY  The refactoring of the examined application was relatively straightforward. We used Java VisualVM, which is a profiler distributed together with Java SDK, datasets (see Results in Section VI) and IntelliJ IDEA with the VisualVM plugin to easily invoke benchmarks from the IDE.
+
+Main Research     First, we thoroughly analysed the domain model of JaCC and tried to analytically detect objects and dependencies that may consume a considerable amount of memory.
+
+Secondly, we ran JaCC on a test project with attached profiler. The profiler showed objects consuming the biggest amount of memory that we could subsequently map to our understanding of JaCC. Since JaCC does not contain particu- larly big objects, the main problem detected was usually a big number of instances of rather small objects.
+
+Having the knowledge of the domain model and its usage in JaCC, we tried to modify either the model or its usage to touch parts detected from the previous step. After that, we repeated profiling to see if the refactoring helps. The approach basically followed the top-down analysis as described by Hunt [6].
+
+Finally, after several back and forth steps we detected meaningful refactoring steps and turned our findings into a formulation of antipatterns.
+
+
+
+III. CASE-STUDY APPLICATION  The refactoring of JaCC required a thorough understanding of its internal structures. Due to space limitation, we will describe only fundamental concepts in this section.
+
+JaCC analyses bytecode of the Java applications and parses its structures to a model resembling Java Reflection API.
+
+In this sense, it can be said that JaCC works like the Java Reflection API, but it does not require class loading as it processes stand-alone JAR files.
+
+The main purpose of JaCC is to discover API inconsisten- cies among Java libraries (JAR files), which goes beyond the ability of the standard Java Reflection API. To do so, it has to load all JAR files of an application and represent API models from bytecode classes. When the models are loaded, JaCC performs certain checks to detect problems. The range of the checks is wider, but one of the typical examples is: a JAR file contains a class that invokes a method, which should be provided by another JAR file, but the method, in reality, does not exist.
+
+This way, JaCC discovers incompatibilities that may happen when an application uses third-party libraries and potentially includes wrong (versions of some of the) libraries.
+
+JaCC?s domain model is depicted in Fig 1. It contains a JClass as the main element to represent a Java class.
+
+Each class contains a set of members: fields, methods and constructors (JField, JMethod, JConstructor). A field has a type, a method has parameters and a return type and a constructor has parameters. These types are linked back to JClass via JType. While JType has other implementations to model Java generics, we omit them here to simplify the explanation.
+
+The model described so far is more or less the same as the Java Reflection API. It starts to differ in the class ImporterTuple, which contains information about API usage. The invocation?s call-site is stored in instances of this class, referring to a target. In brief, class, field, method and constructor can all be a target and they can be referred from a class and method, which is depicted in the model.
+
+Fig. 1. JaCC Original Domain Model  ImporterTuple contains one HashSet, which holds instances of ScenarioType enums. Elements of this enum represent information about a scenario in which a possible incompatibility applies. They can be either EXTENSION or INVOCATION and it is represented so in this enum. Each ImporterTuple stores this to know if a called element is invoked (in a sense of method dispatch) or extended (in a sense of class inheritance).
+
+public class Reader { void read(File f) { LineIterator it = new LineIterator(f); while (...) String line = it.next();  } }  Fig. 2. Example of Called Class And Method  Importer construction is illustrated on example in Fig 2 and respective objects created in memory in Fig 3. The model reveals the target class LineIterator and its method next() is called from Reader and the method read().
+
+A scenario is INVOCATION as the method is only invoked.
+
+Furthermore, the data structure should contain links to all other elements: String and File, which we omit for simplicity reason.
+
+Fig. 3. Model of Called Class And Method     JaCC evaluates compatibility of API and stores results in a CmpResult class depicted in Fig 4. This class holds two objects that have been compared (typed as T), their difference (type Diff) and their incompatibility and scenario types.
+
+The meaning of the scenario type has been discussed above, the compatibility type may be an enum constant SOURCE or BINARY.
+
+CmpResults are structured into tree hierarchies to follow  natural structures od Java elements. In brief, a top-level ele- ment is a class with children such as fields, methods, construc- tors, etc., which have parameter or return types, recursively expressed as nested classes. A concrete element on a certain level in the tree is denoted by the generic T type.
+
+Fig. 4. JaCC comparison Result Object
+
+IV. REFACTORING  The following subsections detail three areas of JaCC that we have detected as most problematic ones.
+
+In particular, the first two steps detail reduction of the num- ber of object instances, which should be always considered when tuning memory. Although the third step is a little bit more bound to JaCC, it applies to other domains in a sense of benefit of reducing coupling in domain models.
+
+We will demonstrate improvements of each step by showing the number of dominating elements in memory. These numbers were obtained from JVisualVM, where we have benchmarked the project wct (for details see Section VI) and collected memory snapshots. The numbers from the snapshots were read manually for one run of the benchmark without statistical correction. For this reason, the numbers are rather illustrative and we round them up to thousands. A thorough statistically corrected measurement will be provided in Section VI.
+
+A. Reduction of Java Collections  Collections like HashMap from the Java Collection API are relatively big consumers of memory. They consume several bytes only to create an instance and furthermore several bytes to hold each element stored in them.
+
+After ad-hoc benchmarks and study of the source code1, we have investigated that each HashMap is in fact realized as  1OpenJDK 1.8, but Oracle?s JDK is mainly repacked OpenJDK and uses the same source-code at least collections. We did not investigate JDKs from other vendors.
+
+an array of Map.Entry with HashMap.Node nodes. Each node contains a pair of key and value of a given type, but also an integer hash and a reference to the next Node. Only this structure itself needs 32B.
+
+The HashMap furthermore holds information about its size, a load factor and a threshold determining when the HashMap will be resized. Another value contains a counter of modifications to determine that the map is in synchronization with its iterators. The size of this structure is, according to our observation, 48B.
+
+Finally, each HashMap uses a load factor, by default set to .75, causing a bigger HashMap is created to leave some space for new elements.
+
+This is not a problem when a large amount of data is stored in one HashMap or when the data stored in each entry are significantly larger than the entry itself. It starts to be an issue when there is a lot of (millions) collections that hold a relatively small amount of useful data. It happened in JaCC for ImporterTuple and its field scenario typed to HashSet2. It is evident that the map contains maximally two elements, but there are as many maps as importer tuples.
+
+Although new scenario types may be added in the future, we do not expect too many of them.
+
+For this reason, we removed the map as such and replaced it by a short class field. The field holds the same information coded in bits:  ScenarioType.INVOCATION = 1; ScenarioType.EXTENSION = 2;  Subsequently, logical OR and AND are used to set and read a current value from short fields. This change is depicted in the modified domain model in Fig 5.
+
+Let us note that the bit coding is a conservative approach applicable to any versions of Java. An alternative approach for Java 1.5 or newer may be usage of java.util.EnumSet, which internally works with enums stored as bits and it is in essence an API to the bitwise coding.
+
+This refactoring step changed the number of collections in memory. Originally, the application instantiated 15, 411, 000 HashMaps and 13, 809, 000 HashSets. After the refactor- ing, the numbers dropped respectively to 7, 505, 000 and 5, 903, 0003. The number of instances of ImporterTuple have not been changed after the refactor.
+
+B. Reduction of Object Instances  JaCC stores incompatibility results in instances of the men- tioned CmpResult class. The amount of instantiated objects is proportional to the number of detected API inconsistencies and their nesting. For instance, when an API problem is detected in a method parameter, three instances are created for: class ? method ? parameter.
+
+Although the number of instances grows depending on incompatibilities nesting, we have observed that the hierarchies  2Let us note that Java internally implements HashSet using HashMap 3The number of reduced instances is the same for both collections: 7906  showing that one HashMap corresponds to one HashSet     are usually flat. Tested applications contained a relatively small number of nested inconsistencies while the most typical problem was a missing class.
+
+In the case of a missing class, only one instance (without children) is created with the second object set to null and diff set to DEL. Evidently such objects hold no additional information and they exist only to have a common repre- sentation of results. For this reason, we modified JaCC so that CmpResults are not created for missing classes at all. Instead, we enriched a few places with additional if conditions to treat these cases separately. It showed only a small drawback in the form of less elegant code.
+
+On the other hand, the benefit is a considerable memory improvement. The number of CmpResult instances have dropped from 1, 582, 000 to only 3, 000 after this modification.
+
+This change also reduced the number of HashMap originally referenced by the removed CmpResults, furthermore im- proving memory needs. The numbers of instances after the refactoring are: 5, 909, 000 for HashMap and 4, 421, 000 for HashSet.
+
+C. Reduction of Object References  Another problem causing high memory requirements was detected as too high coupling of elements in the domain model.
+
+The main problem was that loading of one class had usually triggered loading and storing of many more needless elements.
+
+JaCC creates imported (required) and exported (provided) classes in a sense of required and provided API known from component-based programming [7]. The classes are stored the same way distinguished only by a flag in JClass.
+
+A typical representation of classes in memory may be illustrated on a program from Fig 2. containing two top level classes: LineIterator and Reader. Since LineIterator has a method next() and similarly Reader has read(), both methods are stored in memory.
+
+Furthermore, the methods have parameters and return types, which are also loaded as two additional classes: File and String. These two classes also have methods that are recursively loaded and stored as well. It recurses this way creating more and more elements. As a result, loading of one class may cause the loading of nearly all remaining classes.
+
+We deal with this problem by proposing an updated al- gorithm that requires to load JAR files twice. The algorithm crawls JAR files first to load imported classes and string names of exported classes with JAR file names. The export names are actually proxies collected to know where to find matching exports for already loaded imports. After that, JAR files are crawled for the second time to load the full representation only of exports that are imported, ignoring exports that nobody imports. The benefit is that the imports are already known and thus the algorithm may skip JAR files that provide only elements not required by any imports, which saves some time.
+
+While the new algorithm creates the same number of JClasses, it is the prerequisite for next the modification.
+
+As it has been mentioned, a class usually refers to many other classes via its members. On the other hand, such a complete  chain of class relations is not necessary for verifications performed by JaCC.
+
+Java specifications detail rules for binary compatibility [8] and the process of linking [9]. Simply said, the Java Linker requires an exact type matching to link classes, which may be successfully obtained by class name matching. Moreover, the Java Compiler performs certain type conversions, which are generally based on analysing inheritance hierarchies to detect covariances. Besides several explicitly defined rules are applied: boxing, unboxing, widening and narrowing of primitive types etc. Another set of conversions is possible for generics, which basically applies the mentioned rules on so- called erasures.
+
+To sum it up, the specification has shown that a class has to hold only information about its name and super types (superclasses and interfaces) to successfully verify source as well as binary compatibility. For this reason we designed a new proxy class added to the domain model: JSimpleClass = (name, origin, {supertype}i). The origin is a string holding the name of JAR files. The name and the origin can be used later to track the right class when a class with the same name is provided by more JAR files. Notice that the new class does not contain references to members (methods, constructors, fields).
+
+As the last step, we have updated the domain model and the byte-code parser so that all references from class members link the new JSimpleClass as it is shown in Fig 5. This causes that JClasses are instantiated only for API elements, while all nested classes are represented by JSimpleClass proxy.
+
+This final step reduced the number of JClass instances in the tested application from 736, 000 to 119, 000, but created 160, 000 new instances of JSimpleClass. In other words, 457, 000 instances were released in comparison to the JaCC version pretending this refactoring.
+
+Instances of JClass also contain Java Collections as mem- bers are stored in HashSets. For this reason, the reduction of classes also reduced the number of collections. They dropped to 1, 704, 000 for HashMap and 623, 000 for HashSet.
+
+
+
+V. MEMORY ANTIPATTERNS  This section turns experience gained in the refactoring process into widely applicable antipatterns. The patterns are respectively extracted from three refactoring steps described in the previous section.
+
+A. Antipattern: Excessively Flexible Storage  Pre-existing object storages have brought simplicity and effectiveness to daily work with collections such as sets, lists, maps, etc. due to an elegant API. On the other hand, the elegant API may improperly induce developers to overuse collections. Although back in 70?s Wirth wrote that: ?one of the most critical aspects of creating effective applications is data structure selection? [10], the problem remains so far.
+
+We assume the problem is that developers do not see detail differences in implementations such as Java?s HashSet and EnumSet. While well educated developers usually see differences between standard data structures such as lists or     Fig. 5. JaCC Changed Domain Model  sets from their mathematical definitions to their representation in programming languages, they do not oversee detail memory impacts of particular instances. It is also because different memory consumption of e.g. EnumSet and HashSet is not obvious as they both represent the same data structure ? a set.
+
+As ineffective usage of Java collections is one of the main sources of performance problems [11], it has received a lot of attention. Some of the relevant antipatterns are described in [12]. Specificity, patterns denoted as P1 - P5 deal with misusage of collections. The closest one is P2 - Fixed size collection, where a collection of a fixed size is replaced by an array. Also P5 - Small primitive Arrays describes a problem where each array stores only one primitive element.
+
+We detected another antipattern, not mentioned in the litera- ture, shown as the number of collection instances widely over- coming the number of stored elements. This situation easily happens when the collection stores an enumerated type as the enumerations usually contain only a few elements. Java solves this problem by employing java.util.EnumSet, which is designed specifically for enum types. In this sense, not using EnumSet for enums is an antipattern itself, but let us formulate it more generally: bit flags with bitwise operations to code enumerated values, or collections specifically designed for enumerated values should be used.
+
+Fig. 6 illustrates the antipattern on the left side, where three constants are first stored in many collections, then the constants are turned into bitwise coding holding the same information on the right side.
+
+The existence of this antipattern in current software may be verified automatically: if a Java enum element is stored in a collection different from EnumSet, it is an instance of the antipattern.
+
+We tried to detect the number of antipatterns in a set of real world programs. We extracted all definitions of enums in a program and found cases where the enum type is used in a wrong collection definition. The key clue was usage of  Fig. 6. Excessively Flexible Storage Antipattern and its Removal  parametrised types. Once we found instantiation of a type, e.g.
+
+new ArrayList<Type>, we checked if Type is an enum type. This process is cheap in sense of simple analysis but provides false negatives if parameterised types are not used (older Java version), or third-party collections are used (e.g.
+
+Trove or Guava Collections). Yet we found some instances.
+
+We downloaded open-source popular Maven projects from https://mvnrepository.com/popular (10/10/2016), resulting in 100 programs. We also downloaded all libraries for these projects and revealed that several popular projects wrongly use collections. In particular, elasticsearch, gson, gwt, hibernate, log4j are projects riddled with this antipat- tern. However, domain knowledge and manual analysis would be needed to prove considerable memory impact in these particular cases.
+
+B. Antipattern: Many States Illusion  Sometimes an API returns objects representing a state of an application or a result of computation. The number of states, however, may be small or contain a few borderline cases.
+
+The standard Flyweight design pattern [13] recommends to create small ?flyweight? objects that link shared bigger objects.
+
+However, the number of finally created flyweight instances may be huge as a client does not see they all refer to the same state and creates still new objects. Correct implementation of the pattern returns flyweight objects from a pool, which prevents the creation of unnecessary copies. However, it is often not clear which data will be stored in the data structure and thus the Flyweight pattern does not have to be correctly detected in the design phase. The repeated states can be seen only later by runtime analysis, when the data structures are filled with real data. This risk increases if a program is modular and one module does not see the internals of another module as they communicate only via APIs. A tactic to provide all cross- module data from a pool is on the other hand impractical.
+
+Such a problem happened in the second refactoring step, where it was not obvious from the beginning that the consid- erable amount of CmpResults will point to the same state ? a missing class.
+
+Fig. 7 depicts the antipattern with many instances pointing still to the same state, while the right side of the picture reveals correction in the form of the Flyweight pattern.
+
+Fig. 7. Many States Illusion Antipattern and its Removal  To some extent, Bhattacharya [14] shows automatic trans- formation of the source-code to generate object pool. However detection of this antipattern in general needs domain knowl- edge and runtime analysis. The fact that only few borderline cases are stored in a reference is more obvious when the memory heap is analysed. Only then, it is possible to count how many different classes are referred from the client object.
+
+The candidate classes for this antipattern can be searched in a profiling tool, by searching for instances of classes with the same attributes. When a significant amount of such objects is found, the corresponding class is likely a candidate for the optimization.
+
+When the antipattern is found, it may be fixed by the already existing Flyweight pattern.
+
+C. Antipattern: Jammed Domain Model  Sometimes developers tend to over-engineering, which ba- sically means producing too complex solutions. Mitchell [1] calls it as ?just in case? programming. A comprehensive domain model containing all possible relations among entities, as shown in the left side of Fig 8, is an example of over- engineering. Developers may create such a model in the desire of completeness and readiness for future requirements.
+
+Fig. 8. Jammed Domain Model Antipattern and its Removal  In contrast, such a model may be counter-productive as highly interconnected objects may cause too big memory consumption due to two reasons: first, an application must load too many objects from a persisted storage to build the whole object tree. Secondly, the objects may live in memory too long as they cannot be released due to references to other active objects.
+
+A similar problem is discussed in [12] as antipattern P8 - Highly delegated structures, but it only defines ratio between data and overhead and does not point to concrete program structures causing the problem. We propose here that developer should consider what connections are useful in domain models.
+
+Project JARs Size (MB) BCI (M) Deps (K) proprietary 196 115.698 16.185 27.913 jboss 591 140.282 18.350 48.651 wct 109 60.1731 10.929 16.141  Fig. 9. Test Projects  If a relation between two objects must be kept, but details about the objects are not necessary at the moment, a proxy object may be created to hold information about a target.
+
+Fig. 8 on its right side shows application where a set of arbitrarily selected dependencies was removed, and one proxy object marked as X was added for illustration.
+
+Proxying is already implemented in existing frameworks such as Hibernate, which automatically creates a proxy for all objects and lazy-loads their real representation later. However, the rationale behind Hibernate is to handle database data that would not fit all into memory anyway. We point here at an antipattern where a wrong design may prevent storing data that would normally fit into memory.
+
+This antipattern may be detected systematically by ob- serving two factors: (1) detection of cycles in the graph hierarchy and (2) depth of tree hierarchies in acyclic sub- graphs connected to the cycles.
+
+Cycles were long ago recognised as a bad practise [15], [16], [17], [18]. Studies also showed that program code with cycles is less stable [19]. As we show here, cycles have also negative impact on memory consumption.
+
+Let us explain it on an example from the case-study: objects: class ? method ? method parameter ? class form a cycle.
+
+The whole cycle cannot be garbaged once any of its items is actively used. All other elements with connected deep sub- trees consume memory even if they are not used. Introduction of JSimpleClass solved both problems. It removed the mentioned cycles and also removed the deep hierarchy of JClass.
+
+
+
+VI. RESULTS AFTER ANTIPATTERNS REMOVAL  To verify the positive impact of the removed antipatterns during the refactoring, we have conducted a set of exper- iments. The experiments were performed on JaCC, which was exercised with three datasets. First two datasets were applications from the qualitas corpus version 20120401 [20] and the third one is a proprietary application obtained from one of our industry partners (named as proprietary later on).
+
+The applications are listed in Fig 9 respectively showing the number of JAR files, the total size of the application in MB, byte-code instructions (Mega) and the number of dependencies (Kilo). We used JaCC to obtain these numbers.
+
+We selected the applications by the following key: we included a big application (jboss) and a medium size ap- plication (wct) from the qualitas corpus. Then we included the proprietary application as an example of software produced by a middle size enterprise. The number of depen- dencies counts for all class to class connections, which we understand as a top level granularity for API usage. It includes     both classes and interfaces as they are commonly used in Java to implement and exhibit an API.
+
+The three applications were analysed by JaCC in each step of its optimisation. Both memory consumption and time performance were collected.
+
+Since performance measurement in Java is not straight- forward as Java uses runtime optimisation (JIT, HotSpot), we repeated invocations and JVM warm-up runs, which was necessary to produce statistically meaningful results [21]. For this reason, we used JMH,4 a tool that provides the respective features. For each experiment, we executed 15 warm-up and 30 trial runs. For the experiments, we used 64-bit OpenJDK (version 1.8) on a workstation with Intel Core i7-4930K CPU - 3.40GHz, Ubuntu 16.04 LTS, 64GB RAM, 256GB SSD disk.
+
+JaCC keeps all data it needs in-memory and for this reason we measured the memory before JaCC started and immedi- ately before it terminated (before the reference to JaCC?s main API is released). The difference allowed us to isolate only the total memory required by JaCC?s algorithm. Since JMH can measure only time performance, we enriched the experiment with our own memory measurement. Garbage collection was programatically requested calling System.gc() followed by 5s waiting using Thread.sleep(). Then, we get the allocated memory by probing the Java runtime:  double memory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory() / 1024.0 / 1024.0; // MB  Original  project Score, MB  proprietary 8,285.122 ? 0.002 jboss 9,140.122 ? 0.066 wct 2,874.770 ? 0.011  Antipattern A proprietary 4,440.726 ? 0.002 jboss 5,008.511 ? 0.002 wct 1,666.463 ? 0.003  Antipattern B proprietary 1,649.149 ? 0.002 jboss 1,692.921 ? 0.002 wct 1,119.964 ? 0.002  Antipattern C proprietary 931.957 ? 0.002 jboss 1,064.139 ? 0.002 wct 726.113 ? 0.002  Fig. 10. Results of Memory Optimisations  Fig 10 provides detail memory consumption measured for each optimisation step for all tested projects. The same num- bers are summarised graphically in Fig 11. The difference between two immediately following tables (e.g. Antipattern B ? Antipattern C) provides an overview about memory saving of a particular step.
+
+Interestingly, the first two steps, which were from imple- mentation points of view the simplest ones, provided the most considerable memory improvement. While removal of  4http://openjdk.java.net/projects/code-tools/jmh/  HashSet references in ImporterTuple required to touch only one part of the JaCC code, it saved almost half of the memory. It is consistent with Section IV-A reporting about half reduction of memory instances. In particular, 46.40%, 45.20%, and 42.03% are improvements respectively for proprietary, jboss and wct. The percentages do not seem to change widely with the size of projects and thus the number of called elements stored in ImporterTuple is proportional to the project size.
+
+Although the second step required modifications of more parts in JaCC, it was still quite an easy operation with a high memory saving. Savings in percentages are 62.86%, 66.20%, 32.79% respectively for the projects. As it may be seen, bigger projects proprietary and jboss gained high memory saving. It is because bigger projects contain more compatibility problems and a lot of missing classes in particular. For this reason, reduction of CmpResult for missing classes reduced memory needs more considerably for bigger projects.
+
+The last refactoring required wider modification of JaCC, though it exhibited smaller memory improvement. In detail, 43.49%, 37.14% and 35.17% were measured as memory improvement.
+
+Fig. 11. Memory Performance  Original  project Score, s/op  proprietary 151.712 ? 5.724 wct 33.619 ? 0.489 jboss 146.061 ? 6.343  Antipattern A proprietary 128.362 ? 1.170 jboss 101.480 ? 2.193 wct 30.813 ? 0.284  Antipattern B proprietary 88.427 ? 4.850 jboss 67.688 ? 0.330 wct 28.048 ? 0.092  Antipattern C proprietary 32.551 ? 0.135 jboss 40.355 ? 0.395 wct 51.717 ? 0.188  Fig. 12. Results of Time Optimisations     Fig 12 and a related graph in Fig 13 summarise time performance after each refactoring step. The results clearly show that up to Antipattern B, the refactoring leads to faster computation. In brief, proprietary improved by 15.39% in Antipattern A and by 31.11% in Antipattern B, jboss improved by 30.52% and by 33.30% after the first and second step and wct improved by 8.35% and 8.97%. Since first two refactoring steps did not change implemented algorithms, the saved time is most probably caused purely by reduced overhead to create object instances and time to invoke Java Garbage Collector.
+
+On the other hand, the last step did change the behaviour of JaCC as it has to newly load the bytecode twice. The repeated loading has a negative effect on performance as it is slower in comparison to the original approach loading bytecode once.
+
+However, the slowdown has manifested only in the smallest project wct where the computation runs so quickly (28s in the second step) that the repeated loading overcame other improvements. Two bigger projects still gain high performance improvement, 63.19% for proprietary and 40.38% for jboss.
+
+Fig. 13. Time performance
+
+VII. THREATS TO VALIDITY  This work may have certain weaknesses, which we tried to mitigate.
+
+First of all, refactoring an application may break functional- ity. We do not expect it to be a case in the first two refactoring steps as they have only changed a representation of data, albeit any change potentially break functionality. On the other hand, the third step has changed the implemented algorithm.
+
+We tried to minimise any damage by thorough unit and integration testing. JaCC already had a good test coverage by JUnit tests and our refactor has finally passed all the tests.
+
+Moreover, JaCC produces a text output with a compatibility report. We used the report for an integration test so that we generated the report and compared textually outputs for original and modified JaCC.
+
+Memory measurement is tricky in Java not only because the memory management is automatic, but also because Java tends to consume memory depending on available RAM to save Garbage Collection time. Since we conducted experiments on  a workstation with 64GB RAM, it could blur results. We min- imised this problem by invoking System.gc() before each measurement. Furthermore, the experiments were repeated and data statistically processed. A low error shows that results are representative.
+
+Invocation of Garbage Collection immediately after System.gc() is not guaranteed, mainly when Java does not have enough resources for the Garbage Collection at the time. We assume it was not the case as the workstation has sufficient power with 12 virtual threads and 5s delay before each measurement should be sufficient to let the Garbage Collection finish. To confirm the assumption, we did several manual observations in JVisualVM to reveal that the memory is released. Furthermore, all measurement iterations show steady results with a very low error.
+
+The presented results are ordered from the simplest refac- toring up to the most complex one, which follows a natural refactoring process to start with easy modifications. Although the results show that the last (most complex) refactoring did not offer the biggest memory improvement, the comparison is not fully objective. For instance, the removed instances in the third step had also removed HashSets referenced from removed JClasses. In other words, information in the third step is related to the first step and implementing the third step as first could show it better in absolute numbers. We have suppressed this fact in this work as an ideal measurement would require independent implementation of all variants.
+
+Finally, we have detected that the modified algorithm in the last refactoring did not slow down computation, though it reads the bytecode twice. The total time was even better in two out of three experiments. We expect that it is caused partly by the used SSD disk and the situation can be worse on standard mechanical magnetic drives. As SSD drives grow in popularity, we believe it will not be an issue in the future.
+
+
+
+VIII. RELATED WORK  Programming antipatterns appear in literature for years.
+
+However, most antipatterns deal with source code structures.
+
+On the other hand, a few texts deal with systematic analysis and optimization of memory consumption. With the growing popularity of design patterns, several publications focused on antipatterns have appeared as well. They are mostly focused on memory leaks detection, such as [22], [23] or [24].
+
+Smith [25] classifies several antipatterns. One of them is Excessive dynamic allocations describing the situation where many objects are created only to be used once. Then they are left for removal by the garbage collector. This obviously leads to worse performance as both allocation and the garbage collection are expensive. Similar antipattern, an excessive data loading as a result of using ORM without regard to performance, is described by Chen [26] along with a proposal for its automated detection. It is similar to over-usage of collections that we have discussed in section IV-A, though we deal with long living instances. In our case, much of the objects and references were also created automatically by library responsible for class loading. Such libraries and     frameworks greatly simplify work of programmers, but at the same time they tend to create unnecessary objects in memory.
+
+In recent years, automated approaches to detect these an- tipatterns can be found [27]. As the automated ways of the antipatterns detection started to appear, the new problem of false positives appears as well. The comprehensive list of problems with the automated analysis is presented in [28].
+
+The antipatterns are also used as a method for memory leaks detection [29] as certain code structures are known to lead to memory leaks. The technique described by DePauw [29] allows for visualisation of application structures in order to identify problematic spots.
+
+A very systematic approach can be found in [11], where a metric for determining memory health of a Java program is proposed. It is based on the ratio of the domain data and overhead needed for their storage. Although we do not use the metric, this ratio was the main reason for identifying the antipattern described in IV-A. The impact of the memory management on the application performance and garbage collection is also analysed by Kim [30].
+
+Work by Bhattacharya [31] discusses reusing of collections in heap instead of removing and creating objects in order to save time. The method is based on the analysis of the program control flow. The method leads to reduction of the allocation of temporary objects. The improvements are achieved by more efficient memory usage, but the results of such analysis cannot be directly translated to the guidelines for programmers how to improve their code. Static and dynamic analysis is also applied in [32], where underpopulated and overpopulated containers are searched up. The method described there shows how collections with wrong size can be found, based on the dynamic analysis of their usage.
+
+Mitchell [33] identifies several patterns that cause usage of unnecessary amount of memory, including a focus on the detailed and complex domain model without sufficient care about the memory impact. He discusses the cost of unnecessary references, usage of expensive collections and algorithms that create and dispose a lot of objects after their first use. The patterns are demonstrated on several examples from real software. This work is later expanded, in [12] eleven different antipatterns are presented, focused mainly on both optimization of memory usage and the problem of unnecessary complex chains of method calls, usually caused by using the very generic frameworks. The performance problems of this kind are discussed also in [34].
+
+Antipatterns from Android environment are discussed in [35]. The paper deals with using of getters and setters internaly inside a class, using non-static methods when a static one would be sufficient and using the incorrect implementation of collections, when more effective collection is available.
+
+The impacts of these antipatterns are analyzed from the per- spective of memory usage, number of garbage collections and framerate of the analyzed application. The third antipattern, choice of incorrect collections is similar to our antipattern, excessive flexible storage. The paper shows, that selection of the appropriate collection implementation leads to improved  performance of the application and slight reduction of the number of garbage collections.
+
+As an alternative to memory consuming Java Collections, less memory demanding collections can be used. The example is Trove5 designed specifically to provide Java-like collections with fewer memory needs. Another example, proposed by Gil [36] uses a different hashing algorithm in order to achieve more efficient HashMap implementation. This paper deals mainly with reducing the overhead caused by storing data in objects without the need of changes in the JVM, such as creating special objects that hide null pointer references behind getters.
+
+Other approaches for bloat reduction are based on dynamic analysis of programs and direct manipulations with them on runtime. Such a solution is proposed in [37], where health of collections is evaluated as they are used and several methods, such as lazy creation or reuse of internal arrays is shown.
+
+The paper deals with collections for the Pharao language, but the applicability to Java and other languages is discussed.
+
+The approach helps solve problems P1, P3 and P4 from [12], however it would require heavy refactoring of Java libraries to implement it. A similar approach is used in [38], where a tool for runtime analysis of collection state is presented. The result of analysis is used to choose or change implementation of a collection to the most suitable one. The main focus is on the program performance, not on memory saving. Suggestion for the dynamic selection of the most suitable collection in Java is presented also in [39]. All the mentioned approaches rely on the changes in the core library or even JVM.
+
+
+
+IX. CONCLUSION  This work has described a refactoring of a Java application that used to consume a high amount of memory.
+
+The application was relatively well designed with a good domain model, but still incapable of processing real data on standard desktop computers. It was shown that the high consumption was partly caused by a big overhead of storing objects in memory and partly by too tight, albeit not actually wrong, relations in the domain model.
+
+This work has performed three refactoring steps to solve the problem, leading to considerable memory improvements, in total saving 88.75%, 88.36%, 74.74% memory for three benchmark datasets. The presented refactoring has allowed us to formulate antipatterns that lead to unnecessary high memory consumption.
+
+We had stopped the refactoring when the memory consump- tion was good enough and did not investigate possible further improvements. In the future, we can try to save even more memory.
+
+ACKNOWLEDGEMENT  This publication was supported by the project LO1506 of the Czech Ministry of Education, Youth and Sports.
+
+We would like to thank Stepanka Jezkova for her valuable feedback.
+

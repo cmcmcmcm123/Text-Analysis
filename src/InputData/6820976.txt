@@ -1,0 +1,150 @@
+Latency-Aware Dynamic Voltage and Frequency Scaling on Many-core Architectures for
+
+Abstract?Low power is the first-class design requirement for HPC systems. Dynamic voltage and frequency scaling (DVFS) has become the commonly used and efficient technology to achieve a trade-off between power consumption and system performance. However, most the prior work using DVFS did not take into account the latency of voltage/frequency scaling, which is a critical factor in real hardware determining the power efficiency of the power management algorithm. This paper, firstly, investigate the latency features of DVFS on a real many-core hardware platform. Secondly, we propose a latency- aware DVFS algorithm for profile-based power management to avoid aggressive power state transitions. At last, we evaluate our algorithm on Intel SCC platform using a data-intensive benchmark, Graph 500 benchmark. The experimental results not only show impressive potential for energy saving in data- intensive applications (up to 31% energy saving and 60% EDP reduction), but also evaluate the efficiency of our latency-aware DVFS algorithm which achieves 12.0% extra energy saving and 5.0% extra EDP reduction, moreover, increases the execution performance by 22.4%.
+
+Keywords-power management; DVFS; latency-aware; algo- rithm; Graph 500; data-intensive
+
+I. INTRODUCTION  Power management is an increasingly important aspect in both research and industry of high performance computing (HPC). As computing systems are approaching a huge scale, power consumption takes a great part in their total costs of ownership. Dynamic voltage and frequency scaling (DVFS) is an efficient technology to achieve a trade-off between performance and power by adaptive changing of the clock frequency and voltage dynamically [1][2][3][4][5]. However, most of the prior work based on DVFS did not consider the latency of voltage/frequency scaling. As we investigated, the latency of voltage scaling is non-negligible, especially in the many-core architecture with multiple voltage domains, e.g. the Single-chip Cloud Computer (SCC) platform [6]. A power state transition without awareness of the latency would not achieve expected power efficiency, and even worse sometimes, introduces performance lost and more energy dissipation.
+
+Our goal of this paper is to explore the latency-aware  DVFS algorithm in data-intensive applications, which are ex- pected having more potential for energy saving then compute- intensive applications [7]. There are a few of existing work  considering the overhead of DVFS latency. Ye et al. [8] proposed to reduce the times of power state transitions by including task allocation into learning-based dynamic power management (DPM) for multi-core processors. However, the pattern of the programs usually change according to the work flow so that the optimal power settings for each phase of program are likely different. Although task allocation reduces the times of DVFS scaling, they will miss some opportunities for power/energy saving. Ioannou et al. [9], who used the same architecture for evaluation with ours, realized the latency problem, but they just make the voltage transitions more far away with each other using a threshold of the least distance time.
+
+There are also many work using DVFS proposed for many-  core systems [9][10][11][12]. Ma et al. adopted control theory to precisely control the power of the entire many-core chip [10]. Ioannou et al. proposed a hierarchical DVFS controller using phase prediction algorithm for MPI application [9].
+
+David et al. demonstrated a power management algorithm that runs in real time and dynamically adjusts the performance of the islands to reduce power consumption while maintaining the same level of performance [13]. However, they also did not consider the latency of DVFS, even though they did the evaluation on the real many-core hardware platforms.
+
+In this paper, we propose a latency-aware DVFS algorithm,  which avoids unnecessary aggressive power state transitions.
+
+The aggressive here means too short the power state transition is away from last transition. Aggressive transitions will cause frequent voltage/frequency scalings which should introduce more overhead of DVFS. According to our experimental results, the latency-aware algorithm is able to achieve more significant energy and EDP improvements than the baseline power management. The contribution of this paper includes following aspects: 1. Firstly we investigate the features of latency of volt-  age/frequency scaling on a real many-core hardware platform, Intel SCC. We find the latency of voltage scale on Intel SCC sometimes can be up to hundreds of milliseconds.
+
+2. Based on the investigation of the latency of DVFS on many-core architecture, we propose latency-aware DVFS   DOI 10.1109/CLOUDCOM-ASIA.2013.68    DOI 10.1109/CLOUDCOM-ASIA.2013.68     algorithm for our baseline power management approach, profile-based power management. But the algorithm can be applied to other power management approaches.
+
+3. We evaluate our latency-aware DVFS algorithm on Intel SCC using Graph 500 benchmark. The experimental results show the profile-based DPM gets an impressive energy and EDP saving. Moreover the latency-aware DVFS algorithm achieves extra improvement in both performance increase and energy saving.
+
+The remainder of this paper is organized as follows. Section II discusses the basic concept of DVFS latency and investigates the latency of DVFS on many-core architecture. We present the latency-aware DVFS algorithm in Section III. Section IV describes the experiments. We present the experimental results and analysis in Section V. At last, we give a conclusion in Section VI.
+
+
+
+II. THE LATENCY OF DVFS ON MANY-CORE ARCHITECTURE  Before proposing the latency-aware DVFS algorithm, we investigate the features of latency of voltage/frequency scaling.
+
+Specially, we investigate the latency of DVFS in many-core architecture with multiple voltage domains.
+
+A. Basic concept of DVFS latency  As an important feature for dynamic power management (DPM), many chips provides multiple power states (different states of voltage and frequency) for system to adaptively switch according to different program patterns. One basic but important rule during the DVFS is that, the voltage must support the frequency all the time, i.e. the current frequency can not exceed the maximal frequency which the current voltage supports. As shown in Fig. 1, we assume there are three different frequency values provided by the hardware, F0, F1, F2, where F0 < F1 < F2. For each frequency value, there is theoretical least voltage value that satisfies this frequency?s need. According to this condition, we can draw a line of ?safe boundary? for all voltage/frequency states.
+
+Thus, all the voltage/frequency states above this boundary are not safe, or dangerous, as they violate the basic con- dition, which could damage the hardware. Whereas, all the voltage/frequency states under this boundary are safe.
+
+However, to ensure the safe execution, we usually apply a  higher voltage value than the theoretical least voltage value.
+
+As shown in Fig. 1, there is a margin between the least voltage value and theoretical safe boundary for each frequency.
+
+Actually this margin is somehow necessary in practice. Since the execution performance only depends on frequency, keeping the voltage at the least voltage values should be the most power-efficient states (the green states in Fig. 1). Of course, we can apply much higher voltage than the least voltage for each frequency (the orange states in Fig. 1). Although these states are safe, they consume more unnecessary power than power-efficient state with the same frequency.
+
+If we need to scale the power state (values of voltage and  frequency) from (Vs ,Fs) to (Vd ,Fd), assuming they are both  ???????    ?? ?? ? ?  ?  ?  ?  ??????? ??????? ???????  ????????? ????????  ???????????? ????????  ??????????????  ????? ????????? ? ?? ???????????  ?? ?? ??  ?? ?? ??  ?? ?? ??  Fig. 1. Relationship between voltage and frequency during dynamic scaling  TABLE I LATENCY OF DVFS IN DIFFERENT SCALING CASES  Case Strategy of Volt- age/Freuqency Scaling  Latency  Fs > Fd && Vs > Vd  1. Scaling down frequency 2. Waiting till frequency scaled 3. Scaling down voltage  Latency(Fs?Fd)  Fs < Fd && Vs < Vd  1. Scaling up voltage fisrt 2. Waiting till voltage scaled 3. Scaling up frequency 4. Waiting till frequency scaled  Latency(Vs?Vd)+ Latency(Fs?Fd)  safe states, we indeed have to scale the voltage and frequency separately. As we known, there is latency for both frequency and voltage scaling. However, the latency of voltage scaling is always much larger than frequency scaling. Thus we must consider that if the power state will exceed the safe boundary and to be dangerous during the scaling. In the case of scaling up voltage and frequency, if we scale up the frequency first, the voltage may be not high enough to support the scaled frequency.
+
+We found that the latency of scaling voltage should be taken  into account only when both of the frequency and voltage need to be scaled up. In other cases, where min(Vs, Vd) is high enough to support max(Fs, Fd), although latency is needed to scale the voltage from Vs to Vd (also for frequency from Fs to Fd), as current voltage level is high enough to support the frequency, the programs can keep going after scaling the frequency firstly. Apart from the minuscule latency of frequency scaling, there is no noticeable latency after scaling down the voltage. In the case that Vs < Vd and Fs < Fd, after scaling up the voltage (we always scale up the voltage first for reliability at this case), we should wait for a moment to let the voltage reach the level of Vd, which is safe to support the new frequency of Fd. If we scale the frequency to Fd when the voltage level is not high enough, the CPU will stop working because the voltage can not support the frequency.
+
+This situation is very dangerous and could damage the chip.
+
+In conclusion, we have the strategies for voltage/frequency     ?  ??  ???  ???  ???  ? ? ? ? ? ?  ?? ?? ? ?? ?? ??? ?? ? ?? ?  ?? ?? ?? ?? ?  !" ?#  $????????????%?"??????????????????????"??????????  ???????? ????????  Fig. 2. Latency of voltage scaling on chip with multiple voltage domains  scaling and the corresponding latency in system?s view. For low power, we assume the power states switch between power- efficiency states. In these cases, it?s true that Fs > Fd only if Vs > Vd. As shown in TABLE I, in the case of scaling down power state, we scale down the voltage after scaling down the frequency so that the programs don?t need to wait for the voltage scaling. In the case of scaling up power state, the programs have to stop to wait till the voltage scaled, and then scaling the frequency.
+
+1) Latency of DVFS on many-core architecture: As lack  of the model of latency of DVFS on many-core architecture with multiple voltage domains, we investigate on a real many- core chip, the Intel SCC [6], which is an experimental 48-core CPU/Platform for many-core HW/SW research with 6 voltage domains and 24 frequency domains. On the SCC chip, each 2-core tile is a frequency domain, and each voltage domain consists of 4 tiles. The frequency of each tile can be scaled by writing the register shared by the two cores of each tile.
+
+Voltage of each voltage domain can be scaled by writing the voltage controller register (VRC) shared by all the voltage domains [14].
+
+According to Intel?s documentation [15], voltage changes  in the SCC can happen in the order of milliseconds whereas frequency changes can happen within 20 CPU cycles. To take the latency of scaling frequency and voltage into account, we conducted tests to measure the latencies. By our measure- ments, we found the latency of scaling frequency is nearly not noticeable, thus we just concentrate on the latency of voltage scaling. In the cases needing waiting for voltage scaling, the latency is introduced by double writing the VRC register. The second write of the VRC register will return when the voltage reaches the desired value.
+
+Fig. 2 shows the measured latency of scaling voltage for  two scaling cases, from 0.8V to 0.9V and from 0.9V to 1.1V.
+
+For single voltage domain, the latency of scaling voltage for two cases is about 30ms. However, when there are multi- ple voltage domains scaling the voltage simultaneously, the latency will be much larger and linearly increases with the number of domains. The latency of scaling 6 voltage domains  simultaneously from 0.8V to 0.9v needs about 195ms.
+
+
+
+III. LATENCY-AWARE POWER MANAGEMENT  A. Phase-based DVFS  Our basic power management approach is phase-based at the level of shared virtual memory library (SVM). The latency- aware DVFS algorithm that we are going to propose will be evaluated based on, but not limited to, this power management approach. In the SVM programming environment, applications are generally partitioned by barriers or locks. Moreover, the code segments across a barrier or a lock operation are likely to perform different computations and exhibit different access patterns. Phases in our implementation are defined as stages partitioned by barriers and locks, including the busy waiting stages in barriers and in locks.
+
+Thus, one of the key problems of phase-based DVFS is  how to determine the optimal power level for each phase.
+
+We adopt power model and performance model to predict the power and runtime performance of each phase under different power levels. And then we could choose the optimal one.
+
+The power model and performance model are based on two indexes, instructions per cycle (IPC) and bus utilization (ratio of bus cycles), which are derived from performance monitor counters (PMC) provides by the CPU. However, as the power model and performance model are not the main work of the paper, we do not further discuss in this paper.
+
+Assuming the goal of power management is to minimize the  energy delay product (EDP) [16], which is a commonly used index representing the power efficiency. We can predict the EDP of each phase at a certain power level using the power and performance model as follows:  EDP (f) = Energy(f) ?Runtime(f) = Runtime(f) ? Power(f) ?Runtime(f) = Power(f) ?Runtime(f)2  (1)  Then, we can determine the optimal power level for each phase to achieve the minimal EDP. However, this method does not consider the latency of voltage/frequency scaling. If the power level before the phase is different with the predicted optimal power level for this phase, we have to scaling power level firstly, which could introduce some latency and extra power consumption. Thus, the method which does not take latency into account could make wrong decisions.
+
+B. Latency-aware DVFS  According to the investigation of latency of DVFS in Section II, since latency of voltage/frequency scaling is non- negligible, we have to take latency into account when deter- mining the optimal power level.
+
+Besides the latency of voltage/frequency scaling, power  request issuing also contribute some portions of the overall latency as it will cause state switches between user level and kernel. We denote the latency of scaling up voltage as ?s and the latency of issuing a power request as ?i. Thus, the optimal power level (assuming the optimization is targeted at     the least EDP) for a certain phase, denoted by foptm, should be the frequency value that minimizes the sum of EDP in running the phase and the EDP consumed in voltage/frequency scaling (from current power level fc to frequency f ), denoted by EDPphaseRun(f) and EDP(fc?f) respectively. The minimum sum of EDPs could be denoted by sumEDPmin as follows:  sumEDPmin  = min fmin?f?fmax  (EDPphaseRun(f) + EDPfc?f )  = min fmin?f?fmax  (pf (tf ) 2 +   (pfc + pf )(?i +?sfc?f )  2)  (2)  As shown in above formula, the power during the voltage and frequency scaling is estimated to the average power of power before the scaling and the power after scaling.
+
+Thus, the optimal power level foptm can be denoted by  foptm = f s.t. sumEDP (f) = sumEDPmin The power at current power level (pfc ), power (pf ) at power  level f and runtime (tf ) at f can be estimated using the performance/power model.
+
+Our current design adopts an offline profile-based approach.
+
+The optimal power level for each phase, i.e. a pair of voltage and frequency values which minimizes sumEDP , can be chose from TABLE III in the profiling run. Then these optimal power settings will be applied to subsequent production runs.
+
+As investigated in Chapter II, the largest latency for voltage  scaling is about 195ms in our tests. On the other hand, since the latency of frequency scaling is the order of cycles, we ignore the latency of frequency scaling. Thus we set ?s as 195ms in the above formula. Although the latency for the local core to issue a power request is in the order of thousands cycles, we set ?i as 2ms in our experiments to avoid the overhead introduced by the state switches.
+
+
+
+IV. EXPERIMENT  The evaluation of our latency-aware DVFS is conducted on Intel?s SCC using Graph 500 benchmark.
+
+A. Graph 500 Benchmark  Graph 500 is a project maintaining a top list of the world- wide most powerful machines designed for data-intensive applications [17]. As they said, data-intensive supercomputer applications are increasingly important for HPC workloads, but current benchmarks do not provide useful information on the suitability of supercomputing systems for data-intensive applications. In order to guide the design of hardware ar- chitectures and software systems intended to support such applications, they proposed Graph 500 benchmark.
+
+Graph 500 benchmark is a data-intensive benchmark taking  graph algorithm as its core work. The main work flow of this benchmark is described in TABLE II. We port the Graph 500 benchmark to the Barrelfish operating system [18] running on Intel SCC. The ported benchmark uses software managed cache coherence (SMC) as the shared memory model. In our experiment, the execution of Graph 500 is divided into 275  TABLE II ALGORITHM OF GRAPH 500 BENCHMARK  Algorithm 1: Graph 500 benchmark Step 1: Generate the edge list.
+
+Step 2: Construct a graph from the edge list.
+
+Step 3: Randomly sample 64 unique search keys with degree at least  one, not counting self-loops.
+
+Step 4: For each search key: Step 4.1: Compute the parent array.
+
+Step 4.2: Validate that the parent array is a correct BFS search tree for  the given search tree.
+
+Step 5: Compute and output performance information.
+
+TABLE III SAFE FREQUENCY AND LEAST VOLTAGE TABLE  Frequency Divider  Frequency (MHz)  Least Voltage (V)  Least Voltage Level  2 800 1.1 4 3 533 0.9 2 <=4 = 1600/Fdiv 0.8 1  phases by barriers and locks, including two times of BFS searching.
+
+B. Experiment Setting  We evaluate our latency-aware DVFS algorithm on the Intel SCC platform using Graph 500 benchmark. All the experiments are conducted on 48 cores of the SCC. The problem size of Graph 500 is set as that Scale number is 18 (262144 vertices) and Edge factor is 16 (4194304 edges).
+
+As the temperatures of the SCC board is maintained around 40, we ignore the impact of the temperature to the power of SCC chip. The clock frequency of both the mesh network and memory controllers (MCs) of SCC are fixed at 800MHz during the experiments.
+
+As discussed in Section II.A , the frequency of a frequency  domain could be scaled only if the frequency value is ?safe? at the current voltage. In SCC platform, the frequency is scaled by a frequency divider (Fdiv) with value from 2 to 16, and the frequency value will be 1600MHz/Fdiv. According to Intel SCC documentation [14], voltage of 0.8V is enough to support 533MHz. However, in the case of booting Barrelfish on 48 cores of SCC, if the initial voltage is 0.8V while the initial frequency is 533MHz, the booting process will always fail at bootstrap of the 25th core. What?s more, we found that the system displayed some weird errors when the voltage was scaled down to 0.7V, especially when we launch programs on a large number of cores (e.g. 48 cores). In order to keep the program run safe, we set the least voltage of 533MHz to be 0.9V, and 0.8V for frequency lower than 400MHz (inclusively). The safe frequency and least voltage (SFLV) table we used for the test bed is shown in TABLE III.
+
+Based on the experiment conditions discussed above, we  conduct three experiments with different power management policies. They are ?Static800M?, ?Non Latency-aware? and ?Latency-aware?, which are described as follows:     TABLE IV THE RESULT OF RUNTIME, POWER, ENERGY AND EDP OF GRAPH 500  UNDER DIFFERENT EXPERIMENT SETTINGS  Static800M Non Latency-aware Latency-aware Runtime(s) 28.03 40.86 33.38 Power(W) 62.81 33.76 36.41 Energy(J) 1760.31 1379.24 1215.23 EDP(Js) 110567.83 46560.82 44242.83  Runtime* 1.000 1.458 1.191 Power* 1.000 0.537 0.580 Energy* 1.000 0.784 0.690 EDP* 1.000 0.421 0.400  Static800M. This is the baseline experiment using a static power model. All the CPUs? frequencies are set to 800MHz, and the voltages are set to the least value of 1.1V during this experiment. Also the profile information of Graph 500 benchmark are derived under this experiment setting.
+
+Non Latency-aware. This experiment makes use of our  basic methodology of profile-based power management, ex- cept the latency-aware DVFS algorithm. Although we do not consider the latency of DVFS in this experiment, we set the latency of issuing a power request (?i discussed in Section
+
+III.B) to 2ms to take into account the overhead of state switches.
+
+Latency-aware. Based on the setting of ?Non Latency-  aware?, we consider the latency of voltage scaling using the algorithm described in Section III.B. The latency of voltage scaling up is set the maximal value of 195ms.
+
+
+
+V. RESULTS AND ANALYSIS  A. Results  Under the experiment settings described above, the results of the three experiments are shown in TABLE IV.
+
+In the table, runtime is the execution time of whole Graph  500, including 2 times of BFS searching for simplicity. The power is the chip power of SCC, including the power of the CPUs and the network on chip. The energy is the production of power and runtime, and EDP is the production of energy and runtime. Besides, we normalized the result values to the corresponding values in ?Static800M?, referring to the items with *. For easy understanding, we present the normalized values in Fig. 3.
+
+From the experimental results, we can find that both of  two experiments using DVFS achieve great energy and EDP saving comparing over the static power model. The basic profile-based power management policy achieves 21.6% en- ergy saving and 57.9% EDP reduction. The policy improved with latency-aware DVFS algorithm achieve 31.0% energy saving and 60.0% EDP reduction. It implies that there is much potential for energy saving in the data-intensive application.
+
+Moreover, the latency-aware DVFS algorithm achieves more energy and EDP saving, 12.0% and 5.0% respectively, than the experiment without latency-aware DVFS algorithm, and increases the execution performance by 22.4%.
+
+????  ????  ????  ????  ????  ???? ???! ???"???? #?????? "???? #??????  & ?  " ?? ?'?  %? ?? ?? ?  ????	$?% &????% ?????#% '??%  Fig. 3. The result of runtime, power, energy and EDP of Graph 500 under different experiment settings. The values are normalized to the corresponding values in Static 800M  B. Analysis and discussion  As our power management approach is profile-based, we present the profile of Graph 500 for dynamic voltage/frequency scaling. The profile includes the optimal power setting for each phase. As it is quite common that the program pattern of the master process (core0) is somehow different from that of the rest running on other cores, we adopt core0?s profile and for master process and core1?s profile for other cores.
+
+Fig. 4 shows the profile information derived without latency-  aware algorithm. The x-asis denotes the phase number, and y- asis denotes the optimal frequency (MHz) for corresponding phase. As described in Section IV.B, the least voltage for frequency of 800MHz is 1.1V, and for 533MHz it?s 0.9V, for other frequency levels under 533MHz, the least voltage is 0.8V. We can find that there are many aggressive DVFS decisions due to lack of awareness of latency. E.g. as the pointed by the arrows in the figure, there are many times of frequent scaling among different voltage levels, which lead to voltage scaling with long latency.
+
+As proposed in Section III, we expect that the latency-aware  DVFS algorithm can avoid such aggressive DVFS decisions due to long latency of voltage scaling. Fig. 5 shows the profile of Graph 500 with latency-aware algorithm. We can find that, after applying latency-aware DVFS algorithm, there are much less DVFS decisions among different voltage levels.
+
+The DVFS decisions are made more ?conservatively? in the cases when voltage scaling is needed.
+
+Fig. 6 shows the chip power of SCC during execution of  Graph 500 under different power management policies. Before 13 seconds of runtime in this figure, the performance and power for different policies are nearly the same. This is due to that in the range it is performing compute-intensive edge generation and graph construction, where there is no oppor- tunity for power saving so that high power setting is applied.
+
+After this range, the program becomes more data-intensive so that dynamic power management policies become more effective, where it gets lower power with little performance lost. Moreover, with the latency-aware DVFS algorithm, the dynamic power management avoids much aggressive DVFS     ?  ???  ???  ???  ???  ????  ? ?? ?? ?? ?? ??? ??? ??? ??? ??? ??? ??? ??? ??? ???    ?? ?? ? ?? !?  (' #  )*????$  (&?	$?)????*??? #? ???? (&?	$?)????*??? #? ????  Fig. 4. Profile of Graph 500 WITHOUT latency-aware algorithm. In the figure we can find some aggressive DVFS decisions which will cause power state transitions between different voltage levels  ?  ???  ???  ???  ???  ????  ? ?? ?? ?? ?? ??? ??? ??? ??? ??? ??? ??? ??? ??? ???    ?? ?? ? ?? !?  (' #  )*????$  (&?	$?)????*??? #? ???? (&?	$?)????*??? #? ????  Fig. 5. Profile of Graph 500 WITH latency-aware algorithm  ??  ??  ??  +?  ??  ? ? ?? ?? ?? ?? ?? ?? ?? ??  +* ? ?) ?,  ?  ?!-  #  .???"??!?#  ?????????? ???!
+
+??????????)???? #??????  ??????"???? #??????  Fig. 6. Compare of chip power during execution under different power management polices  scaling which costs long latency. So that latency-aware DVFS algorithm achieves better runtime performance.
+
+
+
+VI. CONCLUSION AND FUTURE WORK  In this paper, we have investigated the features of latency imposed by DVFS, especially in many-core architecture with multiple voltage domains. Based on the investigation, we proposed a latency-aware DVFS algorithm to void aggressive scaling decisions. The evaluation was conducted on Intel SCC using Graph 500 benchmark. The experimental results shown that our latency-aware DVFS algorithm achieved 22.4% performance increase, 12.0% more energy saving and 5.0% more EDP reduction than basic profile-based dynamic power management policy.
+
+Although the latency-aware DVFS algorithm achieved im-  pressive results, it hosts on off-line profile-based power man- agement scheme. We plan to apply the latency-aware to the on-line power management policies. Also, we will present our profile-based power management scheme in detail soon.
+
+ACKNOWLEDGEMENT  Special thanks to Intel China Center of Parallel Computing (ICCPC) in Wuxi City of China for providing the SCC hardware platform to support this research work. The work of this paper also supported by Program for Changjiang Scholars  and Innovative Research Team in University (PCSIRT, No.
+
+IRT1012) and Aid Program for Science and Technology In- novative Research Team in Higher Educational Instituions of Hunan Province.
+

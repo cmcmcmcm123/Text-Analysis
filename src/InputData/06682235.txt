@@ -1,0 +1,136 @@
+An IO optimized Data Access Method in Distributed KEY-VALUE  Storage System
+
+Abstract?Distributed KEY-VALUE storage system is a new storage framework for cloud computing. It can enable an application to dynamically adapt to growing workloads by increasing the number of servers. However, current distributed KEY-VALUE storage systems are still inefficient on range query for larger result set. When the result set become large, the file layout, cache hit rate are both key points for IO efficiency. In this paper, we will introduce our experience under the development of China Mobile Big Cloud KEY-VLAUE DB (BC-kvDB). We will discuss how we increase IO efficiency in BC-kvDB.
+
+BC-kvDB is based on single-table space data model and provides SQL-LIKE DDL and DML language.
+
+BC-kvDB?s high throughput is benefit from data locality storage, column-storage structure and multi- layer caches.  Data can be accessed in local cache or local blocks through block index. Experimental results show that the random writing performance of BC-kvDB is 2.5 times better than HBase and the random reading performance is 1.8-2 times than HBase.
+
+Key words: KEY-VALUE DB; Distributed Storage; Cloud Storage; Column Store  . Introduction  With the popularity of e-commerce, mobile internet, wireless sensor networks applications, the amount of data is increasing rapidly. Big data has 4V characteristics (volume, velocity, variety,  value). In order to explore the value of big data, we have to deal with the large-scale (volume) and rapid-growth (velocity) challenges for big data.
+
+Distributed Key-Value DB is an alternative storage system for massive structured big data storage [1].
+
+Distributed KEY-VALUE data storage systems can achieve high throughput and scalability even in PB-scale storage. Open source softwares include MongoDB[2], Kyoto Cabinet, Redis, Cassandra, HBase[3] etc.. KEY-VALUE DB now has also been widely used in commercial system, such as PNUTS in Yahoo![4], Dynamo in Amazon [5], and Big Table in Google [6]. Based on the schema, the current key-value DBs can be divided into two types, point query system and range query system.
+
+The point query system puts or gets item is distributed based hash function. The range query system uses column-family schema to organize data attributes. Point query system supports fast to fetch a single item. For example DynamoDB can read an item in 50ms. But the point query can only support PUT or GET operations on the given key.
+
+Data mining is a kind of large-scale data computing and the range query systems are needed.
+
+The range query systems are more powerful than point query systems. They are cable of query large data sets. It can provide prefix query, range query or even wildcard query. The range query systems are efficient for batch data processing. However, when the result data set become large, the query efficiency decreases dramatically. HBase, hypertable are typical range query KEY-VALUE  Physical and Social Computing  DOI 10.1109/GreenCom-iThings-CPSCom.2013.222     DB. They face with the problem of storage locality in distributed file system. For example, HBase stores data file into HDFS. When the query starts, Hbase region server first get data file from HDFS, do the query computing locally and then return the results to client. Usually, the region server is not the server which storage data file. The network traffic cost will become significant when the return result date set get larger.
+
+At present, there are two methods to improve large-scale query efficiency. The first method is to optimize Map Reduce process. For example, impala introduces pipeline format between Map job and Reduce job. Alough it can improve query efficiency, when the date set is large enough for a single job, the IO efficiency is still very low.
+
+PowerDrill [9] proposed distributed columnar storage structure to improve efficiency for OLAP query. RCfile introduces row and column mixed storage structure, and it can improve the efficiency for statistical analysis[10]. The data file layout is the key points for block scan, but until now, there is no study on multi-layered cache for KYE- VALUE DB, it will also greatly improve the query efficiency.
+
+In this paper, we will discuss some key methods on improving the range-query efficiency in BC- kvDB. We will introduce the framework and data model in BC-kvDB in section 2. The data localization storage structure will be introduced in section 3, and multi-layered cache for point and range query in section 4. In section 5, we give concrete experiments, and the brief conclusion described in section 6.
+
+. Framework and Data Model  A. The BC-kvDB framework BC-kvDB is a kind of range query distributed  KEY-VALUE DB. The entire system includes four subsystems. As showed in figure 1, there are client subsystem, metadata subsystem, region server subsystem and network communication subsystem.
+
+Figure 1. The BC-kvDB components  Client subsystem provides C/C++ API. It also provide multi-language programming interface through thrift framework. Some useful tools, such as command shell, web interface, unit test are also provided at client subsystem.
+
+Metadata subsystem is composed of Zookeeper cluster and multi-master cluster. The function of BC-kvDB master is to support the basic operations within the cluster scope, such as create table, drop table, add a new server or load balance etc..
+
+Multi-master clusters include two roles. One is primary master and the others are slave masters.
+
+Primary master support the basic table space operations, and the slave masters are watching the primary master working state. If the primary master is down, one of the slave masters is elected as the primary master.
+
+The zookeeper cluster stores the metalog for the whole cluster reliably. The metalog is used to recover the master state when the slave masters startup. The metalog includes the current primary master address, table schema, operation logs and the ROOT region location in the cluster.
+
+Region server subsystem consists of independent PC servers. These PC servers connect each other through high-speed Ethernet. Region server(RS) provides a key-value data read and write service. BC-kvDB uses local data storage engine. For each client write operation, it will be first write into log, then to cache. Cache refreshes at periodical time to disk and produces data files locally. Because of the read and write is implemented on RS directly and can achieve better performance.
+
+Network communication subsystem can provide high-speed data communication and message service. In BC-kvDB the client and RS send and receive data block directly. But when the client and RS communicate with master, they use the RPC message service based on the network communication subsystem.
+
+B. The BC-kvDB data model The data model of BC-kvDB is single table  space. And the table space is further partitioned by row-key. Each range of row-key are called region, and stored in a region server. Each region includes many CS files. Region is the basic unit of distribution and its location information are recorded in metatable.
+
+Entry point RootRange  ?  RangeServer:IP  [1] ObRootMeta2 1024X1023  [2] server_info  [3] server_info  [1] server_info  [2] ObRootMeta2  [3] ObRootMeta2  [4] ObRootMeta2  tabletinfo  replica[2] replica[3]replica[1]  Others  [1] MetaRange1  [2] MetaRange2 1024X1023  Figure 2.The metatable structure for BC-kvDB  Metadata table is a kind of central indexing for region distribution. The metatable is distributed as the normal user table. When a table is created, a XML schema is also created and stored into zookeeper cluster. The schema has replica policy, database name, column-family name, and other basic table space information.
+
+When a client writes data into a table space, it can directly sent data to the dedicated RS. The RS first accepts the updated data and writes into local log, caching the data in local memory and then responds the client. The RS will flush the write cache into local file periodically. When a region size is beyond some threshold, the region is split into two new regions. The newly produced region will move to other RS in balance period.
+
+. Data File Structure for BC-kvDB  When the write cache is large enough, RS will create a new write cache for the updating data and the old write cache will flush into a local data file.
+
+The data file in BC-kvDB is also called cell store as hypertable. The data file in composed of data blocks, bloom filter, block index and file trailer.
+
+Each part is listed in the following figure.
+
+Figure 3.Data file format in BC-kvDB  The trailer is the data file metadata. Its size is 1024 bytes. It includes the total records number, the total file length and the magic number. The block index is the index for all blocks in the file.
+
+Each item in the block index has the offset and the end row-key for each data block.
+
+Bloom filter is used to predict whether a given key in the cs file. It uses the bit array succinctly represents a set, and be able to predict if an element belongs to the set in O(1) times. Although bloom Filter has some false positive disadvantages, the correct query process will be done in the data block finally, and the correct item will be fetched.
+
+The data block store the compressed key/value pairs blocks and the concrete key structure lists as figure 4.
+
+Figure 4. KEY structure  Row key is a user defined unique key, with '\0' for the end identifier. Column family are the attributes cluster define in the table schema.
+
+Column qualifier is a column name under a column family. Flag item indicates that if the item is newly created or has been deleted. At query time, the deleted item will not be fetched. Timestamp is the reverse order of timestamp string, and the newly created item will be fetched firstly.
+
+The new data file is created at the compact or split stage. In KEY-VALUE DB the compaction     and splitting are common methods to produced a new data files. In BC-kvDB the new data file are all stored in local file. For detailed compaction and splitting discussion, reader can refer to Hbase for further knowledge.
+
+. Multi-level cache structure  In BC-kvDB, we use multi-layered cache structure to increase the efficiency of reading and writing operations.
+
+A. Client Cache Client cache module is mainly used to cache the  RS location information and the table schema information which the user retrieved. Client cache module store two types of data: table cache and location cache.
+
+Table cache stores the retrieval information of table schema. Location cache stores region information, such as start row, end row and the location information of corresponding region server. It used the hash map structure. When a user makes retrieval, it will find the information from local Cache at first time. If there is, then get it directly from the cache. It will speed up the query process.
+
+If the table schema changes, Master will modifies the corresponding table structure. Master also informs the main RS stores of the table, the main RS will update the table structure information on locally stored region. At the same time, according to the local cache backup plan, put a schema update request to the backup node, the backup nodes at the same time update the schema cache. When RS receives a client to retrieval, The Region management module on RS would compare table structure version number. If it older than local cache table structure version number, then update the table structure and return to the client. That makes it possible to update all of the client's local Schema cache.
+
+Because of the Metadata table changes, it will lead to failure in the location cache of client cache, which led to the client failed to retrieve the corresponding region. The clients read the metadata table again, and update the location cache.
+
+B. Storage server cache  Storage server cache is divided into three modules: Cell Cache, Query Cache and Block Cache.
+
+Figure 5.storage server cache mechanism structure diagram  Cell Cache module is used to store the write data cache, in order to speed up the data write operation.
+
+The interior of the module uses the RB-Tree to save the user input data. And also it can support the sequential search and random search. In order to ensure the data into the cell cache is safe, the user writes the key-value data to the commit-log at first, and then written to the cell cache. If the amount of data in the cell cache reached a certain threshold, then the data in cell cache by cell store module is written to the file. Finally, returned a successful response to the user.
+
+Data written process: : (1) The user writes the key-value data to the  commit-log at first Then the system according to the replica strategy synchronous writes the information to Log.
+
+(2) Key-Value data will be written to the cell cache.
+
+(3) It determines whether cell cache reaches the set threshold. If it not reached, then return and according to the need to accept user requests to write data.
+
+(4) We should create a new cell cache and accept the write data.
+
+(5) The full cell cache assigned to immutable cell cache, and then refreshes data to the cell store by immutable cell cache.
+
+(6) Call the CellStore module to write data,     generate related block index, and written to disk file.
+
+Query Cache module is to accelerate the read operation. Query cache saved the user retrieve result data. Query cache uses the LRU elimination strategy.
+
+When new data is written to the cell cache, if it has the same data in query cache, and then deletes the same one from query cache.
+
+The internal of query cache used of the B-Tree structure, each data in the B-Tree format like this: <md5(Tablename, ScanSpec), QueryResult(key- value)> Table name means that the user to retrieve the name of the table; ScanSpec means that the last retrieval provides the retrieval conditions. Query cache uses the B-Tree structure to support fast random search and interval search.
+
+When the user needs to query the specified data, the system will determine existence of the same operation in the query cache at first. If query cache have the same data then read the required data directly from the query cache. If not find, then insert the query results into query cache.
+
+When the data update operation is executed, first of all, according to the table name and scan spec to determine whether it exists the update data in the query cache, if it has the same data in query cache, then delete it from query cache. When the query cache reached the set threshold, system will use LRU algorithm to delete the cache data.
+
+Data reading process: (1) Lock operating on QueryCache.
+
+(2) When it has been 1000 times query operation  since the last query, output the log information and show that the hit rate of QueryCache.
+
+(3) Search the corresponding key form query cache. If the key does not exist, it will return False. If query cache has the key, it will be stored in result and return true.
+
+Block Cache is a data file for the entire storage server. When a piece of data files accessed by the user, then the data block is added to the block cache. When users query the data in the block cache, you can return immediately to the specified data block. When it is not in the block cache, adopt the method of querying the data file. At the same time, the corresponding data block in the file is added to the block cache.
+
+. Experiments  The purpose of the experiment is to measure the read and write efficiency with a certain amount of data in BC-kvDB, at the same time gives a comparison test in the same environment with HBase .Through the contrast test shows that the superiority of the system in the performance .
+
+The experimental used 15 servers for the performance test. During the test, we mainly grasp the trend of read and write performance. There were 13 nodes as a cluster of the BC-kvDB service, and 2 nodes as a client. Then the following is the system information: OS was centos5.5.CPU was 2- way and 4-core cups, it had Gigabit Ethernet, 21tb hard disk and 16GB memory.
+
+The Experiment used an AG and a column family as the test data pattern. The key of length is set to 12 KB, the value of length is set to 1 KB, the value of random and sequential read and write are the same construction method.
+
+The experimental method is shown as follows: (1) In the cluster it already had a certain amount of data (2TB). (2) In the client we started the random writing process, and inserted data in BC-kvDB cluster. Statistical the data insertion efficiency and then record the random write efficiency. (3)After perform the random written, we had start the random reading process. Read data in the BC- kvDB cluster, Statistical data read efficiency and then record random read efficiency. (4) We should record test results in the form.
+
+Experimental data and test results are showed in the following table.
+
+Figure 6. The throughput of the cluster  In this figure, the abscissa indicates the scale of the current cluster data (GB); the vertical axis represents the throughput of the entire cluster (KB/s). This experiment mean that when the data is increasing, the throughput of the entire cluster still maintain a good state.
+
+Figure 7. Process efficiency of reading and writing In this figure, the abscissa indicates the process  of writing / reading (MB) data, the vertical axis represents that each client's random read-write         Random write  Random read  MB/s  0.5  1.5  2.5  3.5  4.5  Random write  2?100GB  Random read  2?1GB  Random read  2?10GB  Random read  2?20GB  current data total (200GB)  current data total (800GB)  ms     efficiency. The experiment data shows that the BC-kvDB storage system can able to work efficiently in big data environment. The efficiency of read and write operations is still remained high efficiency with the amount of data increases and the transformation of the data environment.
+
+And then in the same environment, experiments were performed in HBase, Start single client and pre split table into 100, at the same time random write 100 records with ten threads.
+
+Figure 8. BC-kvDB and HBase experimental results   Experimental results show that the random writing performance of BC-kvDB is 2.5 times of HBase and its random reading performance is 1.8- 2 times for HBase.
+
+.Conclusions  This article describes a high-performance distributed KEY-VALUE storage system (BC- kvDB) and the data access method. In BC-kvDB the key-value pairs are compressed into blocks and indexed in a local data file. The region server can retrieve local data file directly for the range query.
+
+This can boost the query process for larger data set greatly. Besides, the cell cache, block cache and the shadow cache make the results are mostly hit in the local cache. The multi-layered cache can further increase the query efficiency. As space is limited, the detailed data processing mechanism for BC-kvDB are not introduced in this paper; we will discuss them in other papers.
+

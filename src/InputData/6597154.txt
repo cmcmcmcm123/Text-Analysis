@@ -1,0 +1,262 @@
+SPOAN: Load Balancing Replica Placement Strategy  for Large Scale Biometric Identification Service
+
+Abstract? Large-scale identification system is a distributed data processing system that requires both high throughput and high reliability. In large-scale identification systems, not only the volume of computing is extremely high but also the I/O volume per CPU second is extremely large. Therefore, how one places the data replicas in the computing nodes can have a significant impact on the performance of identification and on the availability of the biometric data sets. However, the traditional replica placement method used in the distributed processing frameworks and distributed storage technologies are unable to rebalance loads among nodes when the specific nodes are down and the throughput of identification slows. To address this problem, we propose a replica placement strategy, called SPOAN, that enables us to rebalance the loads among computing nodes and maintain data more reliably. We also developed the architecture of the large scale identification systems using SPOAN. As the result of evaluations involving emulation of biometric database containing about 1.2 billion individuals, we found that we could rebalance the loads even when specific computing nodes were slowed down unlike traditional placing systems of replicas and improve throughput by up to 46%.
+
+Keywords?load balancing; replica placement; Many-task computing; mapreduce; biometric identification;
+
+I. INTRODUCTION The process of confirming or identifying individuals is an  essential component of many social scenarios. In particular, the? series of terrorist attacks in the USA on September 11, 2001? significantly changed the level of importance of identifying? individuals. However, personal identification based on possession of ID cards, numbers, or passwords is essentially incapable of preventing leaks, counterfeiting or impersonation.
+
+As a result, interest in biometric identification technology has grown, and its use in passports and immigration control is being adopted at an accelerating pace.
+
+Citizen ID is one of the fields in which the application of biometrics is spreading rapidly. At NEC, we have already achieved certain results in this field.
+
+To use IDs in various authentication operations, a unique ID must be allocated to each citizen without duplication. This is guaranteed by collecting biometric information including facial images, images of irises of both eyes and fingerprints of ten fingers, checking if they are duplicated in previously recorded data.
+
+Usually, in the field of information processing, the search index is developed in advance of registering the population in order to increase the speed of searching for the targeted individuals.  In biometrics, data from the same individuals taken at different times may not match each other because the individual might have aged or because conditions prevailing at the time of collection were different. As a result, it is generally difficult to develop an effective index. For example, in order to confirm that a person requesting registration is not duplicated, all that can be done is to match the data with all of the registered data. In some identification systems that executes strict duplication checks, it is forbidden to narrow down the check targets by using personal demographic information such as gender, name and age, which means that the amount of required computation is enormous.
+
+For example, to check for duplication among all of 1.2 billion people, about 7.2 ? 10 17 matching operations are required. This workload requires some millions of CPU days, so it must be parallelized across some hundreds of CPUs in order to complete it within a reasonable time. For example, to enable duplication checks on 600 million people in three years, we have to implement a system capable of more than 1.9 billion matches per second without interruption.
+
+In general, the fault occurrence rate of such a system will be high because the system is composed of an extremely large number of servers and the servers in charge of matching tend to be overused with CPU utilization rates of nearly 100%.
+
+However, as this system is used as a government authentication platform, all operations should be able to continue, if the fault is in only a single component only.
+
+2013 IEEE International Congress on Big Data  DOI 10.1109/BigData.Congress.2013.50     ? This means we can only handle the high volume of biometric data by making the throughput and availability of identification higher. Finding a way to do this is the motivation for our study.
+
+MapReduce [1] is a framework that enables many servers to perform distributed process on large volume data sets while maintaining the redundancy of the data. In addition, research into the distributed storage have the goal of balancing loads and maintaining availability. However, workload easily becomes unbalanced when some compute nodes are down or slow down.
+
+Therefore, we developed SPOAN, a replica placement method that enables us to balance loads in order to support large-scale biometric identification systems. The results of a test show that improving the balance increases job throughput by 46% compared with the traditional replica placing methods.
+
+In addition, we verified that 500,000 identifications per day in a biometrics database on 1.2 billion people is achievable.
+
+The main contributions of this paper are as follows:  ??  We developed SPOAN, methods of placing data replicas, that enables us to balance the loads to guarantee both high throughput and high reliability. It is applicable to computation and data intensive workloads in a large-scale biometric identification system.
+
+??  We developed a large-scale biometric identification architecture embodying the replica placement methods of SPOAN, and evaluated the job throughput. We verified that the target of 500,000 identifications per day in a biometric database on 1.2 billion people is achievable.
+
+The rest of this paper is organized as follows. Section II gives an overview of biometric identification and a brief introduction to the MapReduce programming model. Section III presents the proposed SPOAN replica placement method.
+
+Section IV shows the architecture of the large-scale identification systems using SPOAN. The evaluation and its results are described in Section V. Related work is discussed in Section VI. Section VII and Section VIII concludes the paper and outline future work.
+
+
+
+II. BACKGROUND  AND MOTIVATION In the large-scale identification system, a scalability issue  arises if the system is incapable of an efficient response to matching requests from the extremely-large-scale biometric database.
+
+Even slightest delays in the overhead, idling of matching servers will occur, which results in reduced matching efficiency or attainment of the scalability limit at which the i throughput cannot be increased even when matching servers are added.
+
+To achieve high enough throughput, one has to distribute large volume biometrics templates and use many identification servers on parallel. A distributed parallel identification that can accommodate such a large scale data set is MapReduce [1] of Google.
+
+In the following subsections, we will summarize the identification process and MapReduce. Then, we will discuss how to map the identification systems when MapReduce?s architecture is applied to large-scale identification systems.
+
+Finally, we will explain the issues of large scale identification systems as they relate to MapReduce and the motivation for this study.
+
+A. Overview of Biometric Identification Fig 1 shows the biometric identification process. The system  captures the items such as finger prints, and iris and face images. After that, it extracts features from the captured raw images and creates a biometric template from them. Finally, the created biometric template is matched against the biometric templates stored in the biometric databases to check if there are any duplications (1:N search).
+
+Usually, in the field of information processing, the search index is developed before the population is registered in order to increase the speed of searching targeted individuals.
+
+In biometrics, information gathered at different times may not strictly match each other because of aging and the various conditions prevailing at the time of collection. As a result, it is generally difficult to develop and utilize an index effectively.
+
+Consequently, all of registered biometrics templates have to be used in order to ensure there are no duplications of a new registrant. That means the more registrants there are, the higher matching throughput must be. Therefore, the large-scale system requires extremely high throughput.
+
+B. MapReduce Overview MapReduce is a software framework for writing  applications which process large-scale data sets on large clusters in a reliable manner. MapReduce processes large volume data with multiple compute nodes by dividing a job into parallel tasks.
+
+Fig 2 shows the architecture of MapReduce. MapReduce divides the dataset into multiple fragments (chunks) of a certain size and distributes these chunks among the local storage disks of the individual compute nodes. A map task will be assigned to each chunk. The map task is executed on multiple compute nodes in parallel. The data processed in the map task is then consolidated in a reduce task and the result is returned to the client.
+
+Hadoop [2] is an open-source implementation of the MapReduce framework.
+
+Fingerprint  Iris  Face  Feature Extraction  Biometric Database  1:N Match  Biometric Template  Biometric Template  Candidate  Fig 1. Biometric Identification (1:N matching) Workflow     C. Mapping of identification systems to MapReduce The architecture of MapReduce is a good fit for our purpose  because large-scale identification systems distribute their data to multiple nodes. In case of mapping identification architecture to the framework of MapReduce, one divides the biometric database into chunks and reads the chunks, identifies them and returns the candidates. The matched candidates are then sorted by their scores in the reduce task.
+
+Regarding large-scale identification systems using Hadoop, Kohlwey et al. [5] proposed the Cloud Query Execution Framework.
+
+In order to use MapReduce in the identification systems, we need to take care about the following tendency concerning the load on the CPU and the volume of data.
+
+The map task will cause an extremely high CPU load on the compute nodes executing it because of the large volume data.
+
+On the other hand, the CPU load in the reduce task will be extremely low because it only sorts the matching scores.  In addition, the map tasks have to read a large volume of data because they have to match all biometric templates in the database.
+
+D. Motivation To check for duplication among all of the 1.2 billion people,  about 7.2 ? 10 17 matching operations are required. To enable duplication checks on even 600 million people in three years, we have to implement a system capable of more than 1.9 billion matches per second without interruption. In addition, the biometric data has to be read in at approximately 17 TB/sec at the time of identification.
+
+Large-scale identification systems not only have do many identifications but also have to read in large volume of data; this makes them data intensive many-task computing application [4].
+
+For these reasons, it is necessary to distribute the identifications to numerous identification servers. Furthermore, the matching speed of the multi-modal identification systems dealing with, for example fingerprint and iris image data, varies depending on the quality of biometrics templates and the ratio of missing modalities. It means that the specific compute node could slow down depending on the bias of variation.
+
+In addition, the failure rate of identification servers will be high because of the high CPU loads in identification.
+
+Therefore, it is important for multiple servers to be able to balance loads in order to balance the workloads of compute nodes while maintaining data redundancy.
+
+Besides having high computing loads, large-scale identification systems have a high I/O volume per CPU second.
+
+Data transfers have to be minimized while executing tasks in order to achieve high throughput because CPU utilization of the compute nodes will decrease when there is high volume of pending data transfers and reduction in network bandwidth. To avoid large data transfers, one must assign the tasks to places where replicas exist in order to achieve the high throughput.
+
+This means how one places the replicas in relation to the compute nodes determines the bias of the load. In another words, data replica placement is key to balancing loads in large-scale identification systems.
+
+However, Hadoop randomly places the replicas on the compute nodes [3]. Fig 4 (a) shows a sample of Hadoop?s replica placement. In some cases, replicas are biased to specific nodes, meaning that tasks are biased to specific nodes.
+
+In addition, nodes holding a lot of replicas raise the rate of data loss.
+
+Distributed RAID is the distributed storage technology that maintains the data redundancy and balances the data access [10]. This is the technology uses the storage nodes instead of disk drives as a minimum configuration unit. In particular, the mirror and striping placement method (RAID 1+0) is a way to maintains chunks of replicas. Fig 4 (b) shows an example of replica placement in the mirror and striping placement method.
+
+The amount of data processed by each compute node equals the level of data redundancy. However, the workload distributions would become unbalanced if the task execution slows down at one of the compute nodes because only one side of mirrored compute nodes can execute tasks.
+
+That means although the distributed processing of the MapReduce architecture would be a good for our purpose, conventional replica placement methods can?t balance workloads among compute nodes in large-scale identification systems.
+
+The main motivation for our study is to improve the load balance among computing nodes while maintaining availability in the large-scale identification systems with high CPU and I/O demand.
+
+Chunk Map  Map  Map  Map  D a t a  Reduce  Map PhaseData Split Reduce Phase  Out Chunk  Chunk  Chunk  Fig 2. MapReduce overview  Biometric Templates Matching  Matching  Mathcing  Matching  D a t a  Aggregator  Map PhaseData Split Reduce Phase  Out  Final Candidates  Biometric Templates  Biometric Templates  Biometric Templates  CandidatesCandidates  CandidatesCandidates  Fig 3. Mapping of MapReduce and Identification System
+
+III. SPOAN: OUR REPLICA PLACEMENT STRATEGY In order to resolve above issues, we propose a replica  placement strategy that balances the workloads of compute nodes while maintaining data redundancy. We term our replica placement strategy SPOAN ? Supporting One Another strategy. In this section, we describe SPOAN?s design goals and its load balancing and data redundancy effects.
+
+A. Design goals The following two goals must be met by the replica  placement method to achieve both the high identification throughput and reliability.
+
+Load balancing: To achieve high job throughput, it is necessary to maintain a high usage rate of CPUs in compute node cluster. Therefore, our goal here is to balance the loads of compute nodes even if there are load biases due to the performance variation among tasks or slow nodes.
+
+Data Availability: To achieve high reliability, we should not allow the distributions of replicas to stop identifications.
+
+Therefore, our goal here is to prevent data loss if a compute node is down.
+
+B. Replica Placement Strategy We should select a placement rule that balances loads in a  way that also ensures the availability of data. It is simple to place replicas in multiple and different matcher nodes in order to ensure the certain level of data redundancy.
+
+The main points of the replica placement policy to balance the loads are as follows.
+
+A) Equalization of tasks assigned to matchers: To equalize the number of tasks assignable to each matcher, the data replicas should be divided up as evenly as possible among the matchers.
+
+B) Load propagation among matchers:  Place the replicas on matchers to minimize the standard variation in the number of replicas to be shared among the matchers. The number of replicas to be shared among the matchers is hereinafter referred to as the mirror table value. In that way if one node is delayed another can carry out its tasks.
+
+We can minimize the maximum load by following load balancing rule A and rebalance the load by following load rebalancing rule B.
+
+1 2 3 4 1 1 1 1 2 1 1 3 1  Matcher  Matcher  Fig 6. Mirror Table Values of SPOAN. The number of same replicas shared among matchers is equal among matchers.
+
+Fig 5 shows the replica placement when the number of matchers, chunks and the level of data redundancy are 4, 6 and 2 respectively. Fig 6 shows the mirror table value of SPOAN.
+
+Because multiple matchers possess replicas of chunks, it is possible to distribute loads among the multiple matchers. In addition, it is possible to rebalance loads among the matchers if one or matchers slow down because the mirror table value is equalized among matchers. The mirror table value is equalized among matchers, meaning that the number of different replicas shared among matchers is high and the loads of delayed matchers can be propagated to different matchers. Therefore, SPOAN can rebalance the workloads of nodes quickly.
+
+C. Effect of the replica placement method To better understand SPOAN replica placement, we will  show some examples to illustrate the effect of load balancing with SPOAN and data redundancy using the examples.
+
+Fig 7 shows the samples of mirror and striping replica placement (MDP) and SPOAN replica placement, when the number of matchers, chunks and the level of chunk redundancy (No. of replicas) are 4, 6, and 2 respectively.
+
+Fig 8 shows the mirror table values among matchers in the replica placements of MDP and SPOAN in Fig 7.
+
+Load Balancing.
+
+Let us assume that the number of jobs is 4, tasks can process each chunk in 1 sec, and tasks are acquired in the order of Matcher 1, 2, 3 and 4.
+
+Fig 9 plots the job completion times of MDP and SPOAN in this case. The description ?Job1[C1,3,5]?  in the figure means the chunks given to the first job are 1,3, and 5. That means one job has three tasks.
+
+C1  C4C1  C2  C2  C3  C3  C4  Matcher1  Matcher2  Matcher3  Matcher4  C5  C5  C6  C6  Fig 5.  Load Balancing Replica Placement Strategy (SPOAN). The loads of Matcher 3 are propagated to other matchers. Matcher 1, Matcher 2 and Matcher 4 can help Matcher 3 to process tasks related to chunk 2, chunk 4, and chunk 6 if Matcher 3 slows down.
+
+C1  C3C1  C5  C2  C3  C4  Matcher1  Matcher2  Matcher3  Matcher4  (b) Mirrored Data Placement (MDP)  C5  C6  C2 C4 C6  C1  C3  C5  C2  C6  C3C2  Matcher1  Matcher2  Matcher4  Matcher3  (a) Random Data Placement (RDP)  C4  C5C4 C6C1  Fig 4. Unbalanced Replica Placement     (a) Mirrored Data Placement (MDP) (b) SPOAN  C1  C3C1  C5  C2  C3  C4  Matcher1  Matcher2  Matcher3  Matcher4  C5  C6  C2 C4 C6  C1  C4C1  C2  C2  C3  C3  C4  Matcher1  Matcher2  Matcher3  Matcher4  C5  C5  C6  C6  Fig 7. Samples of the Mirrored Placement and SPOAN?s Placement  (a) Mirror Data Placement (MDP) (b) SPOAN  Matcher Matcher 1 2 3 4 1 2 3 4  Matcher 1 3 0 0 Matcher 1 1 1 1 2 0 0 2 1 1 3 3 3 1 4 4  Fig 8. Mirror Table Values of MDP and SPOAN  As shown in Fig 9, the completion times of MDP and SPOAN are respectively 9 sec and 7 sec for job 4. That means the throughput of SPOAN is approximately 28% higher than that of MDP.
+
+We can explain why this jobs throughput is higher by referring the mirror table values among matchers. Fig 8 (b) shows that the mirror table values of the matchers are equal in SPOAN. The mirror table values between Matcher 3 and Matcher 1, between Matcher 3 and Matcher 2, and between Matcher 3 and Matcher 4 are each. That means, Matcher 3 has replicas shared by Matcher 1, 2 and 4 so that the tasks using the data possessed by Matcher 3 can be executed by the other matchers in a distributed manner, and the loads can be balanced.
+
+Fig 8 (a) shows that the mirror table values between Matcher 1 and Matcher 2 and between Matcher 3 and Matcher 4 are only high in MDP. That means, Matcher 4 can only execute the tasks with chunks of C2, C4 and C6 possessed by Matcher 3 if Matcher 3 is down (see Fig 7 (a)). The loads of Matcher 4 are only propagated to the Matcher 3. Therefore, the throughput of MDP will decrease if Matchers 3 is down.
+
+The above example shows that SPOAN can rebalance the loads with multiple matchers even if matcher slows down. It means SPOAN can complete the whole jobs faster than MDP.
+
+Jobs throughputs are high thanks to SPOAN?s placement.
+
+Data Availability.
+
+SPOAN and MDP placed two replicas at different matchers,  meaning so that both methods have high data redundancy when one matcher is down.
+
+On the other hand, the availability of data in MDP is higher than that of SPOAN when two matchers are down. The reasons are, in reference to the mirror table value in Fig 8, there are many combinations of Matcher in SPAOAN where the mirror table?s values are more than 1, and it is possible that a matcher with multiple replicas could go down.
+
+The reasons are, in reference to the mirror table value in Fig 8, there are many combinations of Matcher in SPAOAN where the mirror table?s values are more than 1, and it is possible that a matcher with multiple replicas could go down.
+
+However, there are hundreds of matchers in the large scale identification systems and the quantity of replicas is in the thousands because of the high volume data. Therefore, it is not as likely that matchers possessing the same replicas could go down at the same time.
+
+
+
+IV. ? ARCHITECTURE OF LARGE SCALE BIOMETRIC IDENTIFICATION SYSTEM  Here, we explain the whole architecture of the large identification system and discuss its design considerations for high performance and scalability.
+
+A. Architecture Overview The architecture of large scale identification basically  inherits the spirits of MapReduce. However, we developed a unique implementation because MapReduce has several limitations. We will describe our reasons for doing so in the next section.
+
+The large-scale biometric identification system has the following components  ?? Replica Placement Planner: The Planner computes the replica placement plan using SPOAN replica placement strategy, after dividing up the biometric database, it deploys chunks to the matcher nodes. These chunks will be placed in the nodes? memories.
+
+?Job1 [C6]  ?Job1[C1,2,3]  ?Job1 [C4,5]  Matcher1  Matcher2  Matcher3  Matcher4 ?Job2[C3,5, 6]  ?Job3 [C4,5]  ?Job4[C3,5,6]  Job Execution Time (sec)  Matcher  2 4 6  ?Job2 [C1]  Job2 [C4]   Job3[C1, 2, 3]   ?Job3 [C6]  ? Job4 [C1,2]  Job4 [C4]  ?Job1[C1,3,5]Matcher1  Matcher2  Matcher3  Matcher4  Job Execution Time (sec)  Matcher  2 4 6  Job3[C1, 3,5]   ?Job2[C1,3,5] ?Job4[C1, 3, 5]  ?Job1[C2,4,6]  ? Job2[C1,3,5] Job3[C2,4,6]  ?Job4[C2,4,6]  (a) Mirror Data Placement (MDP)  (b) SPOAN    Fig 9:  Job Execution Time Comparison of MDP and SPOAN     ?? Matcher Node: The Matcher node requests tasks corresponding to the chunks it is assigned and performs matching on the chunks placed in it. This is equivalent to the map task in MapReduce.
+
+?? Job Tracker: The Tracker divided jobs into multiple tasks corresponding to the number of chunks in the whole systems and hands over the tasks to the Task Scheduler when requested by the Task Scheduler.
+
+?? Data-Locality Aware Task Scheduler: Data-locality aware Task Scheduler assigns the unassigned tasks to matcher nodes. The tasks correspond to the chunks requested by matcher node.
+
+?? Task Results Aggregator: The Aggregator sorts the scores of the matching results and computes the final candidates. This is equivalent to the reduce task process in MapReduce.
+
+SPOAN?s replica placement and data-locality aware Task Scheduler balance the load among the matcher nodes. The Data Placement Planner places the replicas in the matcher nodes using SPOAN to balance loads among the matcher nodes, and Scheduler assigns the tasks to the matcher nodes which request tasks so that the matching can be done quickly in parallel.
+
+B. Design Considerations The large-scale identification system basically inherits MapReduces?s architecture. However, we developed the system without Hadoop because Hadoop has issues such as poor CPU utilization of the compute nodes and poor task scheduler?s scalability.
+
+The first issue is that CPU utilization of the matcher decreases if Hadoop reads chunks from disks because the matcher needs to compute large volumes of data quickly. The second issue is that the performance of the task assignment worsens as the number of matcher nodes increases because the task scheduler has to assign a lot of tasks to compute nodes.
+
+Below, we discuss the key design points for resolving these issues.
+
+Place chunks in the memory of matcher nodes before matching: The volume of biometrics templates that one compute node reads in a seconds is very large (tens of GB/s).
+
+CPU usage rate decreases when chunks are placed on matcher nodes in the manner of Hadoop because it requires transfers  from disk and networks. Because of this, we place the replicas on the Matcher nodes in advance of matching. In addition, we place them in the memory of the Matcher node because the replicas are read very often.
+
+Batch processing of internal task transports: Because the speed of the matcher node?s identification is extremely high, the task management cost of the Task Scheduler would be very high if the task execution plans, placement plans and delivery/execution results were aggregated individually. To avoid this, we decided to manage jobs in a certain period with a single execution plan. We succeeded in reducing the number of inter-server communications and the CPU power used in distributed management computations to several hundredths of their original values.
+
+
+
+V. EVALUATION ? We conducted the experiments to see how well SPOAN?s replica placement method balanced workloads in comparison with the existing replica placement method, and to determine whether the large-scale identification architecture has scalability.
+
+A. Experiment Job throughput measurement  In order to evaluate the workload balance of each replica placement method, we measured the job throughput of Hadoop?s random replica placement (RDP) with equal data redundancy, mirroring and striping placement (MDP), and SPOAN on a biometric database containing the data on 600 million   people.
+
+To measure the throughput, we first measured the number of CPU cores needed by SPOAN to process 500,000 searches/day in a biometric database with the data on 600 million people. After that, we measured the job throughput of the other replica placement methods with the aforementioned number of CPU cores as the standard.  By creating a condition wherein a node?s process is delayed 100% when one matcher node stops, we made situation in which nodes slowed down, and then evaluated the job throughput with each of the methods. We measured the number of CPU cores needed for SPOAN to have a job throughput of 500,000 searches/day, and then measured the job throughput of RDP and MDP with the same number of CPU cores. We repeated the evaluation five times.
+
+Matcher Node 1  Matcher Node 2  Matcher Node3  Data-Locality Aware  Task Scheduler  Task Results Aggregator  Biometric Database  Map Phase Reduce Phase  Replica Placement  Planner  Final Candidate  Job Tracker  1 4  1 2  2 3  Matcher Node 4  3 4  CandidatesCandidate  Job Client  RAM  RAM  RAM  RAM  TasksJob  CandidatesCandidate  Tasks  Fig 10. Large Scale Biometric Identification Architecture     Jobs throughput measurement per dataset scale in SPOAN In order to evaluate the scalability of architecture of the  large scale identification systems using SPOAN, we increased the volume of registrants in the biometric database in steps of 200 million people up to 1.2 billion people, and evaluated the job throughput.
+
+We tried to see if we can could achieve the Large-scale?s requirement of 500,000searches/day per scale of biometric database and determine how many CPU cores were needed.
+
+Because of the high CPU loads in identification, we needed the hundreds of matcher nodes. We developed matcher emulator which emulated the real matcher performance.
+
+Regarding the matcher emulator, we emulated 1,000 million matches/sec by assuming that each matcher server had 12 cores.  The Task Scheduler works on a real server equipped with Intel Xeon X5550 processor at 2.67 GHz with 32Gbyte memory.
+
+B. Evaluation Results Jobs throughput measurement  Fig 11 shows the results of job throughput measurements for random replica placement (RDP), mirror replica placement (MDP), and SPOAN.
+
+We found that SPOAN needed 3,600 cores in order to process 500,000 searches/day in the biometric database containing information on 600 million people. The maximum mirror table value of each replica placement method in RDP, MDP and SPOAN were 1, 14, and 6 respectively.
+
+The job throughput of SPOAN was 12% higher than RDP and 46% higher than MDP. It was also higher than RDP in worst, best and average cases.
+
+Jobs throughput per dataset scale in SPOAN Fig 12 shows the records of the actual measurement of the  number of CPU cores needed to achieve 500,000 searches/day when we increased the volume of registrants in the database from 200 million people to 1.2 billion people. A throughput of 500,000 searches/day could be achieved with an additional 1,200 cores for every 200 million people added to biometric database. In addition, the CPU usage rate with Task Scheduler was only about 6% on average, even with 1.2 billion people.
+
+C. Considerations Load balancing effects with SPOAN  The job throughput in SPOAN was up to 46% higher in comparison with random placement or mirror placement.
+
+This is because the mirror table value of SPOAN is more uniform than RDP or MDP. Therefore, even if some nodes slowed down in SPOAN, other matcher nodes sharing the replicas can process the tasks and maintain the load balance.
+
+Scalability of the large scale identification architecture We expanded biometrics database to the level of 1.2 billion  people, we achieved 500,000 searches/day with the additional 1,200 CPU cores per 200 million added to the database and, the architecture scaled in a straight line. In addition, at 1.2 billion people, the CPU usage rate of the servers running the task schedulers is only 6% on average. As the targeted throughput was reached, we can conclude that large scale biometrics architecture has extremely high scalability.
+
+
+
+VI. RELATED WORK ? In this paper, we proposed a replica placement method to balance the loads of compute nodes. Here, we discuss the related studies on load balancing among compute nodes in relation to the replica placement method and scheduling method.
+
+Replica Placement Method: Studies concerning how to place replica in a way that  balances the loads are on going. Palanisamy et al. [6] presented the replica placement method that avoids placing high-load data set to certain compute nodes because the load per dataset is predictable. However, with the multi-modal identification systems, we cannot determine the loads of individual nodes in advance because the matching speed changes on the basis of the job and in accordance with the quality of biometric templates.
+
+There are a number of dynamic replica placement techniques which balances workloads by dynamically placing replicas based on loads of the compute nodes [7][8]. These techniques can minimize the required storage capacity because replicas are created and moved only when necessary. However,         Fig 11. Job Throughput Comparison of Replica Placement Techniques using 3,600 CPU cores. Worst, best and average-case performance of RDP, MDP and SPOAN           ? ??? ??? ??? ??? ???? ????  Th e  Nu m  be r  of C  P U  C or  es  Biometric Database Size (million)  Fig 12. Number of CPU cores Needed for 500,000 Searches/day     in large scale identification systems, the volume of replica is larger and the cost of data transfers becomes higher so that there is an issue of lower job throughput.
+
+Chervenak et al. [9] proposed to replicate data across sites on  demand. In this research, the workload scheduler manages the distribution of data across a wide-area network to dedicated storage servers in each cluster. Our work focuses on replica placement in a local-area cluster and minimizing data transfer.
+
+Distributed database systems like TeraData [11] use centralized external storage arrays and proprietary high-speed interconnects with high bisection bandwidth. However, the network bandwidth is low for large-scale biometric identification because it requires more than 10 terabytes worth of I/Os per sec to compute. All biometric templates must near the compute nodes? memories.
+
+Task Scheduler: Crovella et al. [12] proposed scheduling policies for task assignment to hosts in distributed systems. However, they dealt with scheduling independent tasks among a set of servers.
+
+Our work deals with improving the throughput of jobs containing multiple tasks.
+
+Zaharia et al. [13] proposed Delay Scheduling, which delays the assignment of tasks in case there is no data locally in a compute node, in order to place replicas in compute nodes locally. However, although it does reduce the data transfer rate, it cannot completely eliminate data transfers. Moreover, it doesn?t solve the load bias issue mentioned in the preceding sections.
+
+A load balancing method has been proposed that dynamically changes the number of slots for empty tasks based on the usage rate of computing resources [14][15].
+
+However, the CPU usage rate of compute nodes is close to 100% in the large-scale biometrics system, so that it is difficult to measure the usage rate of computing resources of each node frequently. Therefore, an issue arises in how to assign the tasks optimally when the measurement frequency of resource usage is necessarily low.
+
+
+
+VII. CONCLUSION We proposed a replica placement method called SPOAN  that balances loads among nodes in order to avoid the load balancing issues of the MapReduce framework and conventional distributed storage technology when they are applied to large-scale identification systems. SPOAN works by deploying replicas equally among the nodes and sharing the same replicas among the compute nodes.
+
+SPOAN balances the workloads of matcher nodes and we showed that it enhances the throughput of identification jobs by up to 46% in comparison with the random replica placement and mirror replica placement, even when certain compute nodes slowed down. In addition, even when compute nodes slow down, jobs can be performed without data transfers among compute nodes so that job throughput is high.
+
+Furthermore, SPOAN has same availability in comparison with random placement and mirror placement when one matcher is down.
+
+We also verified that a large-scale identification architecture implementing SPOAN could maintain a high throughput of 500,000 searches/day in a biometric database containing data on 1.2 billion people.
+
+
+
+VIII. FUTURE WORK In the future, we would like to study the performance and  accuracy characteristics of biometric identification and how to place replicas using the characteristics of biometric data by evaluating the identification performance and accuracy on actual large-scale biometric data.
+
+We hope that our practical experience with SPOAN will help us to identify aspects of our replica placement policy that need to be refined.
+

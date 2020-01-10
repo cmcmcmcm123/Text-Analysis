@@ -1,0 +1,144 @@
+ReDedup: Data Reallocation for Reading Performance Optimization in Deduplication System
+
+Abstract?Deduplication technology has been increasingly used to reduce the storage cost. In practice, it often causes additional on-disk fragments that impair the reading per- formance. To reduce the impact of fragments, traditional thought of defragmentation that reallocating files on-disk to achieve contiguous layout has been widely used in many operating systems. Unfortunately, file defragmentation is highly constrained by block sharing in deduplication system which makes it impossible for all files to have a perfect sequential on-disk layout. In this paper, we propose ReDedup which performs data reallocation in deduplication storage, with a goal to mitigate the impact of disk fragments. ReDedup is motivated by the observation of real world I/O workloads: non-uniform access frequency distribution of duplicated data. Leveraging this data skew, ReDedup can make a majority of I/O requests more sequential by eliminating the fragments of hot files and shifting them to the rarely read files. To achieve its objective, ReDedup dynamically estimates the access randomness and block sharing relationship, of individual files based on the history I/O activity, and then uses a greedy algorithm to selectively reallocate and place files sequentially on the disk.
+
+Our experimental evaluation of ReDedup prototype based on real-world datasets shows that ReDedup speeds up the reading performance by a factor of 28%-40%.
+
+Keywords-Deduplication; Defragmentation; Data realloca- tion; Block access pattern
+
+I. Introduction  Explosive data growth over the recent years has brought much pressure on the infrastructure and storage manage- ment. Faced with ever-growing storage needs and the lim- ited budgets, lots of corporations are exploring dedupli- cation technologies[1][2]. Data deduplication is a storage- optimization technology that reduces the data footprint by eliminating multiple copies of redundancy and storing only unique data. Industries such as financial services, pharma- ceuticals, and telecommunications have already adopted this technology in their daily work[3].
+
+Although the deduplication technology has been studied and developed for many years now and widely deployed in data backup and archiving products, it has only recently started emerge in the primary storage systems that also have large amounts of redundant data[1][4][5][6]. An im- portant performance indicator of primary storage workloads is the read latency, which is essential for customer in his  working environment to get and restore the materials. But the read latency suffers from deduplication which severely limits the employment of deduplication technology. Though deduplication can effectively reduce the storage usage, it will scatter the data across more disk locations, which will inevitably introduce additional on-disk fragmentation[7][8].
+
+As a result, subsequent sequential reads of deduplicated data are transformed into random I/Os resulting in significant seek penalties. When reading, extra disk-head seeks will be experienced, resulting in a substantial increase in the read latency.
+
+To reduce the loss of reading performance by disk fragments, a great number of research efforts have been devoted[9][1][10]. Existing researches in deduplication sys- tem mainly focused on how to avoid disk fragments when making decisions in deduplication process. For example, Srinivasan et al. proposed to deduplicate a sequence of con- secutive data blocks when that sequence length is larger than a predefined threshold, say 8 or 16[1], so that the small disk fragments are reduced and the sequential I/O requests are mostly preserved. In such systems, reading performance is optimized by sacrificing the storage space usage. To mitigate the performance impact of disk fragments, defragmentation is a particularly important technology for file systems to reorganize file blocks to be more sequential. Though it successfully improves the performance in traditional stor- age system, massive block sharing in deduplication system makes it harder to optimize on-disk layout. The difficulty lies in that if some files share a subset of their blocks, it is impossible for all of them to have a contiguous on-disk layout where defragmenting one file may hurt the layout of the others.
+
+While defragmentation can hardly address the data frag- mentation problem introduced by deduplication. On the other hand, out study of the I/O workloads obtained from two real-world storage systems, to be detailed in Section 3, indicates that the accesses to duplicated data are highly skewed: on-disk files with shared content exhibit a non- uniform access frequency distribution; a small fraction of total shared files absorb most of the accesses to the shared content. The above observations inspire us that, being aware of the I/O access pattern and block sharing relationship,   DOI 10.1109/CBD.2013.28     more intelligent optimization can be made, such as prior- itizing frequently accessed shared files get defragmented.
+
+To this end, we propose ReDedup, a data reorganizing scheme in deduplication storage system to address data fragmentation problem, which reallocates files and places them sequentially on-disk based on the history I/O activ- ities, including the randomness of files and their sharing relationship. The randomness measures the access cost for each file, and the sharing relationship estimates how many and how often the shared blocks of specific file are accessed by other files. Therefore, the randomness indicates the profit of defragmenting of the given file, while the sharing relationship of this file indicates the hurt to other files when performing data reallocation. By integrating both the pros and cons, ReDedup select the most valuable files to reallocate and relocate their disk layout and shift the disk fragments to the rarely read files for reading performance optimization. Data reallocation is not executed frequently and is only triggered when the storage system is mostly idle at night, thus introducing little interference to foreground applications. Our experimental evaluation based on several real-world datasets, shows that compared with the original disk layout after deduplication, ReDedup can improve the reading performance by a factor of 28%-40%.
+
+The key contributions of this paper are summarized as follow. (1) We study the characteristics of I/O workloads in deduplication system and show how the findings motivate ReDedup. (2) We present the detailed design and imple- mentation of a data reorganizing scheme that is based on the estimates of randomness and block sharing relationship to selectively defragment files, with a goal to mitigate disk fragmentation impact in deduplication system.
+
+The rest of the paper is organized as follows: Section 2 describes related work. Research motivation and character- istics of I/O workloads are discussed in Section 3. Design and implementation details are given in Section 4. Section 5 gives experimental results on the real-world workloads.
+
+Finally, we describe conclusions and our future work in Section 6.
+
+
+
+II. RelatedWork A. Data Deduplication  Many research literatures have recognized the problem of data fragments in deduplication system. Sean Rhea et al. note that in eliminating duplicated data during writes, it causes on-disk fragments since the blocks of a disk image being read may originally have being stored as part of other images earlier[7]. Zhu et al. have proved that the reading performance noticeably decreased during deduplication pro- cess and fragmentation will become more severe for long retention[8].
+
+Young et al. present a selective deduplication scheme which assures demanded reading performance by using an indicator called cache-aware Chunk Fragmentation Level to  estimate degraded reading performance on the fly[10][9].
+
+Srinicasan et al. utilize the spatial characteristic of the duplicated data on disk to only deduplicate long sequences of shared data. This technique exposes a tradeoff between capacity savings and reading performance[1]. The existing efforts mainly focus on avoids disk fragments when dedu- plicating, but require more space usage for better reading performance. While in this paper, we explore to optimize the data layout in the underlying storage after deduplication.
+
+B. Data Reorganization  In one of the early approaches, Staelin et al. proposed supervising file accesses and migrating frequently accessed files to the center of the disk[11]. Mac OS?s HFS Plus clusters hot files of small sizes and migrates them near to the volume?s metadata[12]. Windows XP uses the defragmenter to increase access speed by rearranging files stored on a disk to occupy contiguous storage locations[13]. However, above data reorganization techniques can hardly adapt to the storage system with significant block sharing.
+
+Among recent work on block reorganization, C-Miner uses advanced data mining techniques to extract correlations within block I/O requests[14]. The Intel Application Launch Accelerator reorganizes blocks used during application start- up to be more sequential[15]. BORG is a generic block reorganization mechanism that servicing a majority of the I/O requests from a dedicated partition with significantly reduced seek and rotational delays[16]. In this paper, we adopt these techniques of inferring complex disk access patterns to perform file defragmentation in deduplication system.
+
+
+
+III. Background andMotivation  In this section, we first provide the necessary background for data reorganization by introducing the existing chal- lenges in deduplication storage systems, and then motivate our research by analyzing the observations based on exten- sive experiments on real-world workloads.
+
+Figure 1. The challenge of file defragmentation in deduplication system.
+
+20 40 60 80 100  0.2  0.4  0.6  0.8   Percentage of Shared Files (%)  P er  ce nt  ag e  of A  cc es  s Fr  eq ue  nc y  (% )  Mail Research  (a) Shared File Access Frequency  Top 10% Top 20% Top 30%      Hot Shared Files  D up  lic at  e C  on te  nt A  cc es  s R  at e  (% ) Mail  Research  (b) Duplicated Content Access  Figure 2. Data Skew of Accesses to Duplicated Content.
+
+A. File Defragmentation in Deduplication System  To reduce the disk fragments, many researches have pursued to maintain I/O requests more sequential by op- timizing the data layout. For example, in the maintenance of file systems, defragmentation is a process that reduces the amount of disk fragments. It reorganizes the hard drive by putting pieces of related data back together so that files are organized in a contiguous fashion. As a result, the storage system can access files more efficiently.
+
+However, the file defragmentation can hardly be adopted in deduplication storage system. Note that the use of block- level deduplication may let a single block belongs to multi- ple file system trees. This block sharing presents a challenge for reducing disk fragments. As illustrated in Figure 1, suppose we have two data files File 1 and File 2. The File 1 has three data blocks A1, A2 and A3. File 2 has three blocks B1, B2 and B3. Originally all these file blocks are sequentially placed in the disk. Suppose there exist some duplicated blocks, i.e., A3 = B1. When deduplicating, the block redundancy will be removed. So that if performing defragmentation, the duplicated block has two possible on- disk placement. In case 1, all blocks of File 1 are reallocated and placed together, while duplicated block A3 brings disk fragments to File 2. In case 2, the defragmentation of File 2 would also make disk fragments to File 1. It can hardly clean the fragments for both files due to block sharing.
+
+The possible theme to layout optimization is that when we defragment a file, we must determine its new layout in the context of the other files with which it shares blocks.
+
+B. Characteristics of Workloads in Real systems  In this subsection, we examine the basic characteristics of real-world workloads from two primary storage systems that are in active, daily used in our department. One is a mail server (mail), the other is a research server (user home dirs, source code, documents, project codes, etc.). We build deduplication file system on these two servers by using an open source tool SDFS[17], and migrate all user data to  Table I Statistics of two workloads studied  Mail Research Trace period One week One week Read (MB) 778,125 46,547 Write (MB) 248,122 58,498  Deduplication ratio 37% 46%  the deduplication file system respectively which performs 4KB fixed chunk deduplication. We collected I/O accesses downstream of active page cache from each system for a duration of one week by using blktrace[18]. Moreover, in order to get the file sharing relationship, we modify the interface between the file system and I/O block layer by passing the process context of I/O requests to the I/O block layer. Thus LBA-to-FILE mapping can be captured ( with a modified blktrace utility). Some statistics of these two workloads are summarized in Table 1.
+
+Researchers have pointed out that file system data has non-uniform access frequency distribution[19][20]. This was also confirmed for shared files in our traces that a very small percentage of shared files attract most of the accesses to the duplicated contents. Skewed data access frequency is illustrated in Figure 2(a) that the top 20% most frequently accessed shared files contributed to a substantially large ( 60- 80%) percentage of the total accesses associated with the shared files. In addition, we identify the top 10%, 20%, 30% frequently accessed shared files during a week long period.
+
+As shown in Figure 2(b), the top accessed files take up large portion of the total accesses to duplicated contents.
+
+Though block sharing makes it harder to perform file de- fragmentation, the access skew of duplicated contents gives us opportunity to break the block sharing constrain. Defrag- menting hot shared files, the reading performance benefits from more sequential disk accesses. Leaving fragments to the cold shared files, it has little impact to the reading performance. In other words, instead of diminishing disk     Figure 3. Overview Architecture of ReDedup system.
+
+fragments, defragmenting in deduplication system seeks to minimize the impact of fragments. Thus, more intelligence is needed here to optimize the layout of shared files to mitigate the hard disk seek overhead.
+
+
+
+IV. Design and Implementation  In this section, we present more practical and realistic details in our implementation of ReDedup. ReDedup means moving the disk fragments to the place with minimum performance impact through file defragmentation.
+
+Figure 3 provides an overview of this design that seeks to maximize the reading performance based on history I/O ac- tivity. ReDedup is built at the I/O block layer as block-level attributes about disk accesses are available. In addition, op- erating at the I/O block layer makes the solution independent of the file system layer above. Abstractly, ReDedup follows a three-stage process. Firstly, it will profile the I/O access pattern including I/O start LBA, request size, file name etc.
+
+Based on the analysis of the I/O access pattern, ReDedup measures the random access degree and sharing relationship to figure out the profit when performing defragmentation for each shared file. In the last, selective defragmentation are executed based on the above assessment to maximize the reading performance. Accordingly, ReDedup consists of three components: I/O Profiling, Defragment Assessment and Selective File Defragmentation. The following dis- cusses each component in detail.
+
+A. I/O profiling  The I/O Profiling is a data collection component which is responsible for comprehensively capturing all disk I/O ac- tivity. We use a low-overhead kernel tool called blktrace[18] which capture the I/O requests queued at the I/O block layer.
+
+The result of I/O Profiling is a LBA-to-FILE Mapping Table which records the basic information of I/O requests. The structure of the mapping table is shown in Figure 4 where each entry in the table is indicated by start LBA, request size and corresponding file name. At the same time, LBA- to-FILE Mapping Table is sent to Defragment Assessment  Figure 4. LBA-to-FILE Mapping Table.
+
+component which studies these I/O information and assess the profit when defragmenting.
+
+B. Defragment Assessment  The Defragment Assessment dynamically examines the impact on the reading performance for each individual file when it is defragmented. As we mentioned above, defrag- menting a shared file inevitably improve the sequentiality of the disk accesses, but it also hurt the sequentiality of other files. Thus, when we decide to defragment a shared file, it has to take both the pros and cons into consideration.
+
+More specifically, if the randomness of a shared file is high, then defragmentation can bring more profit in reading per- formance of this file by turning random I/Os into sequential accesses. On the other hand, if a file shared blocks with many other files and these blocks are accessed frequently by those files, then defragmenting the given file may introduce more disk fragments with performance penalty.
+
+In order to recognize the file random access pattern, we use the method which is similar to the block-level I/O scheduler in many operating systems. We scan the reading I/O requests, merge small requests of the same file into a larger sequential segment, and maintain independent random requests as they are. After scanning all the I/O requests, the total number of access segments remained for a given file is defined as the randomness count of that file. For example, if the total number of segments equals to access number, then this file is accessed fully randomly, as no requests can be merged. If the segments equals to one, then all the requests issued by that file are merged into one segment due to the perfect sequentiality of the requests.
+
+In the mean while, given an access segment, if it has overlapping in LBA range with other segments but has different file name, then it indicates that different files share the same content and access them. We identify the sharing relationship from the LBA-to-FILE Mapping Table and calculate the impact of defragmentation. For example, for segment S i of file Fi, we scan the LBA-to-FILE Mapping Table and finds overlapped sequential segment. If there exists segment S j where S i ? S j ? ? and Fi ? F j, then it can be figured out that the defragmentation of file i hurts the layout of file j and vice verse. We use a variable to record this hurts for each file.
+
+Algorithm 1 is designed to assess the benefit of defrag- mentation based on the LBA-to-FILE Mapping Table. It sets S egmentS et to empty, which is the set generated by I/O request merge process. It uses two variables Randomness and S haring for each file to measure the profit and loss when performing defragmentation. For each new request, we first perform I/O merge operation by comparing the sequentiality of the new request with previous I/Os of the same file, as shown in line 8. If the access offset as well as file name match, then we merge them as a sequential segment.
+
+Otherwise, the new request is treated as a random one, the algorithm increases the randomness count Randomnessi for file i and uses the new I/O request as the start of the new segment. At the same time, we examine the newly confirmed sequential segment TempoS eg with the segments in the S egmentS et, as shown in line 13 to line 21. If segment j in the table has overlapping with TempoS eg in their LBA range, then their corresponding file shared the same content.
+
+Further, if the file of TempoS eg and file of segment j are not the same, the sharing degree of both files increases. The final assess of a file that whether it is appropriate to be defragmented equals to the value of randomness minus its sharing relationship.
+
+Algorithm 1 Defragmentation Assessment Algorithm.
+
+Require: LBA-to-FILE Mapping Table  1: S egmentS et ? Empty; 2: for all files do 3: Randomness(FILEi)? 0; 4: S haring(FILEi)? 0; 5: end for 6: TempoS eg in f o.? Req1 in f o.; 7: for i? 2 to length(Mapping Table) do 8: if Reqi and Reqi?1 are consecutive and belong to same file  then 9: TempoS eg?s end LBA? Req?i s end LBA;  10: else 11: FILEi ? TempoS eg?s f ile name; 12: Randomness(FILEi) = Randomness(FILEi) + 1; 13: for all entries in S egmentS et do 14: if S egmentS et j overlapped with TempoS eg then 15: FILE j ? S egmentS et?j s f ile name 16: if FILEi ? FILE j then 17: S haring(FILEi) = S haring(FILEi) + 1; 18: S haring(FILE j) = S haring(FILE j) + 1; 19: end if 20: end if 21: end for 22: Add TempoS eg into S egmentS et; 23: TempoS eg in f o.? Reqi in f o.; 24: end if 25: end for 26: for all files do 27: Assess(FILEi)? Randomness(FILEi) ? S haring(FILEi); 28: end for  C. Selective File Defragmentation  The Selective File Defragmentation is designed to max- imize the effectiveness of defragmentation in deduplication system according to the results of Defragment Assessment.
+
+In our work, the candidate files depends on the number of shared files in the workload traces, which can be of a large number. ReDedup uses a greedy heuristic that always selects the file i with the highest defragment assess. After, it labels the blocks of file i as they have already been reallocated. If in later time file j has been selected that S i?S j ? ?, then it only reallocates blocks without been labeled of file j. This process is repeated until there is no file in the candidates set.
+
+The task of data reallocation in the underlying storage is complicated primarily because of overhead concerns that interfere the accesses to those migrating data. Overhead is partially addressed by issuing low-priority I/O requests for data layout reorganization, giving other I/O requests a higher priority.
+
+
+
+V. Evaluation  We use two representative workloads used in Section 3 to evaluate our design in this section. We compare the performance of ReDedup with a basic deduplication system in which the oldest copy of block is preserved and new copy is not written but maintains a pointer to the older copy. Note that the data organization policy in ReDedup considers both the randomness of files and their block sharing relationship.
+
+We implement ReDedup in C code and plant it into the I/O block layer. All experiments were performed on machines running the Linux 2.6.30 kernels, configured of a dual core 2.8GHz Intel CPU and 2GB RAM. We replayed the workloads as block traces using fio[21], which is a tool that will spawn a number of threads or processes doing a particular type of I/O action as specified by the user.
+
+Measurements for disk I/O performance were obtained from the report of fio. In order to remove the interference of requests that are not issued by our test benchmarks, requests are issued to a separate 1 TB Toshiba disk v63700-A.
+
+Research Mail  0.1  0.2  0.3  0.4  0.5  0.6  0.7  A ve  ra ge  L at  en cy  (m s)  Basic Deduplication ReDedup  Figure 5. Average latency in two workloads.
+
+12 x 10  I/O Requests  S ee  k D  is ta  nc e  (S ec  to r)  (a) Basic Deduplication        12 x 10  I/O Requests  S ee  k D  is ta  nc e  (S ec  to r)  (b) ReDedup  Figure 6. Disk seek distance over the time under the Mail workload.
+
+12 x 10  I/O Requests  S ee  k D  is ta  nc e  (S ec  to r)  (a) Basic Deduplication        12 x 10  I/O Requests  S ee  k D  is ta  nc e  (S ec  to r)  (b) ReDedup  Figure 7. Disk seek distance over the time under the Research workload.
+
+A. System Latency  To evaluate ReDedup under realistic workloads, we con- ducted trace replay experiments using Mail and Research workloads described in Table 1. We use the read I/O latency as the primary metric of performance. Figure 5 compares the latencies of basic deduplication system and our ReDedup system. It can be observed that ReDedup improves the average latency of basic deduplication by 28% for Mail and 40% for Research. The significant read improvement indicates that ReDedup can successfully capture hot and random shared files and reallocate them on disk.
+
+B. Reduce Disk Seek Distance Analysis  We would like to know why is ReDedup effective that if ReDedup performance gains are because of the more sequentiality of I/O requests or the reduced random I/O accesses. We use the metric of disk seek distance as it is widely used to indicate the performance of disk I/Os. Since random accesses are an order of magnitude less efficient than sequential accesses, even a small reduction in disk seek distance may lead to substantial performance improvement.
+
+By replaying the file-level I/Os specified in the traces during the experiments, we capture the actual block-level accesses to the disks.
+
+Figure 6 and Figure 7 plot the disk seek distances of two workloads observed under basic deduplication and ReDedup scheme. Apparently, the same trend of two workloads can be observed that basic deduplication leads to large amount of long-distance seek operations caused by the random accesses. Impressively, large amount of long seeks caused by deduplication is now eliminated in ReDedup, where it can be observed that long seeks are reduced. On the other hand, the small seeks increase. The rational in behind is that the existence of block sharing makes it impossible to eliminate random accesses, but to mitigate the impact by shifting long seeks to small seeks. Further, Figure 8 compares the moving average of seek distances of basic deduplication and ReDedup, and the moving window size is set as 1 request.
+
+This figure clearly shows that ReDedup can successfully mitigate the impact of disk fragments and reduce the disk head seek distance of Mail and Research with an average of 19% and 41%, respectively. The reduction in disk seek     0.8  0.9   1.1  1.2 x 10  I/O RequestsA ve  ra ge  S ee  k D  is ta  nc e  (S ec  to r)  ReDedup Basic Deduplication  (a) Mail   0.5   1.5  2 x 10  I/O RequestsA ve  ra ge  S ee  k D  is ta  nc e  (S ec  to r)  ReDedup Basic Deduplication  (b) Research  Figure 8. Disk seek distance runtime average.
+
+distance is then directly translated into the performance gain.
+
+C. System Overhead  The overhead of the ReDedup system includes computa- tion cost and storage cost. The computation cost is relative to the process of Defragment Assessment for each individual file and Selective File Defragmentation. The storage cost is relative to the additional space spending for profiling LBA- to-FILE Mapping Table and SegmentList.
+
+We examine CPU operational overhead of ReDedup.
+
+Figure 9 shows the amount of time spent in file reallocation planner of Research workload. More specifically, we divide the one week trace of Research workload duration into seven, 1-day intervals and measure the execution time of ReDedup with the input of one day block access pattern.
+
+With partial traces, the time increases until the second day, and then decreases and stays almost constant for the following four days, but then increases in the sixth day and decreases again. The large part of constant days indicates a gradually stabilizing working-set, while the increasing part depict the variation of accesses to files. We can see that the CPU overhead is relative small that the largest part is under half an hour, and the overhead is under control due to stable block access pattern.
+
+As the amount of data accessed growing, the profiling and indexing will consume large space with hundred megabytes.
+
+But these additional space usage is relatively small compared with the modern disk, so that the storage cost would not impact the system.
+
+
+
+VI. Conclusion and FutureWork  In this paper, we describe ReDedup, a self-optimizing deduplication system that performs automatic data realloca- tion, with a goal to mitigate the impact of disk fragmenta- tion. ReDedup is motivated by the observation of real world I/O workloads: non-uniform access frequency distribution associated with duplicate contents. It shifts fragmentation to the rarely read files by dynamically estimating the access randomness and block sharing relationship, of individual  1 2 3 4 5 6 7 8  0.5   1.5  2 x 10  Interval (day)  Ti m  e (S  ec on  d)  Planner Time  Figure 9. Plan overhead of Research workload.
+
+files based on the history I/O activity, and then using a greedy algorithm to selectively reallocate and place files sequentially on the disk.
+
+As our future work, we will explore adaptive control theory in the planner process according to the continuously varied workloads. Besides, it is possible to design a hybrid storage system to further reduce the impact of disk fragmen- tation.
+

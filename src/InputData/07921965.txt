@@ -1,0 +1,146 @@
+Performance Evaluation of Bloom Filter Size in Map- side and Reduce-side Bloom Joins
+
+Abstract?Map Reduce (MP) is an efficient programming  model for processing big data. However, MR has some limitations in performing the join operation. Recent researches have been made to alleviate this problem, such as Bloom join.
+
+The idea of the Bloom join lies in constructing a Bloom filter to remove redundant records before performing the join operation.
+
+The size of the constructed filter is very critical and it should be chosen in a good manner. In this paper, we evaluate the performance of the Bloom filter size for two Bloom join algorithms, Map-side Bloom join and Reduce-side Bloom join. In our methodology, we constructed multiple Bloom filters with different sizes for two static input datasets. Our experimental results show that it is not always the best solution to construct a small or a large filter size to produce a good performance, it should be constructed based on the size of the input datasets.
+
+Also, the results show that tuning the Bloom filter size causes major effects on the join performance. Furthermore, the results show that it is recommended to choose small sizes of the Bloom filter, small enough to produce neglected false positive rate, in the implementation of the two algorithms when there is a concern about the memory. On the other hand, small to medium sizes of the Bloom filter in the Reduce-side join produce smaller elapsed time compared to the Map-side join, while large sizes produce larger elapsed time.
+
+Keywords?Hadoop; MapReduce; Bloom Filter; Map-side Bloom join; Reduce-side Bloom join
+
+I.  INTRODUCTION  Big data management has become one of the major challenging fields in the computer science studies these days.
+
+The need to storing the big data, sharing, analyzing, processing and growing of the big data have enforced the researchers to invent an efficient framework of tools to utilize the usage of the big data, since the traditional data base management systems have some limitations concerning with the size of the data [1].
+
+Hadoop framework is one of the powerful tools to manipulate big data, it becomes one of the most widely used simulator for big data programming.
+
+Hadoop is an open source framework released by Apache in 2011, written in Java for distributed and parallelized systems, it is designed for multi-cluster computers from a commodity hardware. There are four modules of the Hadoop framework: Hadoop Common, Hadoop Distributed File System (HDFS), Hadoop Yarn and Hadoop MapReduce [2]. All modules in the Hadoop are designed with fundamental assumption that in multi-cluster computers the hardware failures are common and the failure handling should be automatically resolved.
+
+MapReduce is a programming model implemented within the Hadoop environment, it is designed for processing and generating the large datasets in terms of two functions: map and reduce in a parallel manner within each function [3]. Big amount of data can be processed in a reasonable time in a large number of commodity hardwares that use MapReduce model, valuable information hidden in the big data can be revealed with much less time compared with the traditional data base management systems. The major benefits of MapReduce are the utilization of the parallel programming interface in a simple manner, high scalability and powerful failure handling. Despite MapReduce is a very efficient model in processing big data, it has some limitations to perform operations on multiple datasets such as the join operation which is one of the essential operations for practical data analysis and processing [4].
+
+The major issue with the join operation in MapReduce is the need to process the entire datasets in the nodes of the cluster, and the datasets should be sent among the cluster via the network connections, which in this case a significant performance bottleneck could exist, especially when the fraction of the relevant data to the join is relatively small.
+
+Joining the input datasets in the MapReduce model could be done in the map phase or in the reduce phase, known as Map- side Join and Reduce-side Join respectively. In the large dataset area, many techniques other than the conventional ones have been implemented over the past 30 years to alleviate this problem, such as: bloomjoin [5], semijoin [6], Hashjoin [7] and Indexjoin [8]. However, any auxiliary data structures in MapReduce, such as filters and indexes, are not available because MapReduce is initially designed to operate with the input as a single large dataset. Some techniques have been implemented recently in optimizing the join performance for two way input datasets using Bloom filter such as the work done by Lee T., Kim K. and Kim H.J in [4], they adopt a bloomjoin algorithm into the Hadoop, their main contribution is to construct Bloom filters on one of the input datasets during the map phase and then send them out to the other dataset to filter out redundant records before entering the reduce phase.
+
+They accomplished a better performance compared to the conventional join algorithms, Map-side joins and Reduce-side joins, for a fixed size of the two input datasets. However, the adopted algorithm is constructed with a fixed size Bloom filter.
+
+In this paper, we evaluate the performance of two Bloom filter join algorithms, Map-side Bloom join and Reduce-side Bloom join, with a variable size of the Bloom filter. The idea is to construct multiple Bloom filters with different sizes to perform the join in the two algorithms for each specified size and then study the effect of the Bloom filter size on the        performance. The Bloom filter size can affect the join processing performance in certain circumstances: false positive rate, time to construct, CPU spent time and amount of physical memory used.
+
+The rest of the paper is organized as follows: Section II introduces the background and related work to this paper.
+
+Section III describes our methodology and implementation.
+
+Section IV discusses the experimental results. Finally, we conclude and discuss future work in Section V.
+
+Fig. 1. Execution of MapReduce.
+
+
+
+II. BACKGROUND AND RELATED WORK  In this section, we first introduce the MapReduce framework and the join processing algorithms in MapReduce.
+
+Then, we describe the Bloom filter and the previous work improvements on join processing using Bloom Filter in different environment.
+
+A. MapReduce MapReduce is a programming model that run on shared-  nothing cluster for large-scale data processing. The framework provides automatic parallel execution on large cluster of commodity hardware?s, so the user needs only to determine the programming logic without concerning of parallel programming and distributed processing.
+
+The MapReduce framework executes the processing in terms of two functions: map and reduce [3]. The map function processes the input record as <key, value> pairs and produces another dataset as <key, value> pairs. Secondly, the reduce function takes its input from the output of the map function and combines these data into a smaller data in terms of <key, value> pairs. As the sequence of the name of MapReduce implies, the reduce function is always performed after the map function. An overview of the execution in the MapReduce is shown in Figure 1, the colors represent the input splits [9].
+
+In a cluster of MapReduce framework there is one node named master node, jobtracker, and a set of worker nodes, tasktrackers. The master node is responsible for controlling, managing and communicating the jobs over the cluster [2].
+
+Each MapReduce job is submitted to the master node, then it splits the input data into blocks (splits) and creates map tasks for each split, and reduce tasks as well. The jobtracker node assigns each task to an idle tasktracker, then each tasktracker reads the input split and executes a map function specified by  the user.  After the map function is done other tasktrackers read the output from the map function and execute a reduce function specified by the user. Finally, when the tasktrackers finish the reduce function the output data of each function is merged to form the final result.
+
+B. MapReduce Join Algorithms MapReduce join algorithms can be classified based on  when the join operation is performed. Although there are several categories of the algorithms, they can be mainly classified into two categories: Map-side join and Reduce-side join [10]. Map-side join is more efficient than reduce side in certain circumstances, because it consumes less memory since the join is performed in the map phase and there is no need to transmit the data to the reduce phase. Map-side join could perform the join faster than Reduce-side join in case that one of the input datasets is small enough to fit in the cache memory [11]. However, it can only be applied in particular circumstances. Reduce-side join is more general and it has no limitations on the size of the data. But, it consumes more memory and needs more time to perform the join, since all the data travel from the map phase to the reduce phase [12]. Figure 2 and Figure 3 show an example of the implementation for the two algorithms, where R and S is the input datasets and the strikethrough indicates where the join is performed [4, 13].
+
+Fig. 2.  Map-side join.
+
+Fig. 3. Reduce-side join.
+
+C. Bloom Filter Bloom filter is a probabilistic data structure invented by  Burton Howard Bloom in 1970 [14]. It can detect if an element is in the data set or not, by producing binary result weather it is      in the data set or maybe in the data set, but cannot produce 100% sure that this element is in the relation.
+
+Bloom filter contains hash functions which save all hashed values of the elements in the hash vector. Initially the hash vector is empty and all the values are set to zeros, then each element in the dataset will be added to the vector with its own hashed values, each value of the hash table become one. To test the membership of an element we need to check the value in the hash table, if it contains all zeros then we can conclude that the element does not exist, otherwise there is a possibility of the element to exist in the dataset.
+
+To minimize the value of the error rate we can use more than one hash function, each element maps to more than one hashed values. Thus when testifying a specific element for existence we need to check all of its hashed values, if one of them is zero then it is definitely not in the dataset, otherwise there is a possibility for the element to exist in the dataset [15].
+
+Figure 4 shows an example of two words ?foo? and ?bar? added to the hash table using two different hash functions.
+
+Fig. 4. Bloom Filter Example.
+
+
+
+III. METHODOLOGY  This section describes the methodology we have used to perform the performance evaluation. Figure 5 shows the flow diagram of our methodology, each process will be described in details in the next subsections.
+
+A. Convert to Sequence File The sequence file system is a basic low level data storage  format that contains <key, value> pairs where both key and value are serialized objects [16]. Hadoop natively support the sequence file system and it is internally used behind the scenes.
+
+We converted the input datasets into sequence files for several advantages: better reading and writing performance and less size usage compared with the traditional database file systems. On the other hand, there are some disadvantages of using such file system: overhead of the converting, restrictive in the programming language, only in Java, and the nature of the data should be static, since no updating operations can be performed on the sequence files.
+
+B. Construct Bloom Filter with Size N Now let us consider a Bloom filter with the following  characteristics:  ? N: number of bits in the array  ? k: number of hash functions  ? Hash Function Type    Fig. 5. Flow Diagram of the Methodology.
+
+In order to construct Bloom filters of different sizes with the same characteristics in terms of number of hash functions (k) and Hash function type, we will choose k to be 7, hash function type to be Murmur and N to be variable. For testing purposes of the impact of small and large sizes we will choose N as follows: 32KB, 64KB, 128KB, 256KB, 512KB, 1MB, 2MB, 3MB, 4MB, 5MB, 6MB, 7MB, 8MB, 9MB, 10MB, 15MB and 20MB.
+
+We submit a bloomfilter job to construct each instance, on each instance each mapper goes through its own input split and whenever a given condition is satisfied, which in our case when the subject is about science (more details in next section), it adds the record ID to its own instance of bloomfilter.
+
+C. Test Bloom Filter Bloom Filters create false positive, false negative never  happens in Boom filters. Since our Bloom filters are variable in size, it is worth to test each filter for the false positive rate.
+
+Let us assume that a is the membership ID in the bloom filter and b is the ID record in the relation, Table I shows all the possible scenarios for a and b in terms of their existence in the filter and the dataset:  TABLE I.  POSSIBLE SCENARIOS  Case Output  a == b True ID record  a && !b False positive  !a && b False negative      Since the Bloom filter never produces a false negative, we will only test the filter for false positives. When we submit a bloomfiltertest job, each mapper goes through its own input spilt and tests for false positive as in the second scenario of Table I. After each mapper finishes each value is added to the result as the sum of number of false positives occurred in the relation.
+
+D. Map-side Bloom Join Our methodology uses two selected datasets, Donations and  Projects, to perform the join operation using two join algorithms: Map-side Bloom join and Reduce-side Bloom join.
+
+In Map-side Bloom join, the join is performed during the map phase. The Bloom filter is constructed on the Projects dataset and is sent to all mappers. Each mapper goes through its own input spilt then filters out the records by testing each record ID whatever it is in the Bloom filter or not. After that the filtered input perform the map function, which in our scenario extract the project_id and perform the join. It is worth to mention that there are no reducers, since all the mappers produce the final result.
+
+E. Reduce-side Bloom Join Reduce-side Bloom join performs the join in the reduce  phase, so unlike the Map-side Bloom join the Reduce-side Bloom join needs a reduce function. Each mapper in this algorithm goes through its own input spilt, filters out redundant records and performs map function which is: extract project_id.
+
+Then the output of the map function goes to the reducers to perform the join operation. We can conclude that the Reduce- side Bloom join needs more memory since there is a need for the reduce function, in addition the data needs to travel from the map phase to the reduce phase.
+
+
+
+IV. EXPERIMENTAL RESULTS  In this section, we present the experimental results of our implementation. All experiments were run on Hadoop Pseudo Distributed Mode, consisting of: 1 jobtracker and 1 tasktracker.
+
+The machine has 2.7GHz quad-core CPU, 8GB memory, and 1TB hard disk. The operating system is 64-bit Ubuntu 14.04 LTS, and the java version is 1.8.0_77.
+
+We implemented our methodology using Hadoop 2.7.2, we set the block size to 128MB and the repetition factor to 1. The I/O buffer is set to 128KB.
+
+The results are analyzed in terms of time to construct and false positive rate for constructing Bloom filters and in terms of elapsed time and total physical memory used for the two join algorithms.
+
+A. Input Datasets We use the input relations: Donations and Projects from  ?DonorChoose? organization [17], which provides a platform for donating money to school projects. The size of the Donations relation is 1.6GB and the size of Projects relation is 471MB, Donations relation contains over 5 million records and Projects relation contains over one million records.
+
+donations_id is the primary key for Donations relation and  projects_id is the primary key for Projects relation and a foreign key for Donations relation. The following join query is performed on the input datasets:  select d.donation_id, d.project_id as join_fk, d.donor_city, d.ddate, d.total, p.project_id, p.school_city, p.poverty_level, p.primary_focus_subject from donations as d INNER JOIN projects as p ON d.project_id = p.project_id where lower(p.primary_focus_subject) like '%science%'  B. Convert to Sequence Files Convert to a sequence file job is submitted to Hadoop, each  mapper converts its own split file into sequence file. After converting the Projects input dataset, the size shrunk to 128MB which can be fit into 1 block. The Donations input dataset shrunk to 512MB which can be fit into 4 blocks. The elapsed time to convert the Projects dataset took over 33s and the elapsed time to convert the Donations dataset took over 125s.
+
+Although these elapsed times are seen as an overhead on our methodology, the convert to sequence files process improves the performance in the subsequent processes of our methodology in terms of reading and writing records and memory usage.
+
+C. Time to Costruct and False Positve Rate A construct Bloom filter job is submitted to Hadoop on the  Projects input dataset. One mapper is needed to perform the job since the Projects dataset reside in one block, the map function tests each record ID for the given condition (whatever the project_subject contains science) and inputs the record ID into 7 Murmur hash functions to write the produced result in the specified size hash table.
+
+Figure 6 shows the time needed to construct the Bloom filters, it is obvious that if the size increases the elapsed time increases.
+
+Varying the Bloom filter size could cause a significant change in the false positive rate. It is obvious to tell that when the size of the filter increases the false positive rate decreases, which can affect the amount of redundant data in the join output.  Figure 7 shows the changing of the false positive rate with respect to varying the size of the Bloom filter.
+
+Fig. 6. Time to construct Bloom Fitlters.
+
+Fig. 7.  False Positive Rate.
+
+The Bloom filter starts producing small and efficient false positive rates at sizes larger than 128KB, in which the rate starts decreasing under 10%. For sizes larger than 256KB of the Bloom filter, the join operation works in an efficient way, with a very neglected fraction of redundant records at sizes 256KB and 512KB, and for larger sizes the Bloom filter produces 0% false positive rate.
+
+D. Pshysical Memory for the two algorithms Since the Projects dataset fits in one block and the  Donations dataset fits into four block, five mappers are needed in the Reduce-side Bloom join algorithm. Three reducers are also needed to perform the join. On the other hand, for the Map-side Bloom join only four mappers are needed and no reducers are needed. Since the Projects relation can fit in the cache memory, Projects input spilt is transmitted to each mapper cache.
+
+Figure 8 and Figure 9 show the results of the physical memory used for the two algorithms, we can see that the Map- side join consumes less memory compared to the Reduce-side join. Also with the increasing of bloom filter size we can see the decreasing of the memory usage, for sizes larger than 128KB of the Bloom filter the memory usage remains approximately fixed, around 850MB. The smaller memory usage was recorded at 512KB of Bloom filter size with 841MB of memory.
+
+Fig. 8. Memory Usage for Map-side join with Varying of the Bloom Filter Size.
+
+Reduce-side Bloom join consumes more space than Map- side Bloom join. Figure 9 shows the usage of memory with varying of the Bloom filter size, we can observe when  increasing the Bloom filter size, the memory usage decreases until reaching 2MB of Bloom filter size and then starts increasing until reaching 8MB of Bloom filter size. The average usage of memory around 2GB. The smaller memory usage was recorded at 32KB of Bloom filter size with 1.9GB of memory    Fig. 9. Memory Usage for Reduce-side join with Varying of the Bloom Filter Size.
+
+E. Elapsed Time for the two algorithms Since the Map-side Bloom join consumes less memory and  mappers function compared to the Reduce-side join, we expected the elapsed time to be smaller than the Reduce-side Bloom join. Figure 10 shows the elapsed time for the Map-side Bloom join with the varying of Bloom filter size. We can observe that with the increasing size of the Bloom filter, the time decreases till reaching a specific size, around 512KB. The best observed elapsed times which the algorithm operates were at 256KB and 1MB of Bloom Filter size, which took over 102s.
+
+Fig. 10. Elapsed Time for Map-side join with Varying of the Bloom Filter Size.
+
+On the other hand, the Reduce-side Bloom join consumes more time than the Map-side Bloom join for sizes smaller than 64KB and larger than 6MB of Bloom filter as shown in Figure 11, but it has a better performance at sizes of 128KB ? 6MB.
+
+The best observed elapsed time was at 256KB of Bloom filter size, which took over 99s.
+
+Fig. 11. Elapsed Time for Reduce-join with Varying of the Bloom Filter Size.
+
+
+
+V. CONCLUSION AND FUTURE WORK  In this paper we evaluated the performance of the two join algorithms with the varying of the Bloom filter size. We implemented our methodology using Hadoop Pseudo Distributed Mode. The results show that it is not always the best solution to choose a small or a large Bloom filter size, the size depends on the input dataset sizes. The results also show that tuning the Bloom filter size causes major effects on the performance. We also showed that Map-side Bloom join is more efficient than Reduce-side Bloom join only in certain circumstances, such that when there is a manner of physical memory. On the other hand, Reduce-side Bloom join is more general and could result in better performance in certain Bloom filter sizes. In addition, the results showed that it is recommended to choose small sizes of the Bloom filter, small enough to produce neglected false positive rate, in the implementation of the two algorithms when there is a concern about the memory. On the other hand, small to medium sizes of Bloom filter in the Reduce-side join produced smaller elapsed time compared to the Map-side join, while large sizes produced larger elapsed time.
+
+In future work, we will implement our methodology on a real world cluster, and we will extend our work to evaluate the effect of varying the size of the input datasets and study the relationship between the Bloom filter size and the input datasets size, in order to choose the best size for the dataset which results in best performance. Also, we will expand our join methodology to include other filtering techniques, such as hash and index joins, and evaluate the effect of the filtering parameters on the join operation. In addition, we plan for enhancing our methodology to automatically choose the optimal filtering technique and parameters which produces the best performance for joining the input datasets.
+

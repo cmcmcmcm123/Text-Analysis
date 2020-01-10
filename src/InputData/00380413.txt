@@ -1,0 +1,160 @@
+Set-Oriented Mining for Association Rules in Relational Databases
+
+Abstract  We describe set-oriented algorithms for mining as- sociation rules. Such algorithms imply performing multiple joins and may appear to be inherently less e sc i en t  than special-purpose algorithms. W e  develop new algorithms that can be expressed as SQL queries, and discuss optimization of these algorithms. Af- ter analytical evaluation, an algorithm named S E T M emerges as the algorithm of choice. Algorithm S E T M uses only simple database primitives, viz.,  sorting and merge-scan join. Algorithm S E T M  is simple, fast, and stable over the mnge of pammeter values. The major contribution of this paper is that it shows that at least some aspects of data mining can be cam?ed out by using general query languages such as SQL, mther than by developing specialized black box algo- rithms. The set-oriented nature of Algorithm S E T M facilitates the development of extensions.
+
+1 Introduction  The competitiveness of companies is becoming in- creasingly dependent on the quality of their decision making. Hence, it is no wonder that companies often try to learn from past transactions and decisions in order to improve the quality of decisions taken in the present or future. In order to support this process, large amounts of data  are collected and stored during business operations. Later, these data  are analyzed for relevant information. This process is called data min- ing [3 ,  12, 18, 51 or knowledge discovery in databases [8, 15,9,  111. Data mining is relevant to many different types of businesses. As examples, retail stores obtain profiles from customers and their buying patterns and  ?M. Houtsma?s research was made possible by a fellowship of the Royal Netherlands Academy of Arts and Sciences; he i8 currently at Telematics Research Centre, P.O. Box 217, 7500 AE Enschede, the Netherlands  tA. Swami is currently at Silicon Graphics Computer Sys- tems, 2011 N. Shoreline Blvd, Mountain View, CA 94043-1389  Arun Swamit IBM Almaden Research Center  San Jose, CA 95120 aruns@sgi .com  supermarkets analyze their sales and the effect of ad- vertising on sales. Such ?targeted marketing? [6] is becoming increasingly important.
+
+Different aspects of data mining have been explored in the literature. In classification, data  units (tuples) are grouped together based on some common char- acteristics, and rules are generated to  describe this grouping. This has been done both in the context of AI [16] and in the context of databases [2, 8, 51. Work has been done to search for similar sequences or time series [l]. New indexing schemes for facilitating data mining in large archival databases are proposed in [17].
+
+In finding association rules, one tries to discover fre- quently occurring patterns within data  units [14, 41.
+
+Our interest is in the problem of finding association rules. There has been a lot of work in rule discovery that is related but not directly applicable, for example, [7, 10, 13, 161.
+
+Business applications deal with an uncontrolled real world, where many rules will overlap in their com- ponents and uncertainty is common [14]. Examples of rules could be: ?Most sales transactions in which bread and butter are purchased, also include milk,? or ?Customers with kids are more likely to buy a particu- lar brand of cereal if it includes baseball cards.? Work on finding these kinds of rules has been done in AI for some specific applications, (see [15] for an overview).
+
+Although the work done in AI is usually very general, the computational complexity of the proposed algo- rithms is high, and the algorithms are feasible only for small data  sets (111. Performance is a problem with these algorithms for the kind of applications we consider, which involve mining large databases. In [12] a small example is described of generating rules from data, but the emphasis is more on architectural issues than on performance and large data  sets. In [4], the problem of rule discovery is addressed in a database context. The paper describes an algorithm for rule discovery on a large data  set. However, the algorithm in [4] still has a tuple-oriented flavor (tuples are repre- sented as strings, and the algorithm consists of string  1063-6382195 $4.00 0 1995 IEEE    manipulation operations) and is rather complex.
+
+We develop efficient algorithms for mining associa-  tion rules from large datasets in relational databases.
+
+This differentiates our work from much of the work in AI. Problems of optimization of discovered rules, subsumption, etc. are beyond the scope of this paper.
+
+Retailing transactions are used in the examples in this paper. However, the work is applicable to mining of association rules from any domain.
+
+We address rule discovery in database systems from a set-oriented perspective. The motivations for a new approach to this problem are several. A set-oriented approach allows a clearer expression of what needs to be done as opposed to specifying exactly how the o p erations are carried out. The declarative nature of this approach allows consideration of different ways to o p timize the required operations. The experience that has been gained in optimizing relational queries can directly be applied here. Eventually, it should be pos- sible to integrate rule discovery completely with the database system. This would facilitate the use of the large amounts of data that are currently stored on rela- tional databases. The relational query optimizer can then determine the most efficient way to obtain the desired results. Finally, our set-oriented approach has a small number of well-defined, simple concepts and operations. This allows easy extensibility to handling additional kinds of mining, e.g., relating association rules to customer classes.
+
+The structure of this paper is as follows. In Sec- tion 2 we define the problem of set-oriented data  min- ing and give an initial sketch of our approach. In Section 3 we present an initial set-oriented algorithm expressed in SQL and analyze its performance. In Section 4 we present a second set-oriented algorithm expressed in SQL and analyze its performance. In Section 4.4 we describe the latter algorithm (called Algorithm SETM) in terms of simple database oper- ations: sorting and merge-scan join. We also illustrate the algorithm by means of a small example. Section 5 explains how rules are generated. In Section 6 we de- scribe several experiments we did with an implemen- tation of our algorithm on a large data set. Section 7 presents our conclusions.
+
+2 Set-oriented mining  Consider the problem of finding association rules in sales data. Typically, a retail store records informa- tion for each customer transaction, where a customer transaction involves the purchase of a variable num- ber of items. We can store this information in a rela-  tional database system using a table with the following schema: SALES(tmns-id, item). For each customer transaction that takes place, tuples corresponding to the items sold are inserted in SALES.
+
+In order to find association rules, we need to  scan transactions for reoccurring patterns that occur often enough to be of interest (this is made more precise later). We use the term pattern to  capture the concept of itemset introduced in [4]. This is more in line with existing terminology [15]. A pattern can be defined as follows. If items A ,  B,  and C frequently occur together in a single customer transaction, this means that the pattern A B C  occurs often. This observation might allow us to conclude (among other rules) the association rule A A  B * C '. Here, A B  is called the antecedent of the rule and C is called the consequent of the rule. Usually, some constraints need to be met before we conclude that an association rule holds. As in [4], we define support for a pattern to be the ratio of customer transactions supporting that pattern to the total number of customer transactions. Also, the confidence factor for a rule obtained from a pattern is defined as the ratio of the support for the pattern to the support for the antecedent of the rule. For the rule A A B C ,  this would be IABCl/IABI, where lABCl denotes the support for pattern ABC.
+
+We are interested only in association rules where the support for the pattern(s) involved in the rule is greater than some minimum value called minimum support. We also require that qualifying rules have a confidence factor greater than some value. Pat- terns can be generated in a straightforward fashion by repeated joins with SALES. For instance, generating all patterns of exactly two items, is expressed by the following SQL query:  SELECT rl . trans- id ,  r l . i t e m ,  r2.item FROM SALES r1, SALES r2 WHERE rl . trans- id  = rz.trans-id AND  r l . i t e m  <> r2.item  For each pair of items (z,y), we count the num- ber of transaction-ids in order to find the number of transactions supporting this pattern. All patterns of exactly three items can now be obtained by joining the result of the previous step again with SALES and so on. The order in which items appear is not rele- vant right now; (2 ,  y) is equivalent to (y, z) since both pairs have the same support. Order only becomes im- portant when generating the rules because confidence factors can be different for different orders.
+
+Causality is not necessarily implied. Also, the ordering of A and B in the antecedent of the rule is arbitrary     This strategy is elaborated in Sections 3 and 4 and expressed in terms of a set-oriented query language, viz., SQL. The first expression that is generated natu- rally leads to nested-loop based joins. A rough analy- sis of its expected performance indicates that such an implementation would perform very poorly. Conse- quently, we generate an equivalent expression in SQL that naturally leads to sort-merge based joins. A first analysis shows it to be very promising, and we pursue this implementation in the remainder of the paper.
+
+We include the discussion of both SQL expressions of our strategy, because we wish to emphasize the methodology that we used in this research. Taking a set-oriented approach does not immediately lead to great results but it clearly helps in getting a good un- derstanding of the problem. In our case, by first hav- ing studied the nested-loop strategy, we were able to develop the strategy based on sort-merge joins fairly easily, by taking into consideration the ways a rela- tional query optimizer deals with these types of (com- plex) queries.
+
+3 Using nested-loop joins  We discuss a formulation of our set-oriented data mining strategy that naturally leads to nested-loop based joins. We express the algorithm in SQL and then analyze its expected performance.
+
+3.1 Formulation  The customer transactions are available in the re- lation SALES(tmns-id, item). Using this relation, we first generate the counts for each item x, i.e., the num- ber of transactions that support item x. We check that the minimumsupport requirement is met and store the result in relation Cl (item, count).
+
+INSERT INTO C1 SELECT r1 .item, COUNT( *) FROMSALES r1 GROUP BY r1.item HAVING COUNT(*) >= :minaupport  The next step is to generate all patterns (2, y )  and check if they meet the minimumsupport criterion. For a specific item A, this is easy to express. For example, all patterns (A,y)  can be generated using a self-join of SALES, as shown below.
+
+SELECT r1 .item, rz.item, COUNT(*) FROM SALES r1, SALES r 2 WHERE rl.trans-id = rz.trans-id AND  r1 .item =?A? AND rz.item <> ?A?  GROUP BY rl.item, r2.item HAVING COUNT(*) >= :minaupport  This kind of expression only generates patterns with a specific item in the first position. The expres- sion has to be generalized in order to generate arbi- trary patterns. As stated earlier, the order of the items in a pattern is not relevant at the time of generation.
+
+The order is important only in the final rule generation process. We take advantage of this fact by generating patterns with the items in lexicographical order. For instance, we generate AB, but we do not generate BA.
+
+We generalize over all values of item having minimum support, by using the following SQL expression to gen- erate all lexicographically ordered patterns of length k having minimum support.
+
+INSERT INTO Ck SELECT rl .item, . . . , Pk .item, COUNT( *)  WHERE rl.trans-id = . . . = rk.trans-id AND FROM c k - 1  C ,  SALES r l ,  . . . , SALES rk  r1.item = c.item1 AND  rk-l.item = c.itemk-1 AND rk.item > rk-l.item  GROUP BY rl.item, . .., rk.item HAVING COUNT( *) >= :minaupport  Relation ck has schema (iteml, itemz, . . . , itemk, count). All feasible rules are found by consecutively generating all qualifying patterns from length 1 to k until c k + l  = {}. Since the items in the patterns are lexicographically ordered, a single inequality test in the SQL query is sufficient.
+
+3.2 Analysis  We perform a simple analysis of the expected per- formance of the strategy based on nested-loop joins.
+
+Let us consider how a relational query optimizer could optimize the final SQL expression in Section 3.1. For efficient evaluation of the nested-loop joins, we need two indexes on the table SALES: an index on (item, tmns-id) and another index on (tmns-id). Given these indexes, the query can be evaluated as follows:  1. Take a tuple c from Ck-1, and use the index on (item, tmns-id) for rl to get qualifying tuples with r1 .item = c.item1     2. For each of these tuples, use the index on (item, trans-id) for 7-2 to get tuples that satisfy rz . i t em = c.item2 and ra.trans-id = rl . trans-id  3. Similarly for relations r3, . .  . , P k - 1 .
+
+4. Finally, use the index on (trans-id) for r k  to  com-  pute rk.tranS-id = rk-l.trans-id and check the remaining condition rk . i tem > rk- l . i t em.
+
+5. The qualifying tuples are sorted on the item val- ues and the count is used to check the minimum support constraint.
+
+Let us consider a hypothetical retailing database to characterize the performance of this strategy. There are 1000 different items that can be sold. The data consists of 200,000 customer transactions. The aver- age number of items sold in a transaction is 10. Thus, the relation SALES contains about 2 million tuples.
+
+To make the analysis tractable, we assume that the items have approximately equal probability of being sold (in the actual data  set, the items are not sold with equal probability). Hence, the chance of an item appearing in a particular transaction is 1%. We will assume the following characteristics for the database system. Page size is 4 Kbytes, and each item and transaction id is represented using 4 bytes (item val- ues are represented by integers). Hence, each initial tuple consists of 8 bytes.
+
+Consider the B+-tree index on (item, trans-id).
+
+Since all the data is contained in the index, we do not need a pointer in the leaf page entries. Assuming little overhead, we can store upto 500 entries in each leaf page. The number of leaf pages in the B+-tree index on (item, trans-id) is 2,000,000/500 w 4,000.
+
+Assuming 4 bytes for a pointer, an index entry in the non-leaf pages has a size of 12 bytes. Assum- ing very little overhead, we can store about 333 key- value/pointer pairs on a non-leaf index page. The fol- lowing inequality holds for the number of levels L of the index tree: 333L 2 1,000,000 > 333L-'; hence, L = 3. The number of non-leaf pages in this index is (1 + 4,000/333) = 14. Similar calculations for the index on (trans-id) show that the number of leaf pages is 2,000 and the number of non-leaf pages is 5. Since the number of non-leaf pages is small, we can assume that they reside in memory and are not fetched from disk.
+
+Let the minimum support desired be 1000 transac- tions, i.e., 0.5% of the total number of transactions.
+
+On the average, each item appears in about 1% of the transactions. Assuming uniform probabilities, all items qualify as having minimum support. Therefore, the cardinality of C1 will be 1000.
+
+To obtain C2, we take each tuple c from C1 and access the index on (item, tmns-id). This requires 1% x 4,000 leaf page fetches, i.e, w 40 page fetches.
+
+The result consists of about 2,000 transaction-ids (1%). For each transaction-id we now have to access the index on (tmns-id) resulting in 1 page fetch.
+
+From this, we may conclude that the first step alone will require about 1000 x (40 + 2000 x 1) !a 2,000,000 page fetches. Most of these page fetches are random.
+
+A *random* page fetch costs about 20 ms. Hence, the time for the first step alone is !a 40,000 seconds, which is more than 11 hours!
+
+Clearly, the implementation based on nested-loop joins is very inefficient. However, one could consider a different implementation for the same basic pattern finding strategy, viz., sort-merge joins. We will con- sider this strategy in the next section.
+
+4 Using sort-merge joins  We now discuss the second formulation of our set- oriented data  mining strategy based on using sort- merge joins. We again express the algorithm in SQL and then analyze its expected performance.
+
+4.1 Formulation  In the previous implementation, we would generate intermediate relations R,( tmns-id, item1 , . . . , i t e m )  , extract support information from these relations, and then discard them. But what if, after each step, we saved the last & that was generated? Furthermore, let us save R, sorted on (trans-id, i t eml ,  . . . , i t e m ) .
+
+We could then generate all lexicographically ordered patterns of length k using the following expression:  INSERT INTO RL SELECT p . t rans - id ,p . i t eml , .  . . , p . i t emk- l ,q . i t em  WHERE q.trans-id = p.trans-id AND q.item > p.itemk-1  FROM Rk-1 p ,  SALES q  After generating all lexicographically ordered pat- terns of length k in RL, we now have to generate counts for those patterns in RL that meet the minimum s u p port constraint. This can be done as follows.
+
+INSERT INTO Ck SELECT p.item1 , . .  . ,p . i t emk,  COUNT(*) FROM RL p GROUP BY p.item1 , . . . , p.itemk HAVING COUNT( *) >= :minsupport    Before we go on to generate patterns of length k+ 1, we first have to select the tuples from RI, that should be extended, viz., those tuples that meet the minimum support constraint. We also wish the resulting relation to be sorted on (trans-id, iteml, . . ., itemk). This is done as follows:  INSERT INTO Rk SELECT p.trans-id, p.iteml, . . . ,p.itemk FROM RI, p ,  Ck q WHERE pitem1 = q.item1 AND  p.itemk = q.itemk ORDER BY p.trans-id,p.iteml,. . . ,p.itemk  We can now repeat this process, until at some point Rk = 0. Note that the sorting we did in the last step is not really required. It does, however, enable an efficient execution plan if the sort order of the relations is tracked across iterations.
+
+4.2 Example  We illustrate this strategy by means of an exam- ple. The example database consists of 10 transactions where each transaction has 3 items. We require a min- imum support of 3O%, i.e., 3 transactions. The desired confidence factor is 70%. The customer transactions are shown in Figure 1 .  For brevity, we have presented the transactions as non-normalized tuples. The algo- rithm, however, uses the tuple format described be- fore; a subset of the corresponding relation is shown too. The contents of the count relation C1 are also shown in Figure 1.
+
+RI, and Rk denote the R relations before and after elimination of patterns that do not meet the minimum support count. In the first iteration, R2 is generated and sorted on items and C2 is generated from R2. We show Ri ,  Rz and C2 in Figure 2.
+
+In the next iteration, R3 is generated and sorted on items and C3 is generated from R3. The contents of Rh, R2 and C2 are as shown in Figure 3. The next iteration will not generate any new tuples, and the algorithm terminates.
+
+4.3 Analysis  In the section the performance of the sort-merge strategy is analyzed using the same data set as for the nested-loop strategy.
+
+The 1 / 0  complexity of the sort-merge strategy can easily be expressed by a formula derived as follows.
+
+Let llRkll denote the number of pages used to store  the relation in iteration k. In the worst case, apply- ing the minimum support constraints does not elim- inate any tuples from Rk. Assume that no patterns of length n have the minimum support, i.e., the rela- tion R,, is empty. We thus make ( n  - 1) passes, i.e., ( n -  1) merge-scans requiring (n  - 1) l l ~ l l l  +cy:: l l ~ ,  11 page accesses. The number of page accesses to  store the result of these merge-scans is R,. After each merge-scan, the output is read again, sorted, and writ- ten out to disk requiring 2 c y z .  11R,l1 page accesses.
+
+(We assume R1 to be sorted, and the sort operations to take place in pipelining mode.) No page accesses are required for storing or retrieving Ci since it is usually small enough to be kept in memory being the result of an aggregation query. Therefore, the total number of page accesses is bounded by:  n-I  Let us calculate the time to  generate Cz as we did for the nested-loops strategy. Let R3 be empty. Using the same numbers as in Section 3.2, the cardinality of R, is given by ('io) x 200,000. The size of a tuple from R, is ( i  + 1) x 4 bytes. This gives us the following: llRlll = 4,000 and llRzll = 27,000. The number of page accesses is thus:  3 x 4,000 + 4 x 27,000 = 120,000 Reading and writing all the R, relations can be done in a sequential fashion. We estimate the time for each page access as 10 ms. Hence, the total time spent on 1 / 0  operations is 1200 seconds or 10 minutes. In comparison, the nested-loop strategy required more than 11 hours.
+
+This rough analysis shows that the implementation based on sort-merge joins will be much more efficient than the algorithm based on using nested-loop join with indexes. We will therefore proceed with fur- ther experimental evaluation of the algorithm based on sort-merge joins.
+
+4.4 Algorithm SETM  The sort-merge strategy is described in pseudocode in Figure 4. We refer to it as Algorithm SETM. The algorithm consists of a single loop, in which two sort operations and one merge-scan join are performed.
+
+The first sort is needed to implement the merge-scan join that follows it. The second sort is used in order to generate the support counts efficiently. Generat- ing the counts involves a simple sequential scan over     t x i d  1 item I item 1 item t x i d ...
+
+item A B c A B D A B C ...
+
+- - C D C D G G H F F F   A B A B A B B C A C A D A E D E D E D E  F  t x i d ...
+
+Figure 1: Customer transactions, corresponding relation, and relation C1  item1 A A B A A B A A B . . .
+
+item1 A A B A A A B B A ...
+
+item2 B C C B D D B C C . . .
+
+item2 B C C B B C C C C ...
+
+80 D 90 D  item1 item2 D E  item1 1 item2 I cnt 1  D F E F  item3 cnt F 3  t x i d ...
+
+E F E F E F  Figure 2: Relations Ri, C2, and R2  Figure 3: Relation R$, C3 and R3     Rk. Deleting the tuples from Rk that do not meet the minimum support, involves simple table look-ups on relation c k .  The c k  relations are of interest to us for rule generation. We have not included in this algorithm the optimizations mentioned in Section 4.3.
+
+k := 1; sort R1 on item; C1 := generate counts from R I ; repeat  k := k + 1; sort Rk-1 on trans-id, i teml,  . . . , itemk-1; RB := merge-scan Rk-1, R I ; sort RL on i teml,  . . . , itemk; c k  := generate counts from RL; Rk := filter RB to retain supported patterns;  until Rk = {}  Figure 4: Outline of Algorithm SETM  5 Rule generation  We have omitted so far any discussion of how the rules are generated from the count relations. The rule generation algorithm is straightforward. For any pat- tern of length k, we consider all possible combinations of k - 1 items in the antecedent. The remaining item not used in the combinations is in the consequent. For each combination of antecedent and consequent, we check if the confidence factor meets or exceeds the minimum confidence factor desired. If the confidence factor is high enough, the rule is written to output. In order to check the confidence factor, we need the count for the current pattern (available in the current count relation C,) and the count for the pattern compris- ing the antecedent (available by lookup in a previous count relation Ci-1).
+
+Let us consider the example from Section 4.4. The minimumsupport is 30% (3 transactions) and the min- imum confidence factor is 70%. After relation Cz is obtained, the rules obtained are shown below. Rules have been written in the form X j I ,  [c,s], where X is the list of items in the antecedent of the rule, I is the item in the consequent of the rule, s is the support expressed as a percentage and c is the con- fidence factor. Let us see how we obtain the rule B A .  The pattern A B  is supported since its support is 3 and the minimum support desired is 3.
+
+The ratio IABI/IBI = 3/4 = 75% which is greater than the minimum confidence factor of 70%. The ra-  tio IABI/IAI = 3/6 = 50% which is less than the min- imum confidence factor of 70%. Hence, we do not obtain the rule A B .
+
+B ==> A ,  [75.0%, 30.011 C ==> A, 175.0%. 30.011 B ==> C ,  [75.0%, 30.011 C ==> B, [75.0%, 30.011 E ==> D, [75.0%, 30.0%1 F ==> D, [lOO.O%, 30.011 E ==> F, [75.0%, 30.011 F ==> E, [lOO.O%, 30.011  After the second iteration, relation C3 is available.
+
+The rules generated from C, are: D E ==> F, C30.01, lOO.OO%l D F ==> E, C30.01, lOO.OO%l E F =I> D, [30.0%, 100.00%1  6 Experiments  In previous sections we have described the new algo- rithm and given some analysis to show that we expect it to be efficient. We implemented the algorithm to run in main memory and read a file of transactions.
+
+The execution times given are for running the algo- rithm on the IBM Risc/System 6000 350 with a clock speed of 41.1 MHz. In [4], a data  set was used that consists of sales data  obtained from a large retailing company with a total of 46,873 customer transactions.
+
+The experiments were conducted using this data set.
+
+6.1 Variation of relation shes  We first study how the size of the R, (trans-id and items) relation varies with each iteration of algorithm S E T M .  In Figure 5 we show the variation in the size (in Kbytes) of R, with iteration i for the retailing data set. Curves are shown for different values of minimum support, where minimum support is varied from 0.1% to 5%. The maximum size of the rules is 3, hence in all cases lR41 = 0 (with 141 denoting the cardinality of R,). Also, the starting relations are the same and hence I R1 I = 115,568 in all cases.
+
+If the minimum support is small enough (5  0.1%) , the size of relation R, can first increase and then de- crease. But the general trend is that the size relation R, decreases. For large values of minimum support, IR,I decreases quite rapidly from the first iteration to the second. This sharp decrease is delayed somewhat for the smaller values of minimum support. Hence, using small values of minimum support allows us to obtain more rules. In general, it also allows us to     obtain rules with more items in the antecedent. For example, if the minimum support is reduced to 0.05%, we obtain rules with 3 items in the antecedent.
+
+We expect the Ci (count) relations to be small enough to fit in memory. We now study how the car- dinality (ICil) of these relations varies with iteration number. Figure 6 shows curves for different values 200 of minimum support. The values of lCil measure k the number of item combinations that could garner e enough support. We observe that for small values of c  *= 150 minimum support the value of lCil increases initially Q, before decreasing with later iterations. Since lCil is a 5 measure of how many rules can possibly be generated, c we again see the importance of handling small values -' 100 3 of minimum support in a timely fashion. The maxi- 5 c mum size of the rules is 3, hence in all cases IC41 = 0.
+
+Also, the starting relations are the same and hence IC1 I = 59 for all minimum support values.
+
+6.2 Execution times   N   l8  Minimum Support (%I 0.1  We measured the execution times of our set- 1 2 3 4 oriented algorithm SETM for various values of the Iteration Number minimum support. We varied the minimum support from 0.1% to 5%. The execution times are shown in the following table.
+
+Figure 5: Size of relation R;  Execution Time (seconds)  6.90 0.5  5.30 4.64 I 4.22   I 5 I 3.97 I I 1 - .. I .2 300  3 We see that algorithm SETM is very stable. The - c execution time varies from 7 secs for 0.1% minimum *-  0 support to sz 4 secs for 5% minimum support.
+
+7 Conclusions  y 200 c  In this paper, we have investigated a set-oriented 100  approach to mining association rules. We have shown that by following a set-oriented methodology, we 60 arrived at a simple algorithm. The algorithm is 30  0 straightforward-basic steps are sorting and merge scan join-and could be implemented easily in a re- lational database system. The major contribution of this paper is that it shows that at least some aspects of data mining can be carried out by using general query languages such as SQL, rather than by develop ing specialized black box algorithms.
+
+1 2 3 4 Iteration Number  Figure 6: Cardinality of Ci     The algorithm exhibits good performance and sta- ble behavior, with execution time almost insensitive to the chosen minimum support. For a real-life data set, execution times are on the order of 4-7 seconds.
+
+The simple and clean form of our algorithm makes it easily extensible and facilitates integration into a (in- teractive) data  mining system. We are investigating extending the algorithm in order to  handle additional kinds of mining, e.g., relating association rules to cus- tomer classes.
+
+Acknowledgements  We thank Rakesh Agrawal, Bobbie Cochrane, Bill Cody and Hamid Pirahesh.
+

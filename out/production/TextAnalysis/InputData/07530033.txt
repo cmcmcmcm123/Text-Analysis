@@ -1,0 +1,258 @@
+Accelerating Support Count for Association Rule
+
+Abstract?In this work, we present a highly parallel work- efficient algorithm for performing support count on a GPU. We develop a compressed data layout scheme that enables high off- chip memory bandwidth utilization. Our data layout results in low overhead parallel coordination while reducing the memory requirements of support count.
+
+We evaluate our algorithm through extensive experimentation both on synthetically generated and real data. We achieve maximum throughput of 50 billion evaluations per second for our parallel two phase algorithm, while outperforming that of non work-efficient implementations on a multi-core CPU and a GPU by almost 40?. Resolving bank conflicts results in reduction of the execution time per iteration of our algorithm up to 6%. Employing additional optimizations such as loop unrolling leads to improvement in execution time up to 18%.
+
+Keywords: work-efficiency, shared memory, bank conflicts, fre- quent itemset mining, accelerators, gpu, search strategy.
+
+
+
+I. INTRODUCTION  Support count is a core operation used by a variety of  Association Rule Mining(ARM) algorithms [3], [11], [13].
+
+In ARM, we are concerned with discovering combinations of  items that frequently appear together in transaction databases.
+
+These combinations are called itemsets or rules and are  connected to a quantity known as support value. Support  values indicate the proportion of transactions that contain  the corresponding rule. They are used for describing the  level of interestingness that a rule exhibits with respect to  existing transactions. Interesting rules are often selected by  applying various constraints and metrics that require for the  corresponding support value to be calculated.
+
+A variety of ARM algorithms have been developed over  the years. Some of the most well known are Apriori [3],  FP-Growth [11], H-mine [20], Eclat [26], and OP [16]. All  of these algorithms make use of support count to discover  interesting rules. There is also a variety of applications for  which ARM is useful, including but not limited to mining  consumer patterns, analyzing traffic accident patterns [8],  bioinformatics applications [6], intrusion detection in critical  systems [23] and web usage mining [18].
+
+In general, there are two distinct phases associated with  discovering frequently appearing rules in transaction data [3].
+
+A candidate generation phase where a search strategy is  intelligently applied to generate potential candidates and a  candidate evaluation phase where the support value of the  corresponding rules is computed. Regardless of the search  strategy, the support value is always calculated and used  either directly or as part of a more intricate interestingness  measure to generate new candidate rules. The search space  for new candidates is often massive and in principle can be  exponential in the number of distinct items appearing in the  transaction dataset. Mitigating the effects of generating too  many candidates is commonly achieved through the use of  search heuristic search which is able to prune the search space  allowing the discovery only of important rules. Therefore, it  is important for any proposed solution to be widely applicable  regardless of what search strategy is used.
+
+Parallel solutions to data mining problems, including ARM  algorithms [19], [24] have been well studied in the past.
+
+Algorithms based on shared memory multi-core architectures  [9] were the first to gather attention in ARM, many of  which were designed as a derivation of existing sequential  solutions [17]. Accelerators have been considered as a viable  alternative due to the computationally intensive properties of  ARM problems [14]. An extensive literature exists covering  various GPU adaptations of sequential ARM algorithms [7],  [28]. However, many of these extensions fail to provide a  generic work-efficient algorithm that is widely applicable to a  variety of candidate generation strategies.
+
+In this work, we study support count independently of any  search strategy that may be used to generate the rule candi-  dates. Our goal is to provide a formal analysis of support count  computation and exploit its specific characteristics to design  a parallel work-efficient algorithm that is widely applicable to  massively parallel architectures. Accelerating support count is  beneficial as it constitutes a core operation for a variety of  ARM algorithms.
+
+We summarize the contributions of this work:  1) We describe a work-efficient parallel algorithm that is  suitable for massively parallel architectures.
+
+2) We design a compressed layout scheme that enables fine  grain coordination among the participating processing  elements and reduces the memory requirements of sup-  port count.
+
+3) We describe a mechanism to resolve bank conflicts  through replication of partial results across distinct  memory locations.
+
+2016 IEEE International Parallel and Distributed Processing Symposium Workshops  DOI 10.1109/IPDPSW.2016.60   2016 IEEE International Parallel and Distributed Processing Symposium Workshops  DOI 10.1109/IPDPSW.2016.60     4) We extensively evaluate the proposed algorithm using  real and synthetic data. Compared to the non-work-  efficient solution implemented both on a CPU and a  GPU, we increase the throughput by 40?. Resolving bank conflicts results in reduction of the execution time  per iteration of our algorithm up to 6%. Additional loop  unrolling optimizations improves execution time up to  18%.
+
+
+
+II. RELATED WORK  Agrawal and Srikant [2] first described the widely used  Apriori algorithm to find all frequently occurring rules in  transaction databases using a breadth-first search approach.
+
+A significant portion of succeeding work in this field aimed  at resolving performance issues connected to the high com-  putational complexity of Apriori. These methods include  techniques for candidate generation [26], intelligent search  strategies [12], and optimized data structures [10] and these  have yielded moderate performance improvement over the  original solution. Our work addresses the performance issue  by optimizing candidate generation, the most computation in-  tensive phase of the search algorithm. Specifically, we describe  a work-efficient parallel algorithm that is oblivious of the  specific parameters of a given search strategy. The algorithm  only considers the properties of the candidates that are being  generated.
+
+Leveraging the capabilities of parallel architectures for  computation intensive ARM is an active area of research.
+
+Zaki et al. [27] developed a parallel version of Apriori  using a multi-core shared memory architecture. Experiments  using synthetic data resulting in 8X speed-up over a single-  threaded implementation. A parallel implementation of FP-  growth, another ARM algorithm, for a multi-core platform  was described by Liu et al. [17]. Algorithms applicable to  share-nothing parallel architectures were developed in [4],  [21]. These solutions make use of data structures replicated  across multiple machines to store the information necessary  for calculating support count. In our work, we target a shared  memory platform and develop data layout techniques aimed at  storing rule candidates on off-chip memory in a manner that  improves overall bandwidth utilization.
+
+Accelerators have been a prominent candidate for ARM  given their highly parallel nature. In [7], a GPU-accelerated  version of Apriori is presented with speed-ups ranging be-  tween 2X - 10X compared to a serial implementation. Zhang  et al. [28] introduced a GPU-accelerated implementation of  Eclat. Their work describes a hybrid solution based on breadth  and depth-first search to expose the parallelism intrinsic to  the problem. That approach achieves speed-ups ranging from  6X to 30X when compared with state of the art serial imple-  mentations of Eclat and FP-Growth. More recently, FPGAs  were used in [29] to accelerate the Eclat algorithm. The  authors attain a speed-up of 68X as compared to the serial  implementation on a board consisting of four FPGAs. Wang  et al. [25] make use of an Automata Processor that provides a  hardware implementation of non-deterministic finite automata  to accelerate Apriori. They achieved speed-ups of up to 94X  when compared to the state of the art serial implementation  of Apriori. Compared to these works, we establish a baseline  based on a highly optimized multi-core implementation and  present significant speed-up gains using our parallel work-  efficient algorithm.
+
+
+
+III. PROBLEM FORMULATION & WORK-EFFICIENCY  Support count is calculated for a set of rule candidates with  respect to a given collection of transactions. We refer to this  collection as the transaction dataset and denote it with D.
+
+The dataset can be represented as a 2-D array of M rows and N columns. Each row constitutes a bit vector representing a single transaction that consists of any combination of N items (also called attributes). Let I = {i1, i2, i3..., iN} denote the set of all distinct attributes available in the transaction. A rule X is a non-empty subset of I; it is referred to as an L-rule if and only if it consists of exactly L attributes. Note that we do not distinguish between two (L)-rules that constitute distinct permutations of the same items.
+
+Calculating the support count of a rule X with respect to D is a fundamental step in ARM algorithms. The support count of rule X , denoted as sup(X), is the proportion of transactions in D which contain rule X . Note that a transaction T needs only to be a superset of X to support it. It is often required to retrieve the set of most frequent rules given a  minimum support threshold minS. A rule X of length L is supported given a minimum support threshold minS if and only if sup(X) ? minS. If a rule X is supported then it is called a frequently occurring, frequent or a prominent rule. The  problem addressed in this work can be described as follows.
+
+Problem Definition. Given a transaction dataset D contain- ing M transactions each of which contain a subset of N distinct items and a set of (L?1)-rules that are supported with respect to a given minimum support threshold minS, generate the set of the most frequently occurring (L)-rules.
+
+The problem can be generalized with two parameters, C and K, to represent the maximum rule length (i.e., search depth) to be discovered and the maximum number of rules  to be considered when generating new candidates (i.e. search  breadth), respectively. Complete search is then a special case  where C = N and K =?.
+
+Rule candidates can be generated efficiently based on the  Apriori anti-monotone principle which states that if any rule  of length L is not frequent in the transaction dataset then its length L + 1 super rule is also not frequent. This property is used to iteratively generate the the most frequent (L)-rules by relying on the most frequent (L ? 1)-rules discovered at a previous phase of the algorithm. Any rule generated with  this process still needs to be evaluated against the transaction  dataset in order for its support value to be computed. Only  rules that satisfy the minimum support threshold are retained  and used as the basis for new candidates at the next itera-  tion. This process is repeated multiple times until the given  maximum rule length.
+
+Algorithm 1 describes the typical iterative ARM algorithm  which includes candidate generation using the anti-monotone  principle. Initially, the algorithm creates rules of size 1 using the available items from the transaction data. In Line 4, an  interestingness measure is computed to rank the rule candi-  dates in relation to their importance. One may use support  count (computed in Line 3) as the interestingness measure or  other metrics such as confidence, lift, or conviction of a rule.
+
+In Line 5, we use the corresponding interestingness measure  to select a subset of the most prominent rules. This subset is  then used as the basis for generating new candidates in the next  iteration. New candidates are generated through the addition of  items that are yet to appear in the corresponding rule (Line 2).
+
+This process can potentially create different permutations of  the same items. We assume the existence of a simple duplicate  elimination mechanism as this is not the focus of this work.
+
+Algorithm 1 Frequent Rule Set Generation  Input:  D = transaction dataset R = candidate array minS = minimum threshold C = maximum rule length  Output: R = Most frequent rule array.
+
+1: for i? 1 to C do 2: R = generate candidates(R,D, i) 3: C = support count(R,D) 4: I = measure(C,R,D) 5: R = select(R,minS) 6: end for  7: return R  In Algorithm 1, we can potentially execute all of the  distinct phases in parallel, although each phase has to be  completed in sequence. However, we note that there is little  gain in parallelizing every phase because not all of these  phases are as computationally intensive as support count. We  performed detailed experiments using real and synthetic data  on a sequential implementation of Algorithm 1. In Fig. 1, we  present a quantitative comparison of the individual steps that  are required for generating the most prominent rules. Even  across multiple iterations (considering increasing rule length),  support count remains compute intensive when compared to  ?  ?  ??  ??  ??  ??  ? ? ? ? ?  ?? ?? ?? ?  ? ??  ?? ?? ? ??  ??????? ???  ? ??	 ?	?	???? ?	? ?	?? ???? ?	? ????????????  Figure 1: Break down of the execution time for each individual phase.
+
+We observe that even across different iterations support count remains the most expensive operation.
+
+the other stages of the algorithm. This is primarily related to  the number of candidates which increase exponentially per it-  eration. Although the number of transactions is also important  for determining the overall complexity of the algorithm, the  generated candidates are typically many orders of magnitude  larger accounting for large part of the computational cost. It  is possible to calculate the number of candidates generated  at iteration L in Algorithm 1 by computing the number of combinations without repetitions of L items selected from N available items:  P (N,L) = N !
+
+(N ? L)!
+
+. (1)  The rule candidates consist of two parts. For a single rule,  we refer to the first L items as the prefix and the last item as being added as the suffix. A frequent suffix can be combined  with N ?L suffixes thus creating the tail. The size of the tail dictates the number of rule candidates that require evaluation.
+
+Support count can be viewed as a modified vector-matrix  multiplication that performs logical AND operations instead of  addition and multiplication. In this case the vector is the rule  candidate X and the matrix is the transaction dataset D.
+
+The format of the computation is independent of the data  representation. As shown in Eq. 2, the rule candidate and the  corresponding transaction can be represented as bit vectors  of equal length, indicating with 1 (0) in the j-th position an existing (non-existing) item j. An alternative representation shown in Eq. 3, represents rule candidates as sets of indices  that correspond to items contained in a transaction.
+
+M?  i=1  ?Nj=1D(i, j)X(j) = sup(X) (2)  M?  i=1  ?Lj D(i,X(j)) = sup(X) (3)  Modeling support count as a matrix-vector operation, is  important for exploiting the extensive literature on parallel  matrix operations. However, the matrix formulation leads to  a sub-optimal implementation of support count computation.
+
+This is because frequent rules contain items that often appear  as a subset of many candidate rules. Subsequently, given the  generation process that was described above, a large number  of rule candidates will appear to have a common prefix. We  can therefore, avoid a large number of redundant operations  through data reuse and computation sharing when evaluating  common prefixes.
+
+Although this seems straightforward, it can be challeng-  ing to achieve. In principle, a work-efficient GPU algorithm  for support count should ensure low overhead coordination  between threads. Additionally, it should also be mindful of  the global memory bandwidth and the shared memory size  limitations. Finally, it should scale easily to increasing number  of resources. Due to the size of the candidate rule set and the  differences in the computation format between the prefix and  the suffix, these requirements can be difficult to satisfy.
+
+A sequential execution of support count requires at most  P (N,L ? 1) ? [(L? 1) ?M + (N ? L+ 1) ?M ] operations, where M is the total number of transactions. This is because there are P (N,L ? 1) frequent rules of length L ? 1 the support value of which can be shared across N ? L + 1 candidate suffixes. Sharing is achieved per transaction and can  be exploited to implement a look-ahead mechanism used for  early termination when the prefix evaluates to 0. A parallel version of support count when using P processing elements (PEs) is considered work-efficient, if it requires asymptotically  the number of operations to complete.
+
+Algorithm 2 Support Count Multi-core Algorithm  Input: D = Transaction data, R = Candidate rules array Output: SC = Rule frequency array  1: rulesPerThread = ceil(rr/tt) 2: start = tid ? rulesPerThread 3: end = start+ rulesPerThread 4: for t? 0 to tnum do 5: for i? start to end do 6: evaluate = 1 7: for j ? 0 to rlen do 8: item = R[i ? r + j] 9: evaluate = evaluate&&D[row ? s+ item]  10: if evaluate == 0 then 11: break 12: end if  13: end for  14: if evaluate == 1 then 15: SC[i] = SC[i] + evaluate 16: end if  17: end for  18: end for  19: return SC  We design such an algorithm that is applicable to massively  parallel architectures exploiting the maximum available paral-  lelism while avoiding any coordination overhead between PEs.
+
+In the next section, we first present a naive parallel implemen-  tation of support count followed by our parallel work-efficient  solution which we call two-phase support count.
+
+
+
+IV. WORK-EFFICIENT SUPPORT COUNT COMPUTATION  Developing a parallel solution suitable for massively parallel  architectures that is both work-efficient and highly parallel  requires coordination of the work assigned to participating  PEs while at the same time enabling high data parallelism.
+
+Additionally, support count requires efficient sharing of com-  puted results between the PEs that evaluate the individual  prefixes and those that process the corresponding suffixes.
+
+In this section, we first describe a naive parallel algorithm  that exhibits high parallelism while not being work-efficient  and then compare it against our proposed parallel work-  efficient algorithm. Our work-efficient solution is coupled with  a sophisticated data layout scheme described in V to enable  ?? ?? ?? ?? ??? ??? ??? ??? ??? ??? ??? ??? ??? ??? ??? ???  ?? ?? ?? ??  ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??  ??  Figure 2: Multi-phase parallel prefix evaluation required for rule lengths larger than the available processing elements.
+
+high data parallelism and low overhead coordination between  PEs.
+
+A. Naive Algorithm  A naive parallel algorithm for computing support count,  works by partitioning the rule candidates across different PEs.
+
+Each rule candidate is evaluated independently enabling high  parallelism although avoiding partial result sharing when a  common prefix is encountered. Algorithm 2 shows the pseudo-  code for the naive algorithm assuming a shared memory multi-  core architecture. The corresponding algorithm can be adapted  for use with a GPU.
+
+Support count is a structured problem so we do not need  to worry about load balancing. The naive algorithm has the  property of being ?embarrassingly? parallel since the evalua-  tion of distinct candidate rule sets is completely independent.
+
+However, it is not work-efficient, as it performs many redun-  dant operations in lack of a sharing the common prefix results  among multiple processing elements. A more suitable solution  that avoids redundant operations is described in the following  subsection.
+
+B. Two-Phase Support Count (TPSC)  We developed a parallel work-efficient solution for support  count that operates in two phases. In the first phase, we use  a parallel reduction operation to evaluate the common prefix  of the candidate rules. The resulting value is stored in on-  chip memory which is used from the PEs of the second  phase to evaluate the suffixes in the tail. Both phases are  executed in sequence for each transaction in the input data.
+
+A synchronization barrier is used between the two phases to  ensure read after write consistency. We expect the added cost  from the synchronization to be minimal compared to the actual  work saved.
+
+Computing the support value for a (L)-rule candidate set requires L? 1 PEs for the prefix and N ? L+ 1 PEs for the individual suffixes. However, the peak resource requirement  will be N?L+1. In case the prefix is larger than the available resources, we can execute the reduction in multiple steps by  partitioning the items into groups and merging the intermediate  results as shown in Fig. 2. The maximum achieved parallelism  is dictated by the number of distinct prefixes P (N,L ? 1), which constitute a single candidate set and the maximum     ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??  ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??  ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ??  ?? ?? ?? ?? ?? ?? ?? ?? ??  ? ???? ?	?????	??  ??  ?!?" #????	?  ????"??" #????	?  ??"?	??	????	?? ???? ?	?? Figure 3: Possible data layout schemes for the candidate rules array.
+
+number of items in the transaction data. It is possible to  assign multiple candidate sets to a single group of PEs thus  minimizing the global resource requirement with minimal  effect on the achievable parallelism.
+
+Executing the aforementioned process is important for mak-  ing parallel support count work-efficient. Assuming multiple  groups of PEs that are responsible for individual partitions  of the candidate rules, the naive algorithm requires in total  P (N,L?1)?(N?L)?L?M operations to complete. Each group of PEs will be responsible for few rules within which each  processing element will evaluate a single (L)-rule candidate against all M transactions. In comparison, two phase support count requires the same number of operations as the sequential  approach, P (N,L ? 1) ? (L ? 1) ?M operations for the first phase and P (N,L?1) ?(N?L+1) ?M for the second phase.
+
+The total amount of work equals to P (N,L? 1) ?M ?N .
+
+(N ? L+ 1) ? L  N (4)  We can determine the ratio of work saved by computing the  fraction of the work performed for the naive algorithm over  that of two-phase support count. The resulting value is shown  in Fig. 4. It turns out to be proportional to the rule length.
+
+It is also important to note that the resource requirement for  two-phase support count is many times lower than that of the  naive approach. This makes it suitable for accelerators where  resource efficiency and utilization is pivotal.
+
+
+
+V. DATA LAYOUT  Implementation of two phase support count on massively  parallel architectures is non-trivial since each phase needs to  be executed in sequence with the other. This creates limitations  in relation to the maximum achievable parallelism. We also  require a data layout scheme, that enables high data parallelism  but with low overhead coordination of the participating PEs.
+
+In this section, we consider three distinct data layout schemes  for organizing data that are relevant to support count. They are  used to enable high data parallelism, high off-chip memory  utilization but incur little overhead for coordination of the  participating PEs during execution. An overview of the three  schemes is presented in Fig 3.
+
+Candidate rules and transactions are represented in two  possible ways; either by (a) enumerating the available items  and storing their indices or (b) storing bit vectors in which  items are represented as bits using 1 or 0, to indicate their appearance or not in the corresponding rule or transaction.
+
+Regardless of the representation that is being used, we can  visualize the candidate rules and the transaction dataset as  2D-arrays of size L ?K and M ?N respectively. Any data layout scheme derived from this assumption can use either (a)  or (b) as the underlying representation, assuming a sufficiently  large list of items (i.e. N ? 32). The only difference appears during data processing where unpacking of the bit vectors is  required.
+
+The algorithms presented in Section IV-A and IV-B evaluate  the candidate rules on a per transaction basis. Therefore, the  row-major layout is more suited for the transaction data as it  enables easier sequential access. On a GPU, this scheme also  enables memory coalescing which effectively hides the high  access latency of global memory. However, the access pattern  at a single transaction depends on the candidate rule that is  being evaluated. Candidate rule items may appear out of order  or have gaps making memory coalescing inefficient. We use  shared memory to store the corresponding transactions along  with a set of K rules. This reduces the cost of K not-coalesced memory accesses for a single transaction to only one per rule  set and exploits the low latency of shared memory. How-  ever, after loading data into shared memory, synchronization  is required before starting computation. Therefore, caching  transactions in shared memory to avoid not-coalesced memory  accesses has to be traded-off with the cost of synchronization.
+
+Algorithm 3 Naive Support Count  Input: D = transaction data, rules = candidate rules array Output: sc = Rule Support Count Array.
+
+1: for j ? 0 to rlen do 2: srules[tid+ j ? bDim] = rules[i+ j ? bDim] 3: end for  4: syncthreads() 5: for t? 0 to tnum do 6: evaluate = 1 7: for j ? 0 to rlen do 8: item = srules[tid+ j ? bDim] 9: evaluate+ = evaluate & sd[item]  10: end for  11: count+ = evaluate 12: end for  13: sc[i] = count 14: return sc  The naive algorithm requires the candidate rules to be  stored using column-major order because individual threads  are responsible for processing only a single rule. Memory  coalescing is ensured as long as consecutive threads are able  to access adjacent memory locations. This can be achieved  through utilization of column-major ordering as it results in a  strided access pattern. Assuming a block of threads, items can  be loaded into shared memory using L lock-step coalesced access requests.
+
+On the other hand, two phase support count makes use  of a specialized data layout scheme, which we refer to as  the Compressed Rule Candidate (CRC) scheme. We exploit  the concepts of prefix and tail defined in Section III. Items  appearing in a rule from the previous iteration constitute the  prefix being stored which is followed by the tail of items that  are used to create the new rule candidates. Each combination  of a prefix and a tail is represented by a single row that  describes a set of N ? L rule candidates, each having prefix of length L. We refer to such a combination as candidate rule collection. At iteration L, there exist at most P (N,L) such rows having length of N ? L + L = N . Apart from reducing the space complexity associated with storing the rule  candidates, the CRC scheme enables low-level coordination  between threads with no additional overhead. Individual PEs  are assigned to evaluate specific items based on their Id.
+
+Furthermore, we can fine tune the block size to adapt to the  varying number of items (i.e., N ? [32, 1024]) in order to effectively utilize the available resources.
+
+
+
+VI. IMPLEMENTATION  In this section, we discuss the low level details of our  implementation for the algorithms described in IV.
+
+A. Multi-core Implementation  We developed both a multi-core implementation and a GPU  kernel for the naive algorithm. The multi-core implementation  is based on Algorithm 2 and is implemented using pthreads.
+
+Each thread is responsible for consuming approximately the  same number of rules and since they have the same length, we  can achieve a balanced workload distribution during execution.
+
+It uses a transaction dataset consisting of a collection of bit  vectors organized in row-major order. Similarly, the candidate  rules array is stored in row-major format. This layout enables  for fast sequential read accesses from the participating threads.
+
+The cache is also utilized as rules are evaluated against a single  transaction before proceeding to the next one. We also reduce  the number of operations by stopping execution when a rule  partially evaluates to zero.
+
+B. GPU implementation  In the naive GPU kernel of Algorithm 3, a block of threads  is assigned to a collection of rules. The transaction dataset is  represented as a collection of bit vectors organized in row-  major order. However, in contrast to the CPU implementation,  the rules array is organized in column-major order to enable  memory coalescing. A block of threads is responsible for  evaluating a fixed number of rules. Each thread evaluates the  items of a single rule that is stored in shared memory. Trans-  actions are loaded individually into shared memory through  cooperation of the threads in a block. Thus, un-coalesced  accesses resulting from out of order rule indices are served  by shared memory which has lower latency.
+
+Two-phase support count relies on a row-major ordering of  the transaction dataset. The candidate rules array is constructed  using the compressed format described in Section V. A single  Algorithm 4 Two-Phase Support Count  Input: D = transaction data CRC = compressed rule candi- dates  Output: SC = Rule Support Count Array.
+
+1: if tid < tlen then 2: sCRC[tid] = CRC[bid ? tlen+ tid] 3: end if  4: syncthreads() 5: for t? 0 to tnum do 6: if tid < plen then 7: vote[wid] = all(D[sCRC[tid] + j ? tnum]) 8: end if  9: syncthreads() 10: if vote[vid] == 1 then 11: count+ = vote[vid] & D[sCRC[tid] + j ? tlen] 12: end if  13: syncthreads() 14: end for  15: if tid >= psize then 16: SC[bid ? (tnum? plen) + tid? plen] = count 17: end if  18: return SC  compressed row corresponds to a collection of N?L candidate rules. All the possible collections for a given iteration L are stored together in array organized using row major ordering.
+
+Different thread blocks are responsible for processing a single  or multiple candidate rule collections. We make use of loop  unrolling to increase performance when multiple rule collec-  tions are being processed by a block. A single transaction can  be accessed directly from global memory or cached in shared  memory before accessing. The latter method involves an extra  synchronization step, which we found through experimentation  to be costly. Alternatively, the former method incurs un-  coalesced memory accesses from evaluating the prefix. The  tail will consist of indices that appear in sequence given a large  enough (i.e., >256) list of available items enabling coalescing.
+
+We developed two kernels; one that uses shared memory to  cache a single transaction and another that directly accesses the  corresponding transaction. Both of these versions are evaluated  in our experiments.
+
+At the end of the prefix evaluation phase, the resulting  value is propagated through shared memory to the next phase.
+
+Because we use the warp voting function all() to evaluate  the prefix, the result is available to all threads participating  in the evaluation. We consider two options after this step:  a) store the result in a single dedicated memory location,  or b) replicate the result in many distinct memory locations.
+
+The first method reduces the number of write requests, and  increases bank conflicts as distinct threads will have to access  the same location to learn the result of the first phase. The  second method exhibits higher parallelism and reduces shared  memory bank conflicts as read requests can be spread out from  individual threads to distinct memory locations. We developed  a third kernel that attempts to minimize shared memory bank     ? ??? ??? ??? ??? ???  ?  ???  ???  ???  ???  ???  ?	 ? ????  (a) Accidents  ? ??? ??? ??? ??? ???  ?  ???  ???  ???  ???  ???  ?	 ? ???  (b) Retail  ? ??? ??? ??? ??? ???  ?  ???  ???  ???  ???  ???  ? ? ????  (c) T40I10D100K  ? ??? ??? ??? ??? ???  ?  ???  ???  ???  ???  ???  ? ? ?????  (d) Synthetic 1  Figure 4: A snapshot of the sparsity pattern for a subset of the transaction data that were used in our experiments. The Y -axis indicates different transactions and the X-axis corresponds to bit digit signifying an item?s appearance or not in the given transaction.
+
+conflicts using the aforementioned technique. We describe  in Algorithm 4 the kernel to resolve bank conflicts when  processing a single collection of rule candidates.
+
+
+
+VII. EXPERIMENTAL RESULTS  We evaluated the performance of our design on a plat-  form consisting of a 32-core Intel(R) Xeon(R) CPU E5-2650  clocked at 2.60 GHz and a Tesla K40c GPU [15]. We used  CUDA and C++ to implement the two GPU kernels mentioned  in Sect.III.
+
+We experimented with synthetically generated and real data  that are commonly available to the data mining community  [22]. Their properties are summarized in TableI. We also  present in Fig. 4 a snapshot describing the sparsity pattern for  a subset of the experimental data. Our experimental evaluation  shows that our solution is adaptable to both dense or sparse  data. Additionally, we were able to show increased perfor-  mance for varying number of items in the transaction data a  property that affects the achievable parallelism.
+
+Throughout our experiments we used a simplistic heuristic  known as beam search [5] to prune the rule candidate search  space by expanding only the K = 1000 most prominent rules.
+
+We considered rules to be prominent if their support value was  among the K highest. It is important to note that our algorithm can be tuned easily to perform a complete search. Our goal was  to show that our solution is widely applicable, for applications  that require the support count operation even though they may  use alternate candidate generation algorithms or heuristics.
+
+Therefore, two-phase support count can be used with a vast  number of ARM algorithms for accelerating support counting.
+
+In our experiments, we measured the throughput in terms  of evaluations per second for varying candidate rule lengths.
+
+An evaluation refers to computing if a given rule candidate  is included in a single transaction. The reason for using this  metric was twofold. Implicitly it indicates that support count  is a compute intensive operation even for moderate sized  transaction data. Explicitly it presents the immense gains in  performance of the work-efficient solution over a non work-  efficient approach.
+
+Additional experiments aim at measuring the execution  time and showing the scalability of two-phase support count.
+
+Varying the rule length was the most appropriate choice for  a fair comparison of the presented algorithms . Regardless  of using a heuristic or doing a complete search, adding a  single item will increase the complexity of support count  proportionally to O((N ? L + 1) ? L) unless being work- efficient. In contrast, including an extra transaction will add  at most two extra evaluation steps (i.e. prefix evaluation, tail  evaluation) which are executed in parallel having no significant  effect on the total execution time.
+
+In our experiments, apart from the multi-core implemen-  tation and the naive GPU kernel, we consider three tpsc  variations; default-tpsc that assigns a single candidate rule  collection to unique block of threads, nbc-tpsc which employs  our strategy to resolve bank conflicts, mrs-tpsc which assigns  multiple collections of candidates rules to a single block using  shared memory to avoid uncoalesced memory access through  caching of transactions and mr-tpsc which similar to mrs-tpsc  without using shared memory.
+
+Type Abbreviation ( # Items, # Trans )  Synth Data 1 (446,138990)  Synth Data 2 (55,297476)  Synth Data 3 (458,512410)  Synth Data 4 (68,400827)  Synth Data 5 (443,306735)  Synth Data 6 (305,287653)  Real Data Accidents [8] (572,340183)  Real Data Connection [1] (129,67557)  Real Data Retail [1] (1024,88162)  Real Data T40I10D100K [1] (999,100000)  Table I: Experimental Data.
+
+A. Achieved Throughput  In this section, we present the results of our experiments on  synthetic and real data. We measure the achieved throughput  for naive-sc, default-tpsc and our multi-core implementation  by increasing the candidate rule length. The results of our  experiments on synthetic data are summarized in Fig. 5. In all     ? ? ?? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  ?? ?????????  ? ? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  ?? ?????????  ? ? ?? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  ?? ?????????  ? ? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  ?? ?????????  ? ? ?? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  ?? ?????????  ? ? ?? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  ?? ?????????  ?	$ ???????? ? %&	??????'?? ? %&	????????? ?(	?	???  Figure 5: Achieved throughput for increasing length rule candidates. The Y-axis is measured in billion evaluations per second. The X-axis shows the corresponding rule length. The figures also depict the theoretical trend-line that is computed as an amplification of the naive-sc on the GPU using Eq. 4.
+
+cases, default-tpsc outperforms naive-sc on the gpu as well as  the alternative implementation on the cpu.
+
+The performance of naive-sc is higher than its cpu coun-  terpart due to the higher resource availability of the GPU.
+
+However, its maximum throughput is only 5 billion evaluations  per second and drops very quickly for all the different types  of dataset. In contrast, default-tpsc has a throughput ranging  from 2x to 30x times higher for larger rule lengths presenting  overall a more gradual drop.
+
+TPSC relies heavily on a large list of items to achieve  increased parallelism during execution and improve perfor-  mance. For this reason, we observe a steeper drop in through-  put and a lower throughput maximum for synthetic data 2 and  4. The available items in these cases are less than the minimum  block size (i.e. 128 threads) that is required to achieve full  multiprocessor warp occupancy. Therefore, resource under-  utilization is the main reason for the observed performance  drop.
+
+When the number of items in the transaction data is large  enough, the observed throughput follows the theoretical trend-  line. We determine the theoretic throughput using Eq. 4 to  amplify the the naive-sc throughput of the GPU. The de-  picted figures show the trend-line and not the actual amplified  throughput, as naive-sc saturates the GPU resources for rule  length greater than 18 resulting in significant performance  drop. So the actual benefits from tspc are more significant  for large rule candidate lengths, due to the algorithm being  resource efficient. In fact, for synthetic data 1,3, 5 and 6 the  theoretical throughput is around 35 billion evaluations per sec-  ond. Although, it is greater than the observed throughput(i.e.
+
+15 to 20 billion), compared to naive-sc on the GPU tspc  exhibits almost 40x improvement.
+
+As with the synthetic dataset, we performed similar ex-  periments this time on real data. We present the observed  throughput in Fig. 6. Overall, the results follow similar pattern  with those of the experiments on synthetic data. For accidents  dataset, we observe the highest throughput of 50 billion  evaluations per second. For all dataset, default-tpsc exhibits  a gradual decrease in throughput because the number of items  are enough to fully utilize the GPU?s resources.
+
+Through this round of experiments, we observe that the  throughput is also affected by the number of transactions,  although at a lesser extend. Additionally, due to the different  sparsity patterns variations in the throughput are also notice-  able. Retail and TK100, although having similar size, exhibit  different characteristics in relation to their sparsity pattern with  the former consisting of many dense regions and the latter  having only few. This is the reason behind the 10x difference  in their observed throughput.
+
+B. Shared Memory Utilization & Bank Conflicts  In this section, we study in detail the effect of shared  memory bank conflicts and uncoalesced off-chip memory  accesses. Since it was established that default-tpsc has a better  performance than naive-sc and its multi-core counterpart, we  focus on comparing default-tpsc with its optimized variants  nbc-tpsc, mrs-tpsc and mr-tpsc. In Fig. 7 and Fig. 8, we present  the maximum percentage improvement in execution time per  iteration, which we obtained from using the aforementioned  kernel variations on synthetic and real data respectively.
+
+Resolving bank conflicts produced a stable 3% to 6% improvement in execution time across all dataset. Such a  performance improvement is evident at the worst case where  32-way bank conflict occurs. Bank conflicts are caused during  partial, result sharing creating additional overhead that is upper  bounded by the warp size across multiple warps. For this     ? ?? ?? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  ???? ? ?!?  ? ? ?? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  "  ???? ?  ? ? ?? ?? ?? ?? ?? ?? ??  ? ?? ?? ??  #????$?  ?	$ ???????? ? %&	??????'?? ? %&	????????? ?(	?	???  ?  ?  ?  ?  ?  ? ?? ?? ??  ?%?&&?  Figure 6: Throughput for increasing length rule candidates. The Y-axis is measured in billion evaluations per second. The X-axis shows the corresponding rule length. As before the figures include the theoretical trend-line computed from amplifying naive-sc on the GPU using Eq. 4.
+
+reason, the observed improvement is stable depending mostly  on the item number.
+
+Assigning multiple candidate rule collections to a single  block resulted in 18% improvement over the default-tpsc execution time. A combination of loop unrolling and increase  shared memory utilization from storing more candidate rules in  the same block was the reason for the observed improvement.
+
+In contrast, enabling caching of transactions in shared memory  with kernel mrs-tpsc, presented less improvement in the rel-  ative execution time compared to mr-tpsc. The culprit is this  case, is the additional synchronization step which is required  after loading the data in shared memory. Finally, experiments  performed on dataset 2 and 4 indicate similar behavior to our  previous experiments where multiprocessor underutilization  was limiting the maximum possible performance increase.
+
+Even in the case where we increase the workload of partici-  pating blocks, interleaved execution of warps is limited since  as the block size is small.
+
+C. Increased Rule Length  In this section, we discuss the effects of discovering rules  with length larger than 32. Due to lack of space, we present the  results from the execution on synthetic data 1 and accidents  which are good representatives of the observed behaviour.
+
+We focus on the mrs-tpsc and mr-tpsc variations which, we  established to be highly optimized throughout our experiments.
+
+?  ?  ?  ?  ?  ??  ??  ??  ? ? ? ? ? ?  ?? ?? ?? ?  ? ??  ?? ' ??  (? ) ?  ?  ??  *???!???  ?)?????? "?????? "?????  Figure 7: Percentage improvement in execution time as compared to the default-tpsc kernel for the individually optimized kernels when using synthetic data.
+
+?  ?  ?  ?  ?  ??  ??  ??  ??  ??  ??  *????	??? ????	?????  	? ?? +???? +????? ?? ?? ??   ? ??  ?? ' ??  (? ) ?  ?  ??  *???!???  ?)?????? "?????? "?????  Figure 8: Percentage improvement in execution time as compared to the default-tpsc kernel for the individually optimized kernels when using real data.
+
+For both kernels we observe a similar behaviour, when we  increase rule candidate length to a number larger than 32. After  that point we require evaluating the prefix in two phases, fol-  lowing a technique similar to parallel reduction although using  warp vote functions. This extra phase requires an additional  synchronization step which increases the total execution time  per iteration. Additionally, when we have prominent rules with  item indices in sequence (i.e. accidents dataset as indicated by  its sparsity pattern), caching transactions does not provide any  improvement. However, when there are many rules with out  of sequence prefixes the cost of uncoalesced memory accesses  matches the synchronization cost as indicated by experiments  on dataset 1.
+
+
+
+VIII. CONCLUSION  In this paper, we studied the support count operation  commonly used in association rule mining problems. We  proposed a work-efficient parallel algorithm that is suitable for  massively parallel architectures. Furthermore, we presented a  data layout scheme used to enable low overhead coordination  of the processing elements, reduce the memory requirements  and achieve high off-chip memory bandwidth utilization.
+
+Furthermore, we discussed in detail low level optimization  strategies related to effective use of shared memory, while  presenting a simple strategy for resolving shared memory bank  conflicts incurring minimal additional work.
+
+However, there is still some additional issues that we need to  address. Firstly, we already considering resolving the issue of     ?  ?  ?  ?  ?  ? ??? ??? ??? ???  ??  ?? ?!
+
+?? !? ?  ?? ?????????  ?  ?  ??  ??  ??  ? ??? ??? ??? ???  ??  ?? !? ?!
+
+??  ???? ? ?!?  "????? "??????  Figure 9: Execution time measured for increasing rule size ( the X- axis indicates the rule length).
+
+multiprocessor under-utilization. For dataset with low number  of items, we can assign individual groups of threads in the  same block to different rule collections effectively increasing  the block size as well as utilization. Secondly, we would like  to adapt our solution to an architecture consisting of multiple  GPUs and address challenges related to partial result sharing.
+

@@ -1,0 +1,214 @@
+PipeFlow Engine: Pipeline Scheduling with Distributed Workflow Made Simple
+
+Abstract?Distributed computing system is considered as a fundamental architecture to extend resources such as compu- tation speed, storage capacity, and network bandwidth, which are limited for a single processor. Emerging big data pro- cessing techniques like Hadoop take advantages of distributed servers to accomplish scalable parallel computations. Large- scale processing jobs can run on different servers or even different clusters interdependently and be combined together as a workflow to provide meaningful outputs. In this paper, we analyze the common demands of big-data processing and distributed big-data workflow processing. According to that, we design PipeFlow Engine that has the matching features to meet each of these demands. It orchestrates all involved jobs and schedules them in a batched pipeline mode. We also present two online ranking algorithms that make use of the PipeFlow, sharing the experience and best practice of using PipeFlow.
+
+Keywords-PipeFlow; workflow; pipeline; performance;
+
+I. INTRODUCTION  Scalable systems give more focus on distributed archi- tecture as both CPU clock speed, storage and network I/O bandwidth for a single machine form a bottleneck when dealing with large scale of data. Parallel tasks are either mapped or sharded to different server nodes, taking advan- tages of distributed resources. Google cluster combines more than 15,000 commodity-class PCs to run their web search engine [1]. Some of the distributed processing and storage softwares Google has built have already become successful open-stack cloud frameworks, such as Hadoop MapReduce, GFS, HBase. These tools split a single job or set of data into several parts that are mapped to different servers. For jobs that are scheduled as a whole without sharding, they are also assigned to different nodes for performance considerations.
+
+To obtain a desired result, it usually requires fetching and processing a large set of data and run several interdependent jobs. Google has 1 PB of new data every 3 days [2], not to mention the total data amounts. The data needs to be fetched from thousands and hundreds of sites, parsed to structured data sets, and indexed for search. All these jobs are bonded together to make the outputs searchable, and run in a distributed way. A workflow engine is a tool to monitor and coordinate the job executions. Without an automatic tool to handle the complicated orchestration of correlated jobs, operators need to check whether it is the right time to launch a job by manually monitoring the progress of the workflow.
+
+In addition, the limitation appears when users need to define workflows using the metrics operators cannot easily observe, such as the performance of the jobs in a workflow.
+
+In the distributed system environment, a controller is responsible for scheduling jobs in the cluster according to each job?s requirement and system status. Jobs are submitted to the controller, requesting for arbitration. The controller is viewed as a master in our system and the result of arbitration is a specific slave that is allocated to the submitted job.
+
+The large volumes of data and tasks are usually processed within several rounds. In each round, a small part of them is fetched and processed to produce a small set of results.
+
+The reasons that the whole data set is divided into several pieces are threefold: (1) the cost of one-round failure will be amortized to be low; (2) the output of each round can immediately be obtained as the input of another job, therefore jobs can be formed a pipeline and run in parallel; (3) users usually desire interactive data processes as they can check the progress and validity of the intermediate outputs.
+
+PipeFlow Engine is designed to meet these requirements.
+
+It is a distributed workflow engine that consists of both the master node and slave nodes. The master runs as an arbitrator and scheduler, while slave nodes respond it to handle each job. PipeFlow is extensible and flexible. Users can add slave nodes either before the engine starts or at run-time.
+
+PipeFlow Engine can process each job in three different modes: run mode, run-one mode and run-all mode. Run mode is the simple processing way that takes the whole data set as the input set. Users can use run-one mode if they need to divide the data set into several segments and run one of them in each round. Run-all mode takes all the segments currently available and gathers them together as the whole input data set. Users can specify the running mode of each job in a workflow.
+
+To use PipeFlow, users need to define a workflow in a configuration file, containing the information of each job in the workflow (such as how to execute the job, the input/output paths, the related jobs it depends on). Users also need to specify the orchestration of the jobs in another file using the provided APIs, and then submit workflows as the same as using a single-node server workflow engine, which makes the interface transparent to users.
+
+DOI 10.1109/.30    DOI 10.1109/.30    DOI 10.1109/.30    DOI 10.1109/.30    DOI 10.1109/.30    DOI 10.1109/ICPADS.2013.31     PipeFlow Engine provides a rich set of APIs that users can use to achieve complicated workflow orchestration. For example, DAG-styled can be defined using job-dependency API. Jobs can run periodically with or without being checked whether the previous rounds of them are finished or not.
+
+A job can be specified to run on a certain machine or dynamically assigned to the very server with the most idle resources.
+
+Another goal of our design is to tackle performance issues.
+
+PipeFlow engine monitors the system status as well as the performance of each job. Users can define their workflow scheduling policy according to these performance metrics and let the workflow engine make scheduling decisions at run-time. By using the performance information, users can make better use of the cluster and obtain more desirable results.
+
+We consider the scenarios of master failures, slave fail- ures, as well as client failures for fault tolerance. By designing schemes to handle these scenarios, we make PipeFlow recoverable and able to continue processing from the checkpoint set before the workflow user defines fails.
+
+PipeFlow Engine supports both user-defined jobs and Hadoop MapReduce jobs. It can allow I/O operations of both local filesystems and HDFS. Users can define MapReduce jobs in a workflow and mix them with ordinary jobs. The APIs to different sorts of jobs are identical.
+
+The goal of PipeFlow Engine is to make the definition of distributed workflow with pipeline scheduling simple. It is extensible and flexible that users can easily implement their own add-ons such as various job triggers. We design two online ranking algorithms to demonstrate why PipeFlow Engine is useful for building batched scheduling workflow.
+
+
+
+II. RELATED WORK  Workflow system: Workflow management systems are used in many fields, aiming at integrating jobs with temporal relations or other relations of cause and effect. There are dif- ferent categories of workflow systems according to the fields they are designed for such as business process workflow and scientific workflow systems. Many previous work focused on the composition of workflow tasks by constructing a set of composition models including Map, Reduce, Tree [3] [4]. Amazon Simple Workflow Service (Amazon SWF) [5] is a workflow service coordinating tasks to build scalable, resilient applications in public cloud.
+
+Big data workflow system: Google developed MapRe- duce system [6] to process big data applications on large clusters. MapReduce divides a job into bunch of tasks, which are mapped and processed on distributed servers. The intermediate outputs are collected by Reducer tasks, which gather the records with the same keys. Hadoop [7] is a popular open-source version of MapReduce and GFS [8], used in the industry to process large-scale data. To make MapReduce programming simple, Hive [9] [10] and Pig  [11] [12] are built on top of Hadoop as script languages which are compiled and translated into workflows consisting of MapReduce jobs. There are several workflow systems integrated with Hadoop assembling several jobs as a whole workflow. Users can specify relations between jobs using either DAG or scripting languages. Oozie is a workflow scheduler system to manage Apache Hadoop jobs [13]. Job can be triggered by timer or data availability using Oozie. It provides scalability, security, multi-tenancy, and operability [14]. Azkaban [15] used internally at LinkedIn achieves the similar functions.
+
+However, traditional workflows are unsophisticated to handle jobs running on a cluster, while peripheral workflow systems of MapReduce are built with singular purpose.
+
+These systems do not seek to provide a pipeline model to process big data applications, leaving the pipelined schedul- ing to users themselves. In addition, jobs can only be timer or data triggered, in spite that the effects of system and job performance are significant to workflow scheduling.
+
+Moreover, when a workflow fails in the middle of the execution, users are hard to restart it from a safe point which causes inconsistency issues and wastes resources.
+
+
+
+III. WORKFLOW PROGRAMMING MODEL  PipeFlow Engine requires users to register jobs before calling them in the workflow definitions. Users then define the processing logics using PipeFlow script APIs. This section describes several steps required to define a workflow.
+
+A. Job registration  Users need to notice the workflow engine the information of all the jobs before they are called in the workflow definition. Job registration and workflow definition are two separate steps. In doing so, the job information can be reused by more than one workflows. It also benefits the workflow consistency since no duplicate jobs will be registered twice or more times by different workflows. Once users register a job, its information will be available to all the workflows defined afterward.
+
+As for PipeFlow Engine, jobs are registered through sending a YAML [16] configuration file to the master. A YMAL configuration file may consists of several jobs, each of which has the following fields represented by YAML key-value map: Name, Host, Inputs, Outputs, Commands.
+
+The ?Name? field can be quoted to call the registered jobs in workflow definitions. The ?Host? field is where the job handler is positioned and should be invoked. The master will allocate the right server to the job according to it. The ?Host? can be either user-defined or dynamic assigned. For example, if the user wants to schedule the job to the most under loaded server node when it is invoked, he can put ?CPU? to the Host field to specify this job favors fast CPU processing.
+
+B. Pipeline modes  Even though big data tools like Hadoop is good at processing large scale of data, by dividing large job into many small tasks which are processed in a distributed way, the data scale at big companies like Google is still gigantic comparative to its cluster size. Depending on the job type, the incomplete result may lead to inconsistent states or useless outputs if a job fails in the middle of the execution.
+
+For jobs that run long time, it is unacceptable and wastes a lot of computing resources.
+
+Therefore, developers tend to run their jobs round by round. For each round, only relatively small amounts of data inputs are injected and processed. In case a small job comes to a failure, it can be restarted without sacrificing a lot of time and efforts.
+
+The benefit that this round-by-round way also brings about is that it enables pipeline processing. Whenever a round of sub-job is completed, its outputs can be used immediately as the inputs to other jobs. An additional advantage enabled by the round-by-round processing is that a job can be run interactively and reports periodically the partial outputs of processed data. In other word, it makes intermediate data visible to users, which can be used to implement feedback systems and help run-time debugging.
+
+Streaming (like Storm [17]) is an alternative method of pipeline and is highly interactive. However, it cannot take advantages of batch processing so that it wastes resources such as I/O bandwidths. The core feature of big data analytic tools is to use batching mechanism.
+
+PipeFlow engine automates the round-by-round execution and pipeline in a workflow. In the job registration file, users can specify if the input is fetched and processed in a pipeline mode, and if the result is output in a separate segment for pipelined execution of other jobs or just appended to the ex- isted outputs. In pipeline mode, inputs or outputs are fetched, processed or generated in the form of segments, which are subdirectories of the main input or output directory. For example, an input of a job may consist of seg 0, seg 1, set 2, . . . , so does an output. A job can read and process just one segment in a round, or process all currently existed segments ready to read. Users can use the following syntax to define the processing modes:  Inputs: - InputName=InputFS::InputPath [=*] - ...
+
+Outputs: - OutputName=OutputFS::OutputPath [=*] - ...
+
+InputName is the input name used by workflow definitions.
+
+InputFS is the source file system where the job can read input data. Currently, PipeFlow engine supports both local file system and HDFS. InputPath is the input directory path.
+
+It can be either absolute or relative to the PipeFlow home  path. The option that follows is the specification of process modes. If the option is empty, the job is in the run mode, where the data is not in the form of segments. If a single equal sign is specified in the option, the job runs in the run- one mode, where the input data is in the form of segments, a single one of which is read and processed in each round.
+
+Similarly, a single equal sign in the outputs means the output data is stored in a newly generated segment. If for inputs, two equal signs are specified, the job will run in the run- all mode where all segments currently existed and ready to read will be processed in a single round. For outputs, it is not allowed to have two equal signs defined. Note that each one of the inputs or outputs is independent, so different inputs for a job can have different modes specified.
+
+C. PipeFlow APIs  PipeFlow Engine provides rich and flexible APIs for users to define their workflows. Users can defines workflows using script language like Python. There are three categories of APIs provided by PipeFlow Engine: APIs for executing jobs, i.e., job trigger; APIs for obtaining data information for data- triggered jobs; and APIs for acquiring the performance of jobs and cluster status.
+
+Job execution APIs are listed in Table I. Every operations  Table I JOB EXECUTION APIS  API Description exec (job) Execute job exec cond (job, cond) Execute job if cond is True exec cond wait (job, cond) Wait until cond is True, then execute exec period (job, interval) Execute job in every interval secs exec period cond  (job, cond, interval) Execute if cond is True periodically exec delay(job, clock) Execute job at time clock exec depend (job, dep job) Execute job if dep job is finished  listed in the table has a optional parameter check finished.
+
+If it is set to be True (which is the default), PipeFlow will firstly check whether the job is already in running status (e.g., the previous round is not finished). If the job is in running status, the engine will skip the execution operation.
+
+The condition can depend on run-time status by passing a closure. Users can define a condition using either lambda function or common function definition. The condition can be viewed as a trigger to launch a job. Triggers include data availability, performance driven factors, or any other user- defined boolean functions. Timer-triggered execution has already been implemented as APIs. Users can specify when to start a job, and can also run a job at intervals. Users can use exec depend API to implement DAG execution plans.
+
+It is convenient to use it to define a workflow with job dependency.
+
+PipeFlow Engine provides sufficient data lookup APIs as data availability triggers. Every data lookup API is     provided with two types: lookup in the local file system, and lookup in the distributed file system, e.g., get input size (job), get [unfinished / buffered ] input seg num (job), get [unfinished / buffered ] input seg size (job). The same set of lookup APIs is also defined for outputs. The latter two ops are defined for pipelined jobs. They count the number or the size of unfinished or buffered segments for a job.
+
+The unfinished segments include the running job scheduled by the master, while the buffered segments result excludes the currently running job and only count the pending jobs waiting to be scheduled.
+
+Another useful set of APIs aims at monitoring job and system performance, e.g., get job stat (job, metric), get server stat (job, metric), find dynamic host (criteria).
+
+For the job statistics, we currently monitor three metrics: job duration, throughput, and job input arrival rate. These three metrics are all calculated as moving average using EWMA method. Users can define workflows using these monitored metrics, e.g., users can run a job more frequently whenever the throughput of its dependent job is high. We will show a case study in the following section to demonstrate how useful it is to schedule jobs according to their performance.
+
+The server metrics include CPU speed, memory and disk usages. Users can use find dynamic host API to find the best sever node a job can be executed on according to the specified criteria such as CPU, memory and disk usage.
+
+D. Workflow definition  Workflow definition using PipeFlow Engine is as simple as writing scripts to run jobs in the local machine. The only thing users need to do is to create a PipeFlow proxy and invoke PipeFlow APIs to orchestrate jobs registered at PipeFlow master. The following template is a simple example of workflow definition:  class PipeFlowDef (PipeFlow.Client): def condition (self, job, *args, **kw):  if satisfied (job): return True  else: return False  proxy = PipeFlowDef (server_address) proxy.exec_cond (?Job A?, proxy.condition) proxy.exec_dep (?Job B?, ?Job A?, \  timeout = 600)  This workflow defines two jobs A and B. It firstly execute Job A under the condition user defined in the PipeFlowDef class. Job B can be launched after Job A is completed. If Job A has not finished within 10 mins, Job B quits waiting unilaterally. Note that, although we use sequential script to define a PipeFlow instance, the execution of the workflow is concurrent.
+
+E. User-defined checkblock and restoration  PipeFlow Engine does not guarantee all-or-nothing atomic transaction of workflows. The fundamental reason is that our design aims at big data analysis, which cares less about strong transaction semantics. In addition, redo/undo operations waste a lot of time and resources on rolling back or regenerating large amount of output data, which is inappropriate in the big-data processing fields.
+
+The more desirable semantic is to support restart opera- tions from where jobs failed and continue processing from the right checkpoints. Eventually, it will achieve the same goal of original transaction semantic. We call this weakened transaction eventual transaction. The following code shows an example of implementing eventual transaction.
+
+class PipeFlowDef (PipeFlow.Client): pass  proxy = PipeFlowDef (server_address) proxy.begin_checkblock (?CHECK_BLOCK?) proxy.exec (?Job A?) proxy.exec_dep (?Job B?, ?Job A?) proxy.end_checkblock (?CHECK_BLOCK?)  The primitives PipeFlow defines execution blocks that en- ables restoration are begin checkblock and end checkblock.
+
+The code piece defined between these two primitives is called a checkblock, which is stateful. The PipeFlow engine keeps the running state of the workflow. If the workflow fails in the middle of the checkblock, PipeFlow can restart it from where it fails last time. Note that checkblock cannot contain exec period operation as this type of operation is stateless. Users can always restart this type of job execution from any state. In the above example, if the workflow failed when Job A was finished but Job B was not, it would only execute Job B when recovered.
+
+
+
+IV. SYSTEM DESIGN  This section describes the core design of PipeFlow En- gine. After presenting the overview of PipeFlow design, we focus on illustrating three main challenges in the design: segment management, failure recovery, and performance measurement. Figure 1 shows the overall infrastructure of the PipeFlow workflow management system.
+
+A. Overview  PipeFlow Engine consists of one master process and many distributed slave processes. More slave processes can be launched at run-time even after master has already started.
+
+When a slave is started, it registers itself to the master, which then adds the slave to the worker group and heartbeats to all the slaves periodically. If a slave fails or quits from the group, it removes the slave from the worker group.
+
+Users register jobs by sending configuration information to the master. The master receives and parses the configura- tion, does some transformation. For example, if the ?Host?     ??????  ??	?? ?  ??? ??????????  ??????  ???????  ???	???? ??  ? ??  ???? ??  ??? ????  ?? ?  !?? ?  ????!????"? ? ??	??  ?# ??  ?? ?  ? ??  ?$ ??  %? ?$  & ?  ?? ?$  !? ??  ??'???? ?????!?  ??????  ???	? ???	? ???	? ???	?  (?!??? ???? ???	??  Figure 1. The overall infrastructure design of the PipeFlow workflow management system  field is specified as ?CPU? or ?MEM?, it creates a ?Dynamic? filed and sets it to true. Afterwards, it fills the ?Host? fields with the proper resource address. The master then shards the job configuration according to the ?Host? field and sends the parsed configurations to the corresponding slaves in its worker group. If the host of Job A is specified as Host 1, the information of Job A is sent to Host 1. For dynamic jobs, their information is sent to all slaves existed in the working group because every time the dynamic job is scheduled, it may run on any of the slaves. Whenever a new slave is launched, after it registers to the master, the master will synchronize all the job information to the slave, so that the slave can catch up with other slaves. In PipeFlow Engine, the job configuration information is persisted in the master node using LevelDB [18] by serializing the job information to key-value form, while slaves store the information in memory without being persisted. By this way, slaves are extensible and maintain consistency with no efforts.
+
+Users run their workflow definitions as client stubs which contact to the master node by RPC calls. The master does not hand over clients? requests to the corresponding slaves, but only accepts job information lookups as similar as DNS. After clients obtain the positions where the workflow operations should run, they invoke the corresponding slave nodes directly to execute the operations through several other RPC calls. The master is also responsible for two other types of requests: one is to monitor and get statistics of the cluster status PipeFlow runs on, i.e., the status of each slave node; the other is to find the appropriate slaves dynamic jobs should be executed on using the statistics.
+
+Clients adopt asynchronous RPC calls to invoke opera- tions on the slaves whose information the master returns.
+
+Asynchronous RPC enables clients to register callback func- tions invoked on the reply of the completion messages with- out busy waiting for the execution results. Slaves implement  some basic primitives of workflow operations including job execution, data and performance metric lookups. Slave only implements the raw exec operation. Other extensions of exec such as exec period are implemented in the client library. The reason we do this is because, if exec period is implemented on the slave process, it is hard for clients to stop the executions unilaterally (even if it could, it will cost another stop RPC call). The slave process keeps track of the running jobs when they are scheduled in order to make each job as a singleton if check finished flag is set to the execution operations. It is like acquiring a lock for each job.
+
+Only after the job is finished can another instance of the same job be launched. We also implement a distributed lock to guarantee the isolation of two distributed job executions if users specify that two jobs cannot be executed concurrently.
+
+The distributed lock can be run as an independent process.
+
+We put it along with the master process. For data lookup operations, the slaves implement two sets of primitives: one for local file system and one for distributed file system.
+
+By wrapping HDFS APIs, it supports Hadoop File System lookups and Hadoop jobs. Using PipeFlow APIs as well as Dumbo [19] which is a python interface of Hadoop, users can also define workflows with Hadoop MapReduce jobs.
+
+The client library wraps some operations of slave to implement more complex workflow operations such as exec period. Usually, each of these operation contains more than one RPC calls to the slaves.
+
+B. Segment management  One of the main features of PipeFlow is to support pipeline execution by segment management. The job input is split using user-assisted method. Users only need to split the source input of the first job in their defined workflow. Then PipeFlow takes over the control of the split segments. The segment management component is implemented in both slave process and client library. It consists of two-phase tags.
+
+Before a slave executes a job, PipeFlow finds the first or all buffered segments or unfinished segments (if concurrency of the same job is not allowed) the job will read inputs from according to the input mode user sets. PipeFlow tags these segments as STARTED. After the job completes, PipeFlow tags them as FINISHED. These tags enable PipeFlow to find the right segments to process. They are persisted in the input information. The process of finding segments and tagging them should be atomic, especially if check finished flag is not set for the job so that two or more instances of the same job can be executed concurrently. Even for two different jobs, it is still possible to have race condition if these jobs operate the same inputs. For this case, distributed lock service is needed to make sure two distributed jobs with the same input directory are isolated.
+
+In addition, another set of tags is created to indicate whether jobs start or not. When a job starts executing, PipeFlow tags the job as STARTED, which is removed after     the job is finished. The finish status is also kept in the slave process as MILESTONE to implement exec dep operation indicating the jobs that depend on it is ready to run. This set of tags is also used to restart unfinished jobs if slave process failed accidentally. They are persisted in the job meta information.
+
+PipeFlow adopts the atomic output mechanism to handle output data. When a job is running, PipeFlow redirects its output data to a temporary directory. After the job is finished successfully, PipeFlow automatically links the temporary directory to the real destination. This mechanism guarantees the integrity of output data. In addition, the atomicity of output segments helps PipeFlow to find the next segment as output destination and prevent it from overlapping the positions of unfinished segments.
+
+C. Failure recovery  There are three types of failures in the PipeFlow system: master failure, slave failure, and client failure. Since the master only implements job information lookups, it only needs to restore job information after failure without caring about job execution states. LevelDB has its own failure recovery mechanism that uses logs to persist the data to be restored. We design slave and client failure recovery mechanisms as follows.
+
+Since slave does not record any state of job execution, it references the tags PipeFlow persists to recover from failure. When slave restarts from failure, it checks the started but unfinished jobs and the corresponding segments through parsing from job STARTED tags. It then restarts these jobs and restores them into the running group that keeps track of all the running jobs. Clients keep retrying to connect to that failed slave once in a while. The retry process will not block the subsequent operations in the workflow definition since all the operations defined in the PipeFlow are concurrent logically.
+
+The master will detect failed slaves through heartbeat timeout. For dynamically scheduled job, the master will choose another slave after the originally assigned slave fails.
+
+The master will also alter the host information for this job.
+
+The master notices the new slave to recover and restore the unfinished jobs and corresponding segments that failed in the middle of executions. When the original slave wakes up, it ignores the unfinished dynamically scheduled jobs that have STARTED tags unlike other jobs which are not dynamically scheduled.
+
+If client fails instead of slave, the workflow will enter an inconsistent state, where part of operations are sent to the corresponding slaves and the others are not. PipeFlow tries to achieve eventual transaction semantic by imple- menting at-most-once semantic of job invocation. Before actually invoking and executing each job defined in the workflow, PipeFlow logs the job in the database indicating the job has been invoked and then sends RPC call to the  slave. When restarting the workflow from failures, PipeFlow engine loads the log, and skips the logged job to avoid duplicated execution. For exec cond operations, PipeFlow logs them no matter what values the conditions are, so that it will not be executed again in the future. As for exec cond wait operations, PipeFlow logs them only if they have ever valued True such that PipeFlow can retry executing the corresponding jobs when recovering from failures.
+
+D. Performance measurement  Performance metrics such as execution duration and throughput are measured for every successful jobs and calculated as moving averages. We only briefly explain the relative arrival rate PipeFlow measures. This metric indicates how many segments are appended to a job between the period two rounds of the job are executed. If this metric is greater than one, the arrival rate is beyond the processing rate which means a lot of segments will be pending in the system.
+
+PipeFlow updates this metric whenever a job is finished, and whenever the timely updated metric has already been beyond the value measured since last job has been finished, even though this round of the job is still running.
+
+
+
+V. ONLINE RANKING ALGORITHMS USING PIPEFLOW  Online ranking is used to rank online data dynamically with input data arriving in batches in any time. Unlike offline ranking, online ranking cannot rank all the inputs in strict order since it cannot predict what data comes in the future. The online ranking algorithm should strike balance between ranking performance and throughput. We design two different algorithms using PipeFlow in this section to maximize the throughput while trying to achieve better ranking performance.
+
+A. AdWork workflow  We take AdWork workflow as an example to illustrate the online ranking algorithm. AdWork is an advertisement bidding system. AdWork workflow is a process to rank the online batch arrival advertisement bids, select the ads from high bids to low, tag them by keywords and send them to a filter that checks the legality of the ads, and archive them to the subsequent processing. The archive file should try to adjust the ads with high bids to move as high as possible on the final results. In short, the AdWork workflow includes the following jobs: RankSelect, Tag, Filter, and Archive.
+
+RankSelect gathers all unselected ads and sorts them to generate top-N ads with highest bids, and puts the other ads in a file which contains unselected files. The selected ads are tagged by the Tag job and passed to the filter, which fetches and checks the web pages of these ads according to the URLs they provide. The filter parses the pages and checks their legality according to the contents. Finally, the legal ads go to the archive file through the Archive job.
+
+B. Queue feedback based pipeline  The ads arrive in batch. In order to make the workflow form a pipeline, PipeFlow splits each job in segments and schedules it round by round. Each batch of the ads generates a new segment. RankSelect reads all the segments every time, sorts and selects the top-N ads, which are collected as a segment output. The Tag and Filter jobs both fetch and generate one segment in each round. Archive collects all output segments of Filter and merges them to a single file online.
+
+To maximum the throughput, we should keep the job that is the bottleneck of this workflow as busy as possible. In this case, Filter is the slowest job since it needs to crawl and parse data from Internet. We need to guarantee that Filter always have pending input segments. PipeFlow makes the workflow run in pipeline so all the jobs run periodically in parallel. We define the AdWork workflow as follows:  class PipeFlowDef (PipeFlow.Client): def fire(self, job, *args, **kw):  return self.get_buffered_input_seg_num (kw[?sep?]) < 1  proxy = PipeFlowDef(server_address) proxy.exec_cond_period(?RankSelect?, 0.1  proxy.fire, dep = ?Tag?) proxy.exec_cond_period(?Tag?, 0.1  proxy.fire, dep = ?Filter?) proxy.exec_cond_period(?Filter?, 0.1,  proxy.fire, sep = ?Archive?) proxy.exec_period(?Archive?, 0.1)  The interval of periodical execution is set to 0.1 sec. Each job waits to start a new round till the buffered input segment number of its subsequent job becomes 0. We can prove that this algorithm guarantees whatever the bottleneck job is, it is kept as busy as possible. After the workflow is executed, each upstream job of the slowest job gradually saves up one buffered segment and is blocked. Once the last buffered segment begins to process, its upstream jobs are unblocked successively and begin to execute in parallel almost at the same time. Since their processing time is less than that of the bottleneck, when the bottleneck job finishes running this round, each upstream jobs already generates a new segment.
+
+So the pipeline keeps running without stopping.
+
+C. Sliding window based pipeline  The sliding window based pipeline algorithm only con- trols the launch of the first upstream job to keep the pipeline running without stopping. By controlling this job, we guarantee there are enough but not too many buffered segments between this job and the bottleneck job to keep the bottleneck job busy. The condition to trigger RankSelect  job is as follows:  B(Tag)+B(Filter) ?  ? T (RankSelect) + T (Tag)  T (Filter)  ? < 2  (1) This condition means that the total number of segments pending at and before the bottleneck job needs to be greater than the ratio of the total duration of upstream jobs over the duration of the bottleneck job. Before the metric T is available, we use the upper bound instead, which is the number of the upstream jobs. It is derived since the duration of every job is less than that of the slowest job. This indicates that the worst case using sliding window based pipeline is the same as using queue feedback based pipeline. For long pipeline consisting of many upstream jobs whose duration is much less than that of the slowest job, this algorithm is superior to the queue feedback based algorithm because of less in-flight pending segments.
+
+
+
+VI. EVALUATION  We configure the AdWork workflow to run on 4 different servers with NFS setup. Each job runs on a different slave.
+
+The ads bids are generated in batch mode. Each batch consists of 1000 ads bids. The interval between two batches is exponentially distributed with the average interval set to 2 seconds. RankSelect selects top-100 ads in a round, which can be finished in less than half second, as well as the Tag job. Filter is the bottleneck, processing each ad in 50 ms.
+
+We tested the two pipeline algorithm using PipeFlow.
+
+Figure 2(a) compares the average of top-N result col- lected in the archive file generated by Archive. The sliding window algorithm obtains higher average value for top-N bids whatever N values. No-control gives the worst results.
+
+It is because RankSelect without any control selects many bids too early regardless of the higher bids coming in the future. The sliding window algorithm is superior because of its strict control with more performance information being considered. It enlightens us that with performance metrics involved as the job triggers, workflow scheduling can be more efficient. The comparison of standard variance is shown in Figure 2(b) which proves the same results.
+
+Figure 3 shows the throughputs of the workflow and the relative arrival rate of Filter under three pipeline algorithms.
+
+The throughputs only have slight different. The reciprocal of the throughput is nearly the same with the duration of Filter which is the bottleneck. This means the workflow achieves highest throughput we can get under all the three pipelines.
+
+The relative arrival rate of the input segments for Filter is 10 without any control, while the segments are not piled up under queue-feedback and sliding-window control.
+
+We randomly shut down the slaves, and restarted them after a few seconds. The workflow continued executing to the normal state. We also tested a single round of workflow execution, forcefully terminated between Tag and Filter.
+
+?????  ?????  ?????  ?????  ??????  ??? 	?? ??? ??? ???   ? ??  ??? ???  ?? ??  ????? ????????? ????? ????!"# $??????%????&  (a) Average value of Top-N bids  ?  ????  ?????  ?????  ?????  ??? 	?? ??? ??? ???  $? '? ???  ??? ?? ??  ????? ????????? ????? ????!"# $??????%????&  (b) Standard variance of Top-N bids  Figure 2. Comparison of the Top-N bids under three different algorithms.
+
+?    (  ?  ??  ????????? ????? ????!"# $??????%????& ?  ?'?    )'?  (  *? ?!? ???  !? ??? !? ?!?  ?+ ?? ?? ,  -.
+
+?" ??? ?? ?? ???  ?!
+
+?/ ?0  ?1 ???  ?1 ??  ?+? ?" ?,  *??!???? ????!?*!?? ?0?1????1???  Figure 3. The relative arrival rate of Filter and execution interval (1/throughput) of the workflow  After we restarted the workflow, it started executing right from Filter without repeating the RankSelect and Tag job.
+
+
+
+VII. CONCLUSION  Workflow engine automates the orchestration of correlated jobs that are triggered to execute according to some rules.
+
+PipeFlow provides a distributed workflow engine that sup- ports the pipeline execution of workflows. The convenient APIs and fault tolerant mechanism enable users to define and control complex workflow in few lines of code, clearly presenting the logic of their workflow.
+

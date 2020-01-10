@@ -1,0 +1,166 @@
+Fast Quasi-Biclique Mining with Giraph
+
+Abstract?Quasi-biclique mining for bipartite graphs has found important applications in providing security services.
+
+However, the standard MapReduce algorithm for mining quasi- bicliques does not scale well due to the need of shuffling and reducing a huge number of map outputs. To cope with web-scale graphs, we propose a scalable algorithm with the use of Giraph, which is a new rising large-scale graph processing platform following the bulk synchronous parallel (BSP) model.
+
+Experimental results on real world domain-IP graphs demonstrate that our proposed solution is able to reduce CPU time by 80% and disk I/O by 95%, compared with the standard MapReduce algorithm.
+
+Keywords?Giraph; Bulk Synchronous Parallel; Graph Partitioning; Bipartite Graph; Quasi-Clique;
+
+I. INTRODUCTION Node clustering for bipartite graphs plays important roles in  many real applications [1, 16] and especially the detection of network incidents [4, 7, 8, 15, 20]. Among the most renown clustering algorithms for graph data, quasi-biclique mining is an approach which focuses on finding dense subgraphs in a bipartite graph. Quasi-bicliques gained popularities [11, 14, 15, 21] in modeling clusters in bipartite graphs for their resistance against noise and missing information, which are unavoidable in real datasets. A few applications of quasi-biclique mining in security services are given below.
+
+? Given a bipartite domain-IP graph, each quasi-biclique corresponds to a set of closely related domains and IPs.
+
+Thus when a domain is reported to contain malicious materials we can quickly react to inspect all related IPs and domains to provide better protection.
+
+? Given a bipartite website-client graphs, quasi-biclique mining can find the set of websites sharing similar clients. Consider a website which is reported to be a command and control (C&C) server. Hackers used to setup multiple C&C servers for high availability and these C&C servers usually share the same bots. Thus finding websites sharing similar clients with the reported C&C server can help to identify remaining C&C servers.
+
+To the best of our knowledge, the only quasi-biclique mining algorithm which targets at web-scale data was due to Su et al. [15]. Their motive is to detect network incidents by analyzing how quasi-bicliques in domain-IP graphs evolve  over time. Su et al.?s algorithm is based on MapReduce [3, 6, 9, 19]. The standard MapReduce algorithm for mining quasi- bicliques suffers from the need of shuffling and reducing a huge number of map outputs and does not scale very well. To achieve better scalability, Su et al. have adopted a heuristic strategy at the expense of solution quality.
+
+In this paper, we propose a scalable quasi-biclique mining algorithm with the use of Giraph [2], which is a new rising large-scale graph processing platform and very suitable for implementing iterative algorithms.
+
+Our approach consists of 3 phases. The first phase is to divide the graph into smaller partitions with an iterative algorithm implemented by using Giraph. The partitioning algorithm is carefully designed so only nodes believed to be closely related would be assigned to the same partition. Next, a MapReduce job is run to augment each partition with its adjacent inter-partition edges so that we do not lose any information. Finally, a MapReduce job is run to compute quasi-bicliques for each augmented partition in parallel.
+
+Experimental results on the domain-IP graphs constructed from web browsing logs demonstrate that our proposed algorithm achieves significant improvement over the standard MapReduce algorithm.
+
+
+
+II. PRELIMINARY  A. Problem Definition The formal definitions for bipartite graphs and quasi-  bicliques are given below.
+
+Definition 1. We say G = (X, Y, E) is a bipartite graph if and only if X ? Y ? ? and E ? X ? Y. The elements in X ? Y are called the vertices, and the elements in E are called edges. A vertex u is a neighbor of a vertex v if we have either (u, v) 	 E or (v, u) 	 E. The degree of a vertex is defined to be the number of its neighbors.
+
+Definition 2. Given a bipartite graph G = (X, Y, E), a vertex x X and a threshold (0, 1], a tuple (X?, Y?) is said to be the -quasi-biclique for x, denoted by -quasi-bicliqueG(x), if Y? = {y? 	Y : (x, y?) 	 E} and X? = {x? 	 X: there are at least ?|Y?| of vertices y? in Y? satisfying  (x?, y?) 	 E}.
+
+2013 IEEE International Congress on Big Data  DOI 10.1109/BigData.Congress.2013.53     In other words, the -quasi-biclique for a vertex x is a tuple consisting of (1) vertices connecting to at least of x?s neighbors and (2) x?s neighbors. An example is shown in Figure 1.
+
+Figure 1. quasi-bicliques of a bipartite graph.
+
+The quasi-biclique mining problem is to compute the set of  -quasi-bicliques for vertices in part X.
+
+Definition 3. Given a bipartite graph G = (X, Y, E), a vertex x X and a threshold (0, 1], the quasi-biclique mining problem is to compute the set S = { -quasi-bicliqueG(x): x X}.
+
+B. Giraph Giraph is a large-scale graph processing platform which  follows the design of Google?s Pregel system [13] and could be seen as a variant of the Bulk Synchronous Parallel (BSP) model [18].
+
+Giraph takes a directed graph and a user defined function Compute() as the input. The execution consists of a sequence of iterations, called supersteps. During a superstep the user defined function is involked for each vertex in parallel. The user defined function can read messages sent to the vertex in the previous superstep, send messages to other vertices that will be received in the next superstep, set/get the values of the vertex and its outgoing edges, make changes to the topology that will take effect in the next superstep and vote to halt.
+
+Initially each vertex is in the active state. A vertex deactives itself by voting to halt and keeps inactive until it receives a message. The execution stops if all vertices are inactive and no messages are in transit.
+
+In addition, users are allowed to define some utility functions, called Combiners and Aggregators, for purpose of message reduction and global communication.
+
+Giraph is great for implementing iterative algorithms for it would not incur unnecessary I/O workload. Unlike chained MapReduce, there are no extra I/O workloads caused by the shuffling phases in the MapReduce jobs and reading/saving of the outputs of intermediate iterations.
+
+However, there are two limitations in using Giraph by our experience. First, Giraph requires the whole graph to be loaded into memory before execution, so you must have a lot  of memory to analyse large graphs. Second, Giraph requires careful control over the message complexity of each superstep to avoid out-of-memory errors. If your algorithm has super- linear message complexity, chained MapReduce should be a better choice.
+
+
+
+III. ALGORITHM Our algorithm consists of three phases: (1) partitioning, (2)  augmenting and (3) refining. The key idea is to first divide the input graph into partitions through an iterative Giraph algorithm. The resulting partitions could be considered as ?relaxed? quasi-bicliques or communities.  We then augment each partition with its adjacent inter-partition edges so that we have all the required information for computing the complete set of quasi-bicliques. Finally, we compute quasi-cliques for each augmented partitions in parallel by a MapReduce job.
+
+A. Partitioning The goal of partitioning is to divide the bipartite graph into  communities of vertices with dense connections internally and sparser connections between communities. The formal definition of graph partitioning is given below. Note that by the definition two different partitions would have disjoint X- part vertices but may have common Y-part vertices.
+
+Definition 4. Given a bipartite graph G = (X, Y, E), an induced subgraph C = (Xc, Yc, Ec) is said to be a partition of G if and only if Yc is the set of neighbors of Xc in G. A set of partitions P = {(X1, Y1, E1), (X2, Y2, E2), ? , (Xk, Yk, Ek)} is said to be a partitioning result of G if and only if  (1) X1? X2 ? ??? ? Xk = X and (2) Xi? Xj = ? for all i j.
+
+Our algorithm proceeds as following. In the first iteration, we set the community ID for each vertex x in part X to the MD5 checksum of its neighbors. Then each vertex x in part X sends its community ID and degree to its neighbors. The intuition behind this step is quite simple: vertices with the same neighbors should belong to the same community.
+
+In the second iteration, each vertex y in part Y would receive community IDs and degrees of its neighbors sent in the previous iteration. We set the community ID of y to the community ID of its highest-degree neighbor. And then informs all of y?s neighbors about its community ID. The intention for selecting the community ID sent from the highest-degree neighbor as y?s community ID is to increase the probability that most Y-part vertices in the same community would have the same community ID. It is based on the assumption that the underlying communities have structures similar to bicliques so that the highest-degree X-part vertex within a community would have connections to most of the Y-part vertices of the same community.
+
+From the third iteration, we apply the majority rule to adjusting the communities iteratively until the convergence criteria are met. The majority rule says that a vertex v could not change its community ID unless more than half of v?s neighbors have a common community ID which is not the same as v?s community ID. The process iterates until all     vertices stop to change their community IDs. A partition is defined to be the vertices in part X with the same community ID and their adjacent vertices in part Y.
+
+A running example is demonstrated through Figure 2-6, where vertices in part X are shown on the left side and vertices in part Y are shown on the right side. The value of a vertex is its community ID.
+
+Figure 2. Each vertex in part X sets its value to the hash of its neighbours at superstep 0.
+
+Figure 3. Each vertex in part Y sets its value to the value of its highest- degree neighbour at superstep 1.
+
+Figure 4. A vertex in part X changes its value if the majority value of its neighbours exists and is different from its current value at superstep 2.
+
+Figure 5. A vertex in part Y changes its value if the majority value of its neighbours exists and is different from its current value at superstep 3.
+
+Figure 6. All vertices in X part stop to change values so the convergence criteria are met at superstep 4.
+
+Theorem 1 guarantees the convergence of our partitioning Algorithm.
+
+Theorem 1. The number of iterations in the execution of Algorithm 1 is at most |E|.
+
+Proof. Let S be the edges whose endpoints are assigned with the same community IDs. Denote by Si the set S just after the i-th iteration. Define the potential of our algorithm to be the size of S. Since 0 ? |S| ? |E|, it suffices to prove that the potential strictly increases after each iteration, i.e., |Si| > |Si-1| for all i >2.
+
+Let v be a vertex which changes its community ID in the i- th iteration. It follows that the number of edges in Si associated with v is greater than degree(v)/2 and the number of edges in Si-1 associated with v is less than degree(v)/2. Therefore, changing of v?s community ID strictly increases the potential by at least one.
+
+We implement the algorithm by using Giraph. The pseudo- code of our Compute() function is shown in Algorithm 1. The checking of convergence criteria could be easily done by using the aggregator utility provided by Giraph. We are not going into the implementation details here.
+
+Algorithm 1: Partitioning Compute(messages):  if getSuperstep() == 0 and isInPartX(): setValue(MD5Checksum (getNeighbors())) msg := (getValue(), getDegree())  elif getSuperstep() == 1: maxDegree := -1 for msg in messages  (id, degree) := msg if degree > maxDegree: setValue( id)  msg := getValue() else:  M := empty map for msg in messages:  if msg is not in M.keys(): M[msg] :=1  else: M[msg] = M[msg] + 1  for id in M.keys(): cnt := M[id] if id > getDegree()/2 and id != getValue(): setValue(id)  msg := getValue() for v in getNeighbors():  sendMessage(v, msg) voteToHalt()  B. Agumenting After partitioning, there would be some missing  information due to inter-partition edges. The goal of augmenting is to extend each partition with the information of its adjacent inter-partition edges so that each augmented partition is self-contained for computing all quasi-bicliques for all of its X-part vertices. Note that if the partitioning algorithm really divides the graph into communities, there would not have too many edges between partitions and the partitions should not expand too much after augmenting. The formal definition of an augmented partition is given below.
+
+Definition 5. Given a bipartite graph G = (X, Y, E) and a partition C = (Xc, Yc, Ec), the augmentation A(C) = (AXc, AYc, AEc) of C is an induced subgraph such that (1) AYc =YC and (2) AXc is the set of neighbors of Yc in G. The set Xc is called the core of A(C).
+
+An example of an augmented partition is shown in Figure 7.
+
+The augmenting algorithm is implemented by using MapReduce, and details are shown in Algorithm 2.
+
+Algorithm 2: Augmenting Map(keyIn, valueIn):  /*** keyIn: community ID of a vertex x in part X valueIn: (x, neighbors of  x) ***/ (x, neighbors) := valueIn communityId := keyIn keyOut :=  x valueOut := (communityId, neighbors ) output (keyOut, valueOut) for y? in neighbors:  keyOut := y? valueOut := (communityId, x) output (keyOut, valueOut)  Reduce(keyIn, valueIn): X?:= empty set C := empty set v  := keyIn if v is in part X:  (communityId, neighbors) := valueIn output (communityId, v, neighbors)  else: for (communityId, x) in valueIn:  add x to X? add communityId to C  for communityId in C: keyOut := communityId valueOut := (v, X?) output (keyOut, valueOut)     Figure 7. An example of an augmented partition.
+
+C. Refining The refining step is to compute quasi-bicliques for the core  vertices of each augmented partition. This is achieved by first assigning each augmented partition to a reducer. And then each reducer runs a sequential algorithm to compute quasi- bicliques for augmented partitions assigned to it.  The following theorem ensures the correctness.
+
+Theorem 2. Given a partitioning result P = {(X1, Y1, E1), (X2, Y2, E2), ? , (Xk, Yk, Ek)} of a bipartite graph G = (X, Y, E), let C(i) = (Xi, Yi, Ei) and Si = { -quasi-bicliqueA(C(i))(v) for all v Xi} for all i = 1, 2, ?, k. We have that S1 ? S2 ? ??? ? Sk = { - quasi-bicliqueG(v) for all v 	 X}.
+
+Proof. By definition we have X1 ? X2 ? ??? ? Xk = X, so it suffices to prove that -quasi-bicliqueA(C(i))(v) = -quasi- bicliqueG(v)  for all v in Xi, i = 1, 2, ?, k.
+
+Let v be a vertex in Xi. Since C(i) is a partition, by definition Yi contains all the neighbors of v. Then by the definition of augmentation, AYC(i) = Yi and AXC(i) contains all the vertices in X which share at least one neighbor with v. Thus we have that -quasi-bicliqueG(v) ? AXC(i) ? AYC(i). Since A(C(i)) is an induced graph and -quasi-bicliqueG(v) ? AXC(i) ? AYC(i), it follows that -quasi-bicliqueA(C(i))(v) must be equal to -quasi-bicliqueG(v).
+
+The pseudo-code is shown in Algorithm 3. Sequential quasi-biclique mining algorithms have been extensively studied [1], and the one used in our experiments is shown in Algorithm 4 for completeness.
+
+Algorithm 3: Refining Map(key, value):  /*** key: community ID of a vertex v value: (v, neighbors of v) ***/  output (key,  value)  Reduce(keyIn, valueIn): X?:= empty set Y? := empty set E? := empty set A? := empty set for (v, neighbors) in valueIn:  if v is in part X: add v to X? for y in neighbors: add (v, y) to E? add y to Y?  else: add v to Y? for x in neighbors: add (x, v) to E? add v to A?  G? := (X??A?, Y?, E?) B := compute { -quasi-bicliqueG?(x):  x 	 X?} using a  sequential algorithm output B  Algorithm 4: Sequential Quasi-Biclique Mining Input: (1) a bipartite graph G = (X, Y, E) (2) a real number (0, 1] (3) S ? X  Output: { -quasi-bicliquesG(x):  x 	 S} C := empty map Ans := empty set for x in S:  X? := empty set Y? := neighbors of x key := MD5 checksum of Y? C[key] := (X?, Y?)  for key in C.keys(): M := empty map for y in C[key].second: for x in y?s neighbors: if x is in M.keys(): M[x] := M[x] + 1 else: M[x] := 1 for x in M.keys(): if M[x] >= ? |C[key].second|: add x to C[key].first  for key in C.keys(): add  C[key] to Ans  output Ans
+
+IV. EXPERIMENTS  A. Experiment Setting Our experiments are run on a Hadoop-0.20 cluster  composed of 14 machines, each of which is equipped with one QuadCore Xeon E5520 CPU, 8GB RAM, six 300GB disks     and the CentOS-5.3 OS. The Giraph algorithms are implemented with Giraph release 0.2.0.
+
+For partitioning, 15 workers (mappers) are used to run Giraph. For augmenting and clustering, 15 mappers and 15 reducers are used.
+
+Datasets are extracted from web browsing logs provided by TrendMicro Research Lab. Each log record contains the domain and IP of a visited website. There would be an edge between a domain and an IP in the constructed bipartite domain-IP graph if and only if the domain and IP ever appear in the same log record.
+
+Through all of the experiments, the following parameter settings are used. When running the partitioning algorithm, a vertex?s community ID is changed only if greater than 66% of its neighbors have a community ID different than its current one and the convergence criterion is reached if more than 99.9999% of X-part vertices stop to change community IDs.
+
+The threshold is set to 0.8 when computing -quasi- bicliques.
+
+B. Scalability Evaluation The scalability of our algorithm is verified by gradually  increasing the number of input vertices and observing the growth curves of CPU time and I/O workload.
+
+Totally two hours of web browsing logs from 2013/01/15 00:00AM to 2013/01/15 2:00AM are used in this experiment.
+
+By the results shown in Figure 8 and Figure 9, the CPU time and I/O workload of our algorithm grow linearly as the input vertices increase.
+
+Figure 8. CPU time vs. number of vertices.
+
+Figure 9. I/O workload vs. number of vertices.
+
+C. Convergence Rate Evaluation Theoretically the partitioning algorithm may take a long  time to reach the convergence criterion in the worst case when the input graph is large. However, in practice if the input graph has its underlying communities similar to bicliques the convergence rate is usually quite fast. Thus we would like to evaluate the convergence rate of our partitioning algorithm on real world domain-IP graphs.
+
+In this experiment, we gradually increase the number of input vertices to our partitioning algorithm and observe how the convergence rate changes. Totally two hours of web browsing logs from 2013/01/15 00:00AM to 2013/01/15 2:00AM are used in this experiment. By the results shown in Figure 10, it takes at most twelve iterations to reach the convergence criterion and the number of required iterations is independent of the input size.
+
+Figure 11 shows that the time to reach the convergence criterion rises as we gradually enlarge the input graph. It is caused by the increase of messages produced in each iteration.
+
+The message complexity can be reduced by some tricks if necessary. For example, each vertex can maintain the last values sent from its neighbors so that vertices whose values do not change don?t have to send their values to neighbors again.
+
+We didn?t apply the trick to optimizing the message complexity because it usually takes a few minutes to converge and cannot be the performance bottleneck of our system.
+
+Figure 10. number of required iterations vs. number of vertices.
+
+Figure 11. converge time vs. number of vertices.
+
+D. Graph Decomposition Evaluation We decompose the graph into augmented partitions so that  there are no dependencies between any two augmented partitions in successive mining of bi-cliques. Therefore, the     parallelism is dominated by the max part resulting from decomposition.
+
+One of the typical graph decomposition methods is to compute connected components [7, 20]. To evaluate our decomposition method, we compare the maximum augmented partition with the maximum connected component in the bipartite graph constructed by using web browsing logs from 2013/01/15 00:00AM to 2013/01/15 1:00AM. The result is shown in Figure 11, where the maximum augmented partition is smaller than one-tenth of the maximum connected components. It proves that our decomposition method is more effective and can lead to better parallelism.
+
+Figure 11: size of the max part after decomposing 3.4 million of input vertices.
+
+E. Performance Comparison We compare the performance of our proposed algorithm  (GMR) with the standard MapReduce algorithm (SMR). SMR consists of two MapReduce jobs: Enumeration and Deduplication. The Enumeration job is to enumerate all quasi- bicliques, and the Deduplication job is to eliminate duplicate quasi-bicliques from the output of the Enumeration job. The details are described in Algorithm 5 and 6.
+
+Algorithm 5: Enumeration Map(keyIn, valueIn):  /*** keyIn: a vertex y in part Y valueIn: neighbors of y ***/ for x? in valueIn:  keyOut := x valueOut := (keyIn, valueIn) output (keyOut, valueOut)  Reduce(keyIn, valueIn): X? := empty set Y? := empty set M := empty map for (y?, neighobrs) in valueIn:  add y? to Y? for x? in neighbors:  if x? is in M.keys(): M[x?] := M[x?] + 1 else:  M[x?] := 1 for (x?, cnt) in M:  if cnt >= ?|Y?|: add x? to X?  keyOut := keyIn vaueOut := (X?, Y?) output (keyOut, valueOut)  Algorithm 6: Deduplication Map(keyIn, valueIn):  /*** keyIn: a vertex x in part X valueIn: the -quasi-biclique for x ***/ keyOut := MD5 checksum of valueIn valueOut := valueIn output (keyOut, valueOut)  Reduce(keyIn, valueIn): output valueIn  The bipartite domain-IP graph is constructed by using web browsing logs from 2013/01/15 00:00AM to 2013/01/15 1:00AM. The resulting graph contains 3.4 millions of vertices, among which 1.3 millions are domains and 2.1 millions are IPs. The results are shown in Figure 12 and Figure 13 where GMR is able to reduce CPU time by 80% and I/O workload by 95%, compared with SMR.
+
+Figure 12. CPU time for 3.4 millions of input vertices.
+
+Figure 13. I/O workload for 3.4 millions of input vertices.
+
+
+
+I. CONCLUSIONS AND FUTRUE WORK Quasi-biclique mining plays an important role in providing  security services. In this work, we propose a fast algorithm for quasi-biclique mining in web-scale graphs. The main idea is to partition the graph into communities by using an iterative Giraph program so that each community is smaller enough to be processed by a single reducer in parallel. We also prove the convergence of our partitioning algorithm.
+
+Our ongoing research includes extending the partitioning algorithm for more general bipartite graphs. Our partitioning algorithm is based on the assumption that the input graph is composed of biclique-like communities. The assumption is generally true for domain-IP graphs but may fail to hold for other kinds of graphs like website-client graphs, machine-file graphs and customer-product graphs. Another interesting research direction is to investigate the possibility of using GraphLab [9] and distributed graph databases [5] to further improve the performance.
+

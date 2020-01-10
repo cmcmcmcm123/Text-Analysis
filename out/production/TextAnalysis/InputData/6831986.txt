@@ -1,0 +1,152 @@
+Mechanisms of Optimizing MapReduce Framework  on High Performance Computer
+
+Abstract?With the amount of data growing constantly and exponentially, the industry has encountered an unprecedented challenge of efficiently and reliably processing a tremendous amount of data. High performance computer has played a major role in the field of big data processing for its serious computational power and super-large storage. However, it remains some inevitable drawbacks to efficiently utilize the HPC  elatively lower availability and usability. We propose to implement MapReduce framework on HPC to solve above problems and extensively expand the application field of HPC. We design a workable plan to deploy Hadoop on HPC with a Lustre file system, and tune Lustre to a better performance based on the nature of data access in Hadoop. Virtual memory disk is proposed to efficiently buffer temporary data and store intermediate data. By taking advantage of high-speed interconnect system of HPC, the intermediate data can be transferred efficiently from map task to reduce task, which cannot be achieved in a Hadoop system on server cluster since the rate of data flow is bounded by the bandwidth of low-speed network, such as Ethernet. The evaluation driven by the standard benchmarks provided in Hadoop package shows that after applying the proposed optimization method, the Hadoop system on HPC gets better performance than Hadoop system on server cluster, especially when handle data-intensive applications.
+
+
+
+I. INTRODUCTION As there is a dramatic growth in the volumes of data  analyzed nowadays, the industry calls for scalable and reliable means to handle big data. High performance computers have been widely used to run extremely data-intensive applications, ranging from scientific computing to petroleum seismic exploration and bio-genetic area etc. High performance computer has some inevitable drawbacks while handling big data even though, including  ? Relatively lower availability. Sustained running of applications can not be guaranteed as the mean time between failures (MTBF) of a system is getting shorter when the system evolves to be larger and more complex. Checkpoint is the most popular and mature mechanism of fault tolerance in HPC, but its overhead is becoming unacceptable in ultra large systems [1]. The problem of reliability and availability in HPC is highly concerned.
+
+? Lower Abstraction Level of Programming Model.
+
+Programmers develop applications on HPC with parallel programming models, namely MPI, PVM and OpenMP.
+
+These models increase the difficulty of programming by making programmers handle every single detail of  communication and synchronization. Lower level of abstraction of the programming model causes worse readability, maintainability and extensibility [2].
+
+Recent trends in the area of science and industry show that, MapReduce framework has become an efficient and reliable scheme to handle big data. It is an elegant programming model which allows the programmer to focus more on ?what? than on ?how? by raising the level of abstraction.
+
+Programmers specify the computation in terms of a map and a reduce function, and the underlying runtime system automatically parallelizes the computation across large-scale clusters of machines, handles machine failures, and schedules inter-machine communication to make efficient use of the network and disks [3].
+
+It is our intent here to improve the usability and reliability of high performance computer by efficiently deploying MapReduce framework on it, so that the application on HPC can be developed easily and run stably. Meanwhile, MapReduce applications can get better performance by taking good use of the high-speed interconnect system in HPC. As this can expand the area of application and thus increase the utilization of supercomputer, it is helpful for the survival and thriven of supercomputing centers.
+
+
+
+II. CHALLENGE The architecture of a HPC system can be distinguished into  massively parallel processers (MPP) and cluster, between which the main difference in the modern sense is that in a MPP system computing units are not equipped with local storage. Because MapReduce was originally designed for clusters of commodity machines, our major theme in research is deploying MapReduce framework on a MPP system instead of a cluster system.
+
+The main components of a MPP system are computing units, high-speed interconnect system and shared storage system. As mentioned above, MapReduce framework is not compatible with shared storage system and thus can not be directly deployed on a MPP system. Running MapReduce applications on HPC is still a challenge.
+
+The performance advantage of MapReduce framework lies in the strategy of moving computation to data. A computation requested by an application is much more efficient if it is executed near the data it operates on. This is especially true when the size of the data set is huge. This minimizes network congestion and increases the overall throughput of the system.
+
+on Embedded and Ubiquitous Computing  DOI 10.1109/HPCC.and.EUC.2013.104   on Embedded and Ubiquitous Computing  DOI 10.1109/HPCC.and.EUC.2013.104     But in a MPP system all the data are stored in the shared storage, so large amounts of data must be moved towards computing units. Concurrent data accesses from all nodes in the system require that the shared storage system is able to cope with a large number of access requests at the same time.
+
+Data access has become the most time-consuming part of a data-intensive application. Even if we implement MapReduce framework on the system, the application can not avoid the I/O bottleneck of the shared storage system.
+
+Our proposed work plans on implementing and optimizing the MapReduce framework on HPC by taking advantages of its features of high-speed interconnect and shared storage.
+
+
+
+III. PROPOSED SOLUTION In this section, we intend to implement Hadoop on a high  performance computer with Lustre file system, as Hadoop is the most popular open source implementation of MapReduce and Lustre is the most widely adopted file system in HPC.
+
+A. Deploying Hadoop There are two primary components at the core of Apache  Hadoop: the MapReduce parallel processing framework and the Hadoop Distributed File System (HDFS). HDFS is a fault tolerant and self-healing distributed file system designed to turn a cluster of industry standard servers into a massively scalable pool of storage, which means HDFS can not be directly deployed on the shared file system. But since the compute nodes are equivalent to have independent storage when we assign different directories of Lustre to them, we can exploit HDFS to turn these directories into a pool of storage on which the MapReduce framework can run.
+
+There are some possibilities for optimization in the Hadoop system based on Lustre due to its characteristic of shared data reading. Though MapReduce framework always assign tasks to the nodes where the input data are stored, an idle node needs to copy unprocessed data from other nodes in order to accept new tasks. In such case, data must be copied among the nodes. But In Hadoop system based on Lustre, as tasks theoretically can locally fetch the data of any node, the data copy is unnecessary. So we designed a scheme to avoid the unnecessary copy of data.
+
+Hadoop provides a stand-alone mode for programmers to develop and debug their applications. In this mode Hadoop runs on one single node and all the processes are running on one local JVM. Like in HPC, the data of different tasks are stored on a shared storage. The difference between them is that in stand-alone mode any task can locally access any data on the storage.
+
+Because of this, we modified the underlying mechanism of Hadoop and incorporated some aspects of the stand-alone mode to avoid such data copy between nodes. Unlike the stand-alone mode, nodes in Hadoop have their own JobTrakcker or TaskTracker daemons that comprise the MapReduce framework. The NameNode and the DataNode daemons are eliminated from our modified Hadoop and the MapReduce framework runs on Lustre file system instead of HDFS.
+
+For reliability, file data is simply replicated to multiple storage nodes in HDFS. As long as at least one replica of a data chunk is available, the consumer of that data will not know of storage server failures [4]. The replication scheme also contributes to improving the load balance of nodes. When the node that contains some data chunk is busy, the task can be assigned to another node which has a copy of that data chunk. We abolished this replication scheme in our modified Hadoop. Because in a Hadoop system based on Lustre the reliability is supported by Lustre, the data replication is too expensive and no longer needed. An idle node can accept any task since tasks on it can locally access any input data. Overall, the replication scheme is no longer effective in our modified Hadoop system.
+
+B. Tuning Lustre A Lustre file system has three major functional units:  clients that access and use data, metadata server (MDS) that stores namespace metadata, and object storage server (OSS) that store file data on one or more object storage targets (OSTs). One of the main factors leading to the high performance of Lustre file systems is the ability to stripe data over multiple OSTs [5]. A file can be striped over as many OSTs as it takes to achieve peak aggregate bandwidth of these OSTs. Multiple clients can concurrently and efficiently access large files on Lustre by file striping.
+
+A MapReduce application would be divided into thousands of map and reduce tasks running in parallel in a large Hadoop system. Every time a task accesses a file it needs to interact with multiple OSTs since the file are striped over multiple OSTs and each OST has one unique part of the file. Large numbers of simultaneous tasks generate large numbers of concurrent access requests. The average number of access requests that an OST need processes simultaneously is on the same order of magnitude as the number of tasks running in the system. As shown in Fig. 1, multiple tasks fiercely competing for limited OSTs causes I/O bottlenecks.
+
+Task 0  stripe 0 1 0 1  OST 0 OST 1 OST 2  File 0 File 1  Task 1  File 2 File 3  0 1 0 1 0 1 0 1  Task 2  File 4 File 5  Fig. 1  File striping causes fierce competition of OSTs  After analyzing the data flow through each process of MapReduce framework, we find that each file is accessed by at most one task at the same time. There is no performance advantage to stipe file for concurrent accessing. Inspired by commodity servers with local storage, we propose to match compute nodes with independent OSTs. Fig. 2 shows that tasks hold data only in their assigned OSTs. Data are not stripped because no file is stored across multiple OSTs.
+
+Though the number of nodes far outstrips the number of OSTs and one OST can be assigned to several nodes, the competition of OSTs declines sharply and high throughput of data is achieved by handling data this way.
+
+OST 0 OST 1 OST 2  Task 0  File 0 File 1  Task 1  File 2 File 3  Task 2  File 4 File 5  Fig. 2  Tasks hold data in independent OSTs  When the new scheme was deployed, the results of actual application indicated that the performance of Lustre had a certain extent of enhancement. And we discovered some potential of optimization when we benchmark the scheme.
+
+There are some imbalances in OST load since the MapReduce framework cannot achieve the absolutely equal distribution of tasks. Particularly at the end of map and reduce phase, some nodes are busy processing tasks while others are idle for there are no more tasks to be processed. Therefore we reconfigured the Lustre and distributed all the files randomly over all the OSTs, as shown in Fig. 3. The number of access requests of OSTs is not increased when compared with Fig. 2 since files are not stripped.
+
+OST 0 OST 1 OST 2  Task 0  File 0 File 1  Task 1  File 2 File 3  Task 2  File 4 File 5  Fig. 3  Distribute unstripped files over multiple OSTs  The comparison of the three different configuration of Lustre is shown in Table 1.
+
+TABLE I DIFFERENCES AMONG 3 LUSTRE CONFIGURATION  Stripe file Assign OSTs Randomly distribute file  Access request high low low Competition high low low Throughput low high high Load balance of OSTs  supported by Lustre  task level load balance  supported by Lustre  C. Unifying Task Buffer with Virtual Memory Disk In the shuffle phase of Hadoop, the map tasks continuously  produce intermediate data on the storage and the data needs to get copied over to the nodes on which the reduce tasks are going to run in order to consume the output of the map tasks.
+
+The copy phase can not be omitted even if reduce task can directly fetch the data on Lustre, because reduce tasks would start to merge data from different map tasks while copying them to local memory. The map and reduce tasks do not directly write to the storage rather they take advantage of buffering the writes. Each task has a circular memory buffer and when the buffer is filled up to a certain threshold, a separate thread gets triggered which spills the content in the buffer to the storage. At the end of processing most data spilled to the storage need to be read back to memory again, sorted and merged into larger files.
+
+It is obvious that increasing the size of task buffer would reduce the number of I/O operations. It would enhance the  performance especially when the bottleneck is tied to memory/storage bandwidth. Our idea of optimization comes from increasing buffer size, but is more of it.
+
+Since the memory in a node are precisely allocated to TaskTracker, map tasks and reduce tasks, there are memory quotas for each task. When the number of tasks running on the node decreases and some memory are released, a task cannot take use of the free memory in the node. To utilize the wasted memory caused by separated buffer, we propose to create a big unified buffer to cache the temporary and intermediate data. Fig. 4 shows that we minimize the buffer size of tasks and utilize the free memory to create a big virtual memory disk (VMD).
+
+Lustre  Memory  Virtual Memory Disk  bu ff  er  task  bu ff  er  task  Fig. 4  Minimize the buffer size and turn the free memory into a virtual memory disk  Temporary data spilled out from buffer can be directly written to the VMD. Map task reads temporary data from VMD to generate intermediate data, and in the end the intermediate data are written to VMD though buffer. Because all those operations take place in memory, it is much more efficient than writing temporary and intermediate data to storage.
+
+Another transformative advantage of using VMD is that it increases the bandwidth of data flow from map task to reduce task. Fig. 5 shows the path of data flow in Hadoop on a server cluster. Network has become a scarce resource on a large server cluster since the servers are connected by commodity network, for instance, gigabit Ethernet. Intermediate data are written to disk and transferred over low-speed network from map task to reduce task. In a Hadoop system on HPC, we replaced the disk with VMD, low-speed network with high- speed interconnect system in the path of data flow, as shown in Fig. 6. It can achieve high transfer bandwidth since the speed of VMD and interconnect system is matched with the speed of memory. This enhancement of data flow can?t be achieved by increasing task buffer, since intermediate data are not saved in the buffer.
+
+memory of map  task disk network  memory of reduce  task  Fig. 5  Path of data flow in a Hadoop system on server cluster  memory of map  task  virtual memory  disk  high-speed interconnect  system  memory of reduce  task  Fig. 6  Path of data flow in a Hadoop system on HPC  Because the intermediate data are continually produced and consumed, and the temporary data are resided in memory for short time intervals, the limited capacity of VMD is sufficient in most case. In response to the condition of occasional insufficient storage space in VMD, we redirect the temporary     and intermediate data of tasks to Lustre when VMD is filled up to a certain threshold. Hadoop uses a round robin manner to allocate a file system path for a new data block, and the path is appointed in mapred.local.dir in the configuration. We add both VMD and Lustre directory to the configuration. The allocation strategy of paths is modified to make the VMD directory be used in preference to Lustre in most case and Lustre is preferred when VMD is running out of space.
+
+This way, Lustre file system is mainly used to read input of map tasks and write output of reduce tasks. It can significantly accelerate the data flow from map task to reduce task while alleviating the I/O stress of Lustre.
+
+
+
+IV. EVALUATION In this section, we evaluate the proposed scheme of  deploying and optimizing Hadoop on high performance computer system.
+
+A. Experimental Environment Our experiments were performed on TH-1A supercomputer  at China's National Supercomputing Center in Tianjin. We used 60 compute nodes, each of which has Intel Xeon X5670 CPU (6 cores, 2.93 GHz) and 24 GB of RAM. TH Express-1 interconnects the compute nodes with the Lustre file system.
+
+The bidirectional bandwidth of TH Express-1 measured by Iperf is 15.5 Gbit/sec. The Lustre we used consists of 1 MDS and 10 OSTs, each OST has 16 Seagate enterprise-class disks (2 TB) and 12 GB of RAM. We also conducted an experiment on a partition of TH-1A system where the compute nodes are equipped with local disks and interconnected by a gigabit Ethernet. The number of compute nodes we used is also 60.
+
+The bidirectional bandwidth of Ethernet measured by Iperf is 934 Mbit/sec. We deployed a Hadoop system in this partition to compare its performance with the Hadoop system on Lustre.
+
+B. Benchmark We chose 3 benchmark programs provided in Hadoop  software package: WordCount, TeraSort and BigMapOutput.
+
+Table 2 shows the data sizes of the 3 programs in different phases when processing 200 GB input data.
+
+TABLE II THE DATA SIZES OF 3 BENCHMARK PROGRAMS IN DIFFERENT PHASES  Benchmark Input data Intermediate data Output data WordCount 200 GB 27 GB 5 GB TeraSort 200 GB 200 GB 200 GB BigMapOutput 200 GB 600 GB 200 GB WordCount is a typical MapReduce application that counts  the frequency of each word in the input files. The output data size of WordCount is rather small compared with the input data.
+
+TeraSort sorts the unordered large volumes of data and its data size changes little in the 3 different phases. It is widely used to benchmark the performance of different systems.
+
+TeraSort is a basic operation because large sorts need to be done daily in enterprise application.
+
+BigMapOutput is designed to test the performance of Hadoop system when map tasks generate large amount of  intermediate data. The program's functionality is to transform the data three times as big and then shrink it to its original size.
+
+C. Results The source code of Hadoop is modified and recompiled to  implement the proposed solution. We set up a Hadoop system on TH-1A by installing the modified Hadoop on it. In order to compare and contrast the performance of the modified Hadoop system on HPC with common Hadoop system on server cluster, we also set up a Hadoop system on cluster-like partition of TH-1A, where the compute nodes are equipped with local disks and interconnected with Gigabit Ethernet. For succinct description, the Hadoop system on HPC is abbreviated as HPCHadoop and the Hadoop system on server clusters is abbreviated as ClusterHadoop in the remainder of this article.
+
+1)  TestDFSIO performance of Hadoop The TestDFSIO benchmark is a read and write test for the  underlying file system of Hadoop provided in Hadoop package. It is helpful for tasks to stress test the file system and to discover the performance bottlenecks. It can give a first impression of how fast the Hadoop system is in terms of I/O.
+
+We run the TestDFSIO benchmark on both of the HPCHadoop ClusterHadoop. Table 3 shows the average I/O throughput speed of each task in different circumstances.
+
+TABLE III THE AVERAGE THROUGHPUT SPEED OF DIFFERENT HADOOP SYSTEM TESTED  BY TESTDFSIO  Data size ClusterHadoop HPCHadoop write  (MB/s) read  (MB/s) write  (MB/s) read  (MB/s) 100 GB (100? 1 GB) 17.25 25.79 30.56 23.32 100 GB (500? 0.2 GB) 6.35 11.45 12.90 9.34 100 GB (1000? 0.1 GB) 6.52 10.66 11.52 8.70 In ClusterHadoop, data blocks are replicated to 3 different  nodes. When writing a data block to a node, the copies of the block need to be transferred to another 2 nodes by the node it firstly written to. The write performance of HDFS is restricted by the limited bandwidth of Ethernet as the copies are transferred through it. Even though we temporarily set the replication number of data block to 3 in HPCHadoop, the write performance of it outperforms the ClusterHadoop since the copies are transferred through high-speed interconnect system.
+
+On the read test the performance of ClusterHadoop has a certain improvement since data are mainly read locally by tasks. As the file size decreases and the number of files increases, the performance of Hadoop system drops sharply, which indicates both of the Lustre and HDFS file system are more suitable for writing and reading large files.
+
+From the table we can conclude that the TestDFSIO performance of HPCHadoop and ClusterHadoop are about the same.
+
+2)  Hadoop System Performance To evaluate the practical performance of HPCHadoop and  ClusterHadoop, we ran the 3 benchmark programs on them.
+
+We set the number of task slots to12 in order to maximize the utilization of CPU, which means each core in compute nodes runs a task. The size of input data is 100 GB. In HPCHadoop, the input data of benchmarks are striped over Lustre. Fig. 7 shows the run time of benchmarks on ClusterHadoop and HPCHadoop.
+
+WordCount TeraSort BigMapOutput  Ti m  e (s  )  ClusterHadoop HPCHadoop  Fig. 7  Run time of benchmarks on ClusterHadoop and HPCHadoop         0  100  200  300  400  500  600  I/O tr  af fic  (G B  /s )  Time (s)  ClusterHadoop HPCHadoop  Fig. 8  I/O traffic in HDFS and Lustre while running BigMapOutput  As can be seen from the figure, the run time of benchmarks on HPCHadoop is longer than that on ClusterHadoop, because the Lustre file system in HPCHadoop performs poorly when processing large amount of concurrent data accesses. Fig. 8 shows the I/O traffic measured by Collectl in HDFS and Lustre while running BigMapOutput. The peak of the I/O traffic in HPCHadoop at the beginning indicates the reading process of input data. Lustre performs well when handle this scale of data. During the map and reduce phase, tasks generate lots of small temporary files and write them to Lustre.
+
+Frequent writing and reading of small files drastically degrade the performance of Lustre. The I/O bottleneck of Lustre limits the overall throughput of data and thus slows down the performance of HPCHadoop.
+
+Though the Hadoop system can be adapted to HPC architecture after modifying, the performance of it needs to be improved for practical applications.
+
+3)  Effect of Tuning Lustre We proposed 3 ways of configuring Lustre file system:  stripe files across all the OSTs, assign OST to nodes and randomly distribute the complete file over the OSTs. The benchmarks were run on HPCHadoop with different configuration and the results are shown in Fig. 9. The virtual memory disk is created with tmpfs supported by Linux kernel.
+
+Disabling file stripe can alleviate the competition of OSTs by decreasing the number of data accesses. OST assignment makes tasks can regard the OST as its local storage. So the HPCHadoop with OST assignment has a better performance than that with file striping. Since some tasks finished earlier  than others, the assigned OSTs of these tasks get idle in such case. By randomly distributing the complete file over the Lustre without stripping, we achieved a better load balance of OSTs. Randomly Distributing files leads to higher performance than assigning OSTs as both of them have a lower competition of OSTs.
+
+WordCount TeraSort BigMapOutput  Ti m  e (s  )  HPCHadoop (stripe file) HPCHadoop (assign OST)  HPCHadoop (random)  Fig. 9  Run Time of benchmarks with different Lustre configuration  4)  Effect of Virtual Memory Disk To illustrate the performance improvement by unifying task  buffer with VMD, we compared this optimization method with increasing task buffer. According to our analysis, VMD is only effective when supported by the high-speed interconnect system in HPC, so we applied VMD on ClusterHadoop for contrast. Lustre is configured to randomly distribute the files in these experiments. The results are shown in Fig. 10.
+
+WordCount TeraSort BigMapOutput  Ti m  e (s  )  ClusterHadoop ClusterHadoop (buffer) ClusterHadoop (VMD)  HPCHadoop HPCHadoop (buffer) HPCHadoop (VMD)  Fig. 10  Run Time of benchmarks on Hadoop with bigger buffer or VMD  Bigger buffer accommodates larger amount of temporary data in memory, so it reduces the frequency of write to storage.
+
+With bigger buffer, both of the ClusterHadoop and HPCHadoop have a better performance than those with smaller buffer.
+
+In HPCHadoop, the use of VMD greatly enhanced the performance of benchmarks, as temporary data are mainly kept in VMD and intermediate data are transferred from VMD of map task to the VMD of reduce task through high-speed interconnect system. Fig. 11 shows network and I/O traffic measured by Collectl of HPCHadoop before and after applying VMD. We can see that there is a burst of network traffic at the end of map phase on HPCHadoop, which demonstrates the shifting of intermediate data in VMDs through high-speed network. However, before applying VMD intermediate data must be read from the storage of map tasks,     which is Lustre, and the tasks cannot take advantage of the high-speed network even though data are transferred through it. So the HPCHadoop has a weak performance without applying VMD. Fig. 12 shows the difference of network and I/O traffic between ClusterHadoop and HPCHadoop after applying VMD. As can be seen from the figure, the use of VMD has little effect in ClusterHadoop because the throughput of intermediate data is bounded by the bandwidth of Ethernet.
+
+0  100  200  300  400  500  600  N et  w or  k tra  ffi c  (G B  /s )  Time (s)  HPCHadoop HPCHadoop(VMD)  0.5  1.5  2.5  3.5  4.5   0  100  200  300  400  500  600  I/O tr  af fic  (G B  /s )  HPCHadoop HPCHadoop(VMD)  Fig. 11 Network and I/O traffic in HPCHadoop before and after applying VMD while running BigMapOutput          0  50  100  150  200  250  300  N et  w or  k tra  ffi c  (G B  /s )  Time (s)  ClusterHadoop(VMD) HPCHadoop(VMD)         0  50  100  150  200  250  300  I/O tr  af fic  (G B  /s )  ClusterHadoop(VMD) HPCHadoop(VMD)  Fig. 12 Network and I/O traffic in ClusterHadoop and HPCHadoop after applying VMD while running BigMapOutput  The results of experiments show that, by applying VMD, the performance of HPCHadoop gets better than ClusterHadoop, especially when running data-intensive applications like TeraSort and BigMapOutput.
+
+
+
+V. CONCLUSIONS In this paper, we intend to deploy MapReduce framework  on high performance computer systems which are equipped with shared storage. We proposed a workable plan to install Hadoop on a HPC with Lustre file system, which averts remote read of data based on the shared data access characteristic of Lustre. Since the performance of Hadoop system on HPC is limited by the I/O bottleneck of Lustre, we studied to tune the Lustre to a better performance to accommodate Hadoop system. We also proposed to use virtual memory disk to alleviate the I/O stress of Lustre and optimize the process of transferring intermediate data. An algorithm is designed to maximize the utilization of virtual memory disk and handle the occasional out-of-space condition.
+
+The evaluation driven by the standard benchmarks provided in Hadoop package clearly demonstrates the advantage of the proposed solution in the following two ways. First, the virtual memory disk utilizes free memory to store the temporary and intermediate data spilled out from buffer, which significantly reduces the frequency of disk write. Second, by taking advantage of the high-speed interconnect system of HPC, the intermediate data can be transferred efficiently from virtual memory disk of map task to virtual memory disk of reduce  task. By applying the proposed optimization method, the performance of Hadoop system on HPC gets better than that of Hadoop system on server cluster, especially when handle data-intensive applications. In the future, we plan to optimize the performance of Hadoop by taking advantage of the data block information in Lustre.
+
+
+
+VI. RELATED WORK There is relatively little research work appeared in present  literature in this area. Reference [10] firstly proposes to deploy Hadoop on Lustre by using OSSs as compute nodes, and designs a scheme to avoid remote data access with hardlinks. On production environments Lustre is the vital resource that would affect the stability of the whole system, so installing Hadoop on Lustre can?t be a useful framework for practical applications.
+
+Reference [11] deals with the above problem by using independent compute nodes to run Hadoop daemon processes.
+
+It also uses hardlink to make data be read locally. Small-scale experiments show that the Hadoop based on Lustre outperforms the Hadoop based on server cluster. Since the ratio of compute nodes to OSTs is relatively small, experiments don?t reveal the I/O bottleneck of Lustre.
+
+Reference [12] deploys Hadoop on a large HPC environment and finds the I/O bottleneck of Lustre drastically hurt the performance of Hadoop.
+

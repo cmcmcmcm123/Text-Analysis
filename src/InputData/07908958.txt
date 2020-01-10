@@ -1,0 +1,316 @@
+GPU-Accelerated Parallel Hierarchical Extreme Learning Machine on Flink for Big Data
+
+Abstract?The extreme learning machine (ELM) has become one of the most important and popular algorithms of machine learning, because of its extremely fast training speed, good gen- eralization, and universal approximation/classification capability.
+
+The proposal of hierarchical ELM (H-ELM) extends ELM from single hidden layer feedforward networks to multilayer percep- tron, greatly strengthening the applicability of ELM. Generally speaking, during training H-ELM, large-scale datasets (DSTs) are needed. Therefore, how to make use of H-ELM framework in processing big data is worth further exploration. This paper proposes a parallel H-ELM algorithm based on Flink, which is one of the in-memory cluster computing platforms, and graphics processing units (GPUs). Several optimizations are adopted to improve the performance, such as cache-based scheme, reason- able partitioning strategy, memory mapping scheme for mapping specific Java virtual machine objects to buffers. Most impor- tantly, our proposed framework for utilizing GPUs to accelerate Flink for big data is general. This framework can be utilized to accelerate many other variants of ELM and other machine learning algorithms. To the best of our knowledge, it is the first kind of library, which combines in-memory cluster comput- ing with GPUs to parallelize H-ELM. The experimental results have demonstrated that our proposed GPU-accelerated parallel H-ELM named as GPH-ELM can efficiently process large-scale  Manuscript received September 25, 2016; revised December 26, 2016; accepted March 16, 2017. This work was supported in part by the Key Program of National Natural Science Foundation of China under Grant 61432005, in part by the National Outstanding Youth Science Program of National Natural Science Foundation of China under Grant 61625202, in part by the International (Regional) Cooperation and Exchange Program of National Natural Science Foundation of China under Grant 6161101215, in part by the National Natural Science Foundation of China under Grant 61370095, Grant 61472124, and Grant 61662090, in part by the International Science and Technology Cooperation Program of China under Grant 2015DFA11240 and Grant 2014DFB30010, in part by the National High-Tech Research and Development Program of China under Grant 2015AA015305, and in part by the Key Technology Research and Development Programs of Guangdong Province under Grant 2015B010108006. This paper was recommended by Associate Editor G.-B. Huang. (Corresponding author: Kenli Li.)  C. Chen, K. Li, and Z. Tang are with the College of Information Science and Engineering, Hunan University, Changsha 410082, China, and also with the National Supercomputing Center, Changsha 410082, China (e-mail: chencen@hnu.edu.cn; lkl@hnu.edu.cn; ztang@hnu.edu.cn).
+
+A. Ouyang is with the College of Information Science and Engineering, Hunan University, Changsha 410082, China, the National Supercomputing Center, Changsha 410082, China, and also with the Department of Information Engineering, Zunyi Normal College, Zunyi 563006, China (e- mail: oyaj@hnu.edu.cn).
+
+K. Li is with the College of Information Science and Engineering, Hunan University, Changsha 410082, China, the National Supercomputing Center, Changsha 410082, China, and also with the Department of Computer Science, State University of New York, New Paltz, NY 12561 USA (e-mail: lik@newpaltz.edu).
+
+Color versions of one or more of the figures in this paper are available online at http://ieeexplore.ieee.org.
+
+DSTs with good performance of speedup and scalability, leverag- ing the computing power of both CPUs and GPUs in the cluster.
+
+Index Terms?Big data, deep learning (DL), Flink, GPGPU, hierarchical extreme learning machine (H-ELM), parallel.
+
+
+
+I. INTRODUCTION  A. Motivation  W ITH the rapid development of Internet and Internetof Things technologies, recent years have witnessed a surge of data at a fast speed. Due to the development of big data technologies, many decision methods based on the tra- ditional experience and intuition have been replaced by data analysis and data mining. Many researchers have focused on getting valuable information and knowledge from massive data with data mining or machine learning methods [1], [2].
+
+During the past years, the extreme learning machine (ELM) [3]?[5] has become one of the most important and popular algorithms of machine learning and artificial intelligence, because of its extremely fast training capacity, good generalization, and universal approximation/- classification capability. Unlike other traditional learning algorithms, e.g., back propagation (BP)-based neural net- works (NNs), ELM theories believe that the hidden layer of ELM does not need to be iteratively tuned and the parameters of the hidden layer can be generated randomly.
+
+Theoretically, Huang et al. [6], [7] have proved that with randomly generated hidden neurons, ELM still maintain its universal approximation capability. Tang et al. [8] proposed a hierarchical ELM (H-ELM) framework for multilayer percep- trons (MLPs), which is based on the universal approximation capability of the original ELM. This proposal has extended the original ELM algorithm from shallow architecture to deep architecture, largely strengthening the applicability of ELM.
+
+The H-ELM framework contains two main components: 1) several unsupervised feature encoding layers and 2) super- vised feature classification based on the original ELM. Unlike the greedy layerwise training of deep learning (DL), once the previous layer is established, the weights of the current layer are fixed without fine-tuning, making it more efficient in learning performance than the DL [8].
+
+Generally speaking, applications on MLPs (e.g., images/videos) usually require large-scale datasets (DSTs).
+
+As we know, there are many hidden layers in H-ELM frame- work. These factors engender the need for large amounts of computing resources and cost plenty of time to train  See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+mailto:chencen@hnu.edu.cn mailto:lkl@hnu.edu.cn mailto:ztang@hnu.edu.cn mailto:oyaj@hnu.edu.cn mailto:lik@newpaltz.edu http://ieeexplore.ieee.org http://www.ieee.org/publications_standards/publications/rights/index.html   This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+H-ELM framework, thus making it prohibitive to complete the training job on a single computer. How to make use of H-ELM algorithm in processing a large amount of data is worth further exploration, which constitutes one main challenge for researchers.
+
+Hadoop, an open source MapReduce framework [9], has been highly successful in implementing large-scale data- intensive applications on commodity clusters. Xun et al. [10] proposed a parallel mining algorithm for frequent item- sets using MapReduce. Ding et al. [11] proposed a novel attribute equilibrium dominance reduction accelerator (DCCAEDR) based on the distributed coevolutionary cloud model and MapReduce, aiming at the tremendous challenge of attribute reduction for big data mining and knowledge discovery.
+
+However, it is a disk-based system and every MapReduce stage can only interact with other stages through the Hadoop distributed file system (HDFS). In-memory cluster comput- ing platforms (e.g., Flink [12] and Spark [13]) are designed to process data-intensive applications with distributed in- memory architecture, and provide similar scalability, and fault-tolerance characteristics to Hadoop. Because of their in- memory parallel execution model which saves huge amounts of disk I/O operations time, they are more suitable for data mining and machine learning that require many iterative operations.
+
+Over the past few years, graphics processing units (GPUs) have emerged as parallel processors thanks to their high computational power and low price, especially for high- performance computing area. In many supercomputers, such as Tianhe and Titan, CPUs and GPUs cooperate together to produce powerful computing. The trend of using heteroge- neous CPU-GPU clusters is now mainstream. For example, each computing node of the Tianhe-1A has two Intel Xeon X5670 CPUs and one NVIDIA Tesla M2050 GPU. As with the high computing power of GPUs, many researchers have focused on utilizing GPUs to accelerate the DL and have obtained excellent effect. NVIDIA has developed deep NN library (cuDNN) [14] which is a GPU-accelerated library for deep NNs. Coates et al. [15] utilized a cluster of GPU servers with Infiniband interconnects and MPI to train extremely large networks (with over 1 billion parameters) within a couple of days.
+
+B. Contributions  Existing in-memory cluster computing platforms have been proven to be outstanding platforms for processing big data with high performance, high fault tolerance, high-level and easy programming model, and high compatibility with many open source stacks. Apache Flink is a new open source plat- form for both distributed stream and batch data processing.
+
+Spark and Flink are quite similar. As we know, H-ELM framework consists of many hidden layers, which are similar with the iterative operation. The in-memory parallel execution model provided by Flink can cache the data in the distributed memory in the cluster, thus saving huge amounts of disk I/O operations time between two layers. Through deep analysis of  the details of H-ELM, we find that Flink is a very appropriate platform for parallelizing H-ELM framework.
+
+Moreover, through analyzing the execution process of H-ELM framework, we find that some time-consuming sub- processes are appropriate for being executed in GPUs.
+
+Through accelerating them by GPUs, a high speedup will be achieved. However, in-memory cluster computing plat- forms, such as Flink and Spark can only run on CPUs now.
+
+That is to say, these platforms cannot leverage the available computing resources of GPUs, or benefit from the acceler- ation of GPUs, which may be present in the nodes of the cluster.
+
+In this paper, we have proposed a novel parallel H-ELM combining Flink and GPUs to process large-scale DSTs. Our algorithms are built on top of Flink, thus inheriting the exist- ing good reliability and expandability of Flink. Due to the fact that Spark and Flink are very similar, our design can be easily integrated into Spark. To the best of our knowledge, it is the first kind of library, which combines in-memory clus- ter computing with GPUs to parallelize H-ELM, inheriting the outstanding features of both in-memory cluster computing and GPU. The framework for utilizing GPUs to accelerate H-ELM on Flink is an extension of our previous work [16]. In this new framework, we proposed a heterogeneous task manage- ment for hybrid CPUs and GPUs, in which CPUs and GPUs cooperate together to fulfill the works assigned to them, thus achieving a better acceleration than our previous work. Our main contributions are as follows.
+
+1) The suboperations of H-ELM which need to be paral- lelized are parallelized on Flink, thus benefiting from the in-memory cluster computing. In the meantime, sev- eral optimizations are adopted to improve the scalability and performance of our parallelization. Furthermore, we accelerate our proposed parallel algorithm through lever- aging the high computing power of GPUs, which may be present in the clusters, thus improving the performance greatly.
+
+2) Our proposed parallel algorithm is based on both Flink and GPUs, thus inheriting the outstanding features of both Flink and GPUs. Our proposed parallel algo- rithm has good fault tolerance and reliability, supporting distributed file system, high performance for itera- tive computing, and high computing power provided by GPUs.
+
+3) Our proposed framework for utilizing GPUs to acceler- ate applications on Flink for big data is widely applica- ble, in which CPUs and GPUs cooperate with each other to fulfill the tasks with high performance. Many other variants of ELM and other machine learning algorithms can benefit from our proposed framework.
+
+The remainder of this paper is organized as follows.
+
+Sections II and III review related work and provide more background information. Section IV describes our proposed parallel H-ELM framework on Flink (PH-ELM). Section V presents details of accelerating our proposed parallel H-ELM framework by GPUs (GPH-ELM). Section VI analyzes our proposed algorithms. Section VII presents the performance results. Section VIII concludes this paper.
+
+This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+CHEN et al.: GPU-ACCELERATED PARALLEL H-ELM ON FLINK FOR BIG DATA 3
+
+II. RELATED WORKS  ELM was first proposed by Huang et al. [4], [5] to train single-hidden layer feedforward NNs (SLFNs). Thanks to the efforts of different scholars and researchers, ELM algorithm has been greatly developed and improved. Many researchers have come up with different variants of ELM algorithm.
+
+Liang et al. [17] proposed an online sequential ELM (OS- ELM) algorithm, which could train the data block of either fixed or unfixed sizes in an incremental quantity. Thus, it provides a way of utilizing the ELM algorithm to train a large number of data samples. Rong et al. [18] proposed an online sequential fuzzy ELM for function approximation and classification problems. Huang et al. [19] has put forward the semi-supervised ELM based on manifold regularization and ELM.
+
+With the development of ELM algorithm, many scholars have focused on the study of distributed ELM algorithm.
+
+He et al. [20] proposed the parallel ELM (PELM) algorithm based on MapReduce. Wang et al. [21] put forward the parallel OS-ELM based on OS-ELM and MapReduce model for train- ing the incremental data samples in parallel. Xin et al. [22] came up with ELM* algorithm which has higher efficiency than PELM.
+
+We can find that there are many matrix operations in H-ELM framework. Many works have focused on efficient par- allel matrix multiplication. Among traditional parallel matrix multiplication based on MPI, SUMMA [23] is the most popu- lar distributed matrix multiplication algorithm. It is obvious that these methods have the disadvantage that all the data needs to be resided in the shared memory of the cluster.
+
+Furthermore, these solutions require designing complicated fault tolerance mechanisms. To solve the low programmabil- ity of traditional distributed approaches, Schmidt et al. [24] proposed an approach to integrate R into [25]. However, this approach still suffers the fault tolerance problems. Recently, HAMA [26], which is based on Hadoop and MapReduce model, provides distributed matrix computations. However, the execution performance of HAMA is not efficient due to the overhead and disk operations of the MapReduce jobs.
+
+Due to the high computational performance of GPUs, many researchers from both academia and industry have proposed GPU-based accelerated matrix operation libraries or algo- rithms, such as cuBLAS [27] and [28]. Li et al. [29] proposed a partitioning scheme for SpMV on GPUs and multicore CPUs.
+
+Yang et al. [30] proposed a probabilistic modeling method to improve the performance of SpMV on GPUs. However, they are not distributed operation libraries.
+
+
+
+III. BACKGROUND  A. ELM Learning Algorithm  During the past decades, many researchers have studied the universal approximation capability of SLFNs deeply [31], [32].
+
+It is usually assumed that the activation function of the hidden neurons is continuous and differentiable, and the parameters of hidden neurons need to be adjusted during training. However, it has been proven that randomly generated networks with the  outputs being solved by least mean square are able to maintain the universal approximation capability [6], [7].
+
+ELM was put forward for ?generalized? SLFNs, where the hidden layer does not need to be neuron alike [3], [33]. The output function of generalized SLFNs with l hidden nodes can be represented by  fl(x) = l?  i=1 ?iG(ai, bi, x), x ? Rd, ?i ? Ro (1)  where ?i is the output weight of the ith hidden node con- necting with the output layer, ai is the input weight vector connected the input layer to the ith hidden node, bi is the bias weight of the ith hidden node, G(x) denotes the activa- tion function, d denotes the dimension of the sample and o denotes the dimension of the label of the sample.
+
+For N arbitrary distinct samples (xi, ti), xi ? Rd, ti ? Rm, i = 1, . . . , N, where xi is the training data vector, ti represents the target of each sample. Equation (1) can be expressed compactly as  H? = T (2) where H is the hidden layer output matrix (randomized matrix), T is the training data target matrix, ? is the output weight vector. H, T , and ? are expressed as  H = ?  ?? G(a1, b1, x1) ? ? ? G(al, bl, x1)  ...
+
+G ( a1 , b1, xN  ) ? ? ? G(al, bl, xN)  ?  ??  N?l  ? = ?  ?? ?T1 ...
+
+?Tl  ?  ??  l?o  T = ?  ?? tT1 ...
+
+tTN  ?  ??  N?m  . (3)  Different from traditional learning algorithms, ELM tends to reach not only the smallest training error but also the smallest norm of output weights [3]  Minimize : ?H? ? T?2 + ???. (4) In the classical implementation of ELM [4], [5], the minimal  norm least square method is used to obtain the output weight vector  ?? = H?T (5) where H? is the Moore?Penrose (MP) generalized inverse of matrix H. The orthogonal projection method can be efficiently used to calculate the MP inverse: H? = (HTH)?1HT if HTH is nonsingular, or HT(HHT)?1 if HHT is nonsingular. According to the ridge regression theory, it was recommended that a positive value (1/?) can be added during the calculation of the output weights, thus achieving a more stable solution and better generalization performance. Therefore, we can have  ? = HT (   ? + HHT  )?1 T. (6)  And the corresponding output function of ELM is  f (x) = h(x)? = h(x)HT (   ? + HHT  )?1 T. (7)    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+Or we can have  ? = (   ? + HTH  )?1 HTT (8)  f (x) = h(x)? = h(x) (   ? + HHT  )?1 HTT. (9)  Huang et al. [3] demonstrated that the solutions to (6) and (8) are actually consistent to minimize ||H? ? T||2 + ?||?||2, which is the essential target of ELM as mentioned before. As for big data circumstance, the number of hidden nodes is much less than that of training samples. According to the matrix theory, with SVD method, a small matrix HTH could be calculated instead of the large matrix HHT .
+
+B. ELM-Based Sparse Autoencoder  Representational learning, e.g., stacked autoencoder, is effective in learning useful features for achieving high gen- eralization performance [34]. Apart from being used to train SLFNs, the ELM theory has also been applied to build an autoencoder for MLP. Autoencoder aims at learning represen- tations of the input that are robust to small irrelevant changes in input and always functions as some sort of feature extrac- tor in a multilayer learning framework [35]. Mathematically, an autoencoder takes an input vector x, and first maps it to a higher level representation y through a deterministic map- ping y = h? (x) = g(A ? x + b), parameterized by ? = {A, b}, where g(?) is the activation function, A is a d ? d? weight matrix and b is a bias vector. The resulting latent repre- sentation y is then mapped back to a reconstructed vector z in the input space z = h? ?(y) = g(A? ? y + b) with ? ? = {A?, b?}.
+
+Tang et al. [8] proposed ELM-based sparse autoencoder.
+
+Through performing ?1 optimization, more sparse and com- pact features of the inputs are generated for the establish- ment of ELM autoencoder. Unlike the autoencoders (i.e., BP-based algorithm) used in traditional DL algorithms, the input weights of the proposed ELM-based sparse autoen- coder are established by searching the path back from a random space. The optimization model of the ELM sparse autoencoder proposed in [8] can be denoted as the following equation:  O? = argmin ?  {p(?)+ q(?)} (10)  where p(?) = ||H??X||2, and q(?) = ||?||?1 is the ?1 penalty term of the training model.
+
+Beck and Teboulle [36] proposed a fast iterative shrinkage- thresholding algorithm (FISTA) to solve the problem in (10).
+
+It has been proven that FISTA has a global rate of convergence which is significantly better, both theoretically and practically, especially for big data. The pseudo-code of implementing FISTA for solving ELM-based sparse autoencoder is shown in Algorithm 1.
+
+C. H-ELM Framework for Deep Learning  Tang et al. [8] proposed an H-ELM framework for MLPs. The H-ELM training architecture has two separate  Algorithm 1 ELM-Based Sparse Autoencoder Overview  Input: The training dataset matrix X: {(xi)|xi ? Rd, i = 1, ..., N}; Hidden node output function: G(ai, bi, x); The number of hidden nodes: l; The iteration size: size; Hidden node matrix V: (ai, bi), i = 1, ..., l;  Output: The hidden weight vector: ?; 1: Calculate the hidden layer output matrix H; 2: Calculate the matrix HT H; 3: Calculate the matrix HT X; 4: Calculate the Lipschitz constant ? of the the gradient of smooth  convex function ?p depends on the maximum eigenvalue of HT H;  5: y1 ? ?0 ? Rn and t1 ? 1; 6: for (i = 0; i ? size; i++) do 7: Calculate ?k using Equation (11) and Equation (12):  ?k ? pL(yk)? T? (  yk ? 2 1 ?  HT Hyk + 2 1 ?  HT X  ) ; (11)  T?(x)? (|?| ? ?)+ sgn(?), ?? ? ?  (12)  8: Calculate tk+1 using Equation (13):  tk+1 ? 1+  ? 1+ 4t2k  (13)  9: Calculate yk+1 using Equation (14):  yk+1 ? ?k + (  tk ? 1 tk+1  ) (?k ? ?k?1) (14)  10: end for 11: return ?k.
+
+parts: 1) unsupervised hierarchical feature representation and 2) supervised feature classification. For the former phase, the ELM-Based sparse autoencoder described in Section III-B is performed to extract multilayer sparse features of the input data. While for the latter one, the original ELM algorithm is used for making the final decision.
+
+During each forward feature representation layer, the input raw data should be first transformed into an ELM random feature space, which can help to exploit hidden informa- tion among training samples. Then, a multilayer unsupervised learning is performed to eventually obtain the high-level sparse features by the ELM-Based sparse autoencoder algo- rithm. Mathematically, the output of each hidden layer can be represented as  Oi = G(Oi?1 ? ?i?1) (15) where Oi is the output of the ith layer, Oi?1 is the output of the (i?1)th layer, G(?) denotes the activation function of the hid- den layers, and ? represents the output weights of the (i?1)th hidden layer. Unlike the existing DL frameworks [37], where all the hidden layers are put together as a whole system, each hidden layer of H-ELM is an independent module, and func- tions as a separated feature extractor. Once the feature of the previous hidden layer is extracted, the weights or parameters of the current hidden layer will be fixed, and do not need to be fine-tuned.
+
+This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+CHEN et al.: GPU-ACCELERATED PARALLEL H-ELM ON FLINK FOR BIG DATA 5  TABLE I PARALLELIZATION SUBOPERATIONS  Algorithm 2 H-ELM Framework for Training  Input: The training dataset matrix X: {(xi)|xi ? Rd, i = 1, ..., N}; The number of hidden layer for sparse autoencoder: m;  Output: Output weight vector of each layer: ?i; 1: Randomly generate hidden node matrix for each layer for sparse  autoencoder Vi, i = 1, ..., m; 2: Randomly generate hidden node matrix for original ELM Vm+1;  3: O0 ? X; 4: for (i = 0; i < m; i++) do 5: Calculate hidden weight vector ?i by Algorithm 1 using Oi?1  and Vi as its parameters; 6: Oi ? Oi?1 ? ?i; 7: end for 8: Calculate output weight vector ?m+1 by Equation (8) using Om  and Vm as its parameters; 9: return ?i, i = 1, ..., m+ 1.
+
+After multilayer unsupervised feature learning, the resul- tant outputs of the Kth layer OK , are viewed as the high-level features extracted from the input data. When used for clas- sification, they are randomly perturbed, and then utilized as the inputs of the supervised ELM to obtain the final results of the whole network. The overall algorithm of training H-ELM framework is shown in Algorithm 2.
+
+
+
+IV. PARALLEL H-ELM FRAMEWORK WITH FLINK  In this section, we parallelize the training process and prediction process of H-ELM framework on Flink named as PH-ELM, taking advantage of the distributed in-memory com- puting platform. Flink is designed as a popular processing platform that is suitable for big data mining. The key program- ming model of Flink is the abstract distributed DST, which is similar with resilient distributed DST [13]. DST represents a collection of distributed items, which can be manipulated across many computing nodes concurrently. Programmers can define a series of user-defined actions (e.g., map, reduce, join, and group) for the DSTs. Due to the fact that Spark and Flink are quite similar, our design can be easily integrated into Spark.
+
+A. Selective Parallelization  Among many suboperations in training process described in Algorithms 1 and 2 and suboperations in prediction process, which operations should we parallelize? A naive approach  is to parallelize all the operations. However, some opera- tions run more quickly on a single machine rather than on multiple machines in parallel. That is because the overhead incurred by using distributed computing exceeds gains made by parallelizing the task. Therefore, simple tasks where the input data is very small are carried out faster on a single machine. Thus, we divide the suboperations into two groups: 1) those to be parallelized and 2) those to be run in a single machine.
+
+As discussed in Section III, there are four subprocesses in H-ELM framework: 1) sparse autoencoder in training process (SAT); 2) original ELM in training process (OET); 3) sparse autoencoder in prediction process (SAP); and 4) original ELM in prediction process (OEP). We go through the execution pro- cess of H-ELM framework to select the suboperations which contain large-scale inputs.
+
+For processing large-scale DSTs, N is very large, while l, d is small (N is the number of input data samples; d is the dimension of input data samples; and l is the number of hidden nodes). HTH is an l? l matrix, HT is an l?N matrix, H is an N ? l matrix, while O is an N ? m matrix. The computation cost of calculation shown in lines 5?10 of Algorithm 1 is small. In addition, after the calculation of HTH and HTT , the computation cost of the line 3 of (8) is also small. Therefore, we implement these operations on a single machine.
+
+Through deep analysis, all the suboperations of H-ELM framework which are required to be parallelized are listed in Table I. These suboperations can be divided into three types: 1) calculation of H; 2) multiplication of HT and another large matrix; and 3) multiplication of a large matrix and small matrix ?.
+
+B. PH-ELM Overview  According to the three types of suboperations presented above, we have proposed three basic parallel algorithms on Flink and adopted a series of optimizations to improve the performance. The parallel training process and prediction process of H-ELM are based on these three basic paral- lel algorithms: 1) cache-based parallel hidden layer output matrix (CPHOM); 2) cache-based parallel ? matrix multipli- cation (CPBMM); and 3) adaptive transpose hidden matrix multiplication (ATHMM).
+
+The workflow of PH-ELM is as presented in Fig. 1. During PH-ELM, the executions of both sparse autoencoder layers    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+Fig. 1. PH-ELM overview.
+
+and the original ELM layer are parallelized on Flink. Before the training process, the data to be processed is stored in HDFS at first. Then it is loaded into Flink?s distributed mem- ory system as a DST object. In the meantime, the hidden node parameters of all the autoencoder layers and the original ELM layer are generated randomly. Suppose that there are m sparse autoencoder layers. Through our proposed parallel H-ELM framework which are based on our proposed three basic algo- rithms, hidden weight vectors ?i,...,m of all autoencoder layers and ?m+1 of the original ELM layer are calculated. These hid- den weight vectors are stored in Flink?s distributed memory system as DST objects. They can be also written into HDFS.
+
+During the prediction process, the label of the data to be predicted is calculated by the hidden weight vectors ?i,...,m+1 and the randomly generated hidden node parameters in a forward way.
+
+C. Implementation Details of Basic Parallel Algorithms  1) Adaptive Partition Scheme and Storage Formats: Minimizing the volume of data exchanged between nodes is important to design efficient distributed algorithms. Generally speaking, there are two basic types of strategies for partition- ing a matrix, which are based on submatrices and rows. A row may be split into different blocks using the strategies based on submatrices, leading to the need for accumulating computing results from different workers. Actually, the com- munication and synchronization among nodes are costly in the cluster computing environment. Therefor, partitioning the matrices based on submatrices will bring high overhead so that it is not appropriate in big data environment. On the con- trary, a row does not need to be split into different blocks in rows-based strategies. The accumulation of intermedia results can be calculated locally in one worker so that there is no need of shuffling the intermedia results across different nodes.
+
+According to the above analysis, the best choice is to partition the matrix based on rows so that the multiplication of every row of the first matrix and the column of the second matrix is executed as a whole to decrease the overhead caused by shuffle phase. However, if the row of the first matrix is so  large (e.g., 5G and 20G), it should be partitioned into different blocks.
+
+According to the above analysis, we propose rows-based format named as rows based DST (RDST) and columns-based format named as CDST if the rows do not need to be split.
+
+During RDST, the matrix is partitioned by rows, and each row is expressed by the pair with row index as its key and a vector as its value. While during CDST, the matrix is par- titioned by columns and each column takes column index as its key and a vector as its value. To further improve the performance, we can combine several rows or columns into a group, which are named as blocked RDST (BRDST) or blocked CDST (BCDST). If the content of each row is too large, it then needs to be split. Therefore, a split rows-based format named as split rows based DST (SRDST) and a split columns-based format named as SCDST are proposed. RDST, BRDST, and SRDST are presented in Fig. 2. All these for- mats are based on Flink?s abstract model DST to form the distributed in-memory DSTs.
+
+2) Cache-Based Parallel Hidden Layer Output Matrix: In the calculation of the matrix H, the naive method is to join matrix elements with parameters of the hidden nodes in the Map and Shuffle stage, and then execute G(ai, bi, x) in the Reduce stage. However, the Shuffle phase of this method involves large-scale communication overhead.
+
+Generally speaking, the parameters (wi, bi) of the hidden nodes are small. CPHOM utilizes the fact that the small DST can fit into a machine?s main memory, and can be distributed to all the Mappers by the distributed cache functionality of Flink.
+
+The advantage of the small DST being available in Mappers is that, during the calculation of H, the execution of G(ai, bi, x) can be done inside the Mappers, and the Shuffle phase can be omitted, thus greatly improving the performance.
+
+Algorithm 3 provides the pseudo code of calculating the hidden layer output matrix. The input DST is stored in the Flink?s distributed cache as a DST object M in a sequence of <key, value> pairs, each of which represents a sample in the DSTs, where key represents the index of the sample and value represents the content of the sample. The hidden param- eters (wi, bi) of the hidden nodes are generated and then are    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+CHEN et al.: GPU-ACCELERATED PARALLEL H-ELM ON FLINK FOR BIG DATA 7  (a) (b)  Fig. 2. Proposed format. (a) RDST and BRDST. (b) SRDST.
+
+Algorithm 3 CPHOM Algorithm Input: A distributed DST object which contains a sequence of pairs  in the form of < index, sample > pair, where the the index is the key which represents the index of the sample, sample is the value which represents the content of the sample.
+
+Output: < key, hValue >: key is the index of the content in the hidden output matrix, hValue represents the content in the hidden output matrix.
+
+1: CPHOM(DataSet < index, sample > M) //main function 2: Randomly generate the hidden node parameters (ai, bi); 3: Create DST object P from (ai, bi); 4: Set P as a Broadcast Variable; 5: H? M.map(new CPHOMMap().withBroadcastSet(P)  .groupBy(0); 6: return H.
+
+7: 8: CPHOMMap(< index, sample >) //map function 9: Init h  10: (x, t)? parse(sample) 11: for (i = 0; i ? l; i++) do 12: h? G(ai, bi, x); 13: if partition HT by rows then 14: return (i, h); 15: else 16: Get blockIndex from i; 17: key? blockIndex+?,? +i; 18: return (key, h); 19: end if 20: end for  created as a DST object P. We define a Map function named as CPHOMMap for DST M with P as its broadcast variable.
+
+Therefore, the hidden parameters are distributed to the nodes of the cluster by the distributed cache functionality of Flink.
+
+In the CPHOMMap function, G(ai, bi, x) is executed for each sample.
+
+As discussed in Section IV-C1, to improve the performance of the matrix multiplication, the best choice is to partition the matrix HT by rows. That is to say, we need to parti- tion the matrix H by columns. To partition the matrix HT  in RDST format, the output of the Map function will be <colIndex, hValue>, where colIndex is the key which rep- resents the column index, hValue represents one column. To partition the matrix HT to BRDST format, the output of the  Map function will be <blockID+colIndex, hValue>. After the Mapper, groupBy function is executed to partition the matrix to the corresponding format.
+
+3) Cache-Based Parallel ? Matrix Multiplication: To cal- culate the multiplication of a large matrix and the small matrix ?, such as Oi?1?i and Hm?m, a cache-based parallel ? matrix multiplication named as CPBMM algorithm is proposed. In general, matrix-matrix multiplication is very expensive. A standard, yet naive way of multiplying two matrices A and B in MapReduce is to join the corresponding elements of A and B together at first. And then the joined pair is multiplied in Mappers. After that, a Shuffle phase and a Reduce phase are executed to sum the intermediate results. This naive algo- rithm is very inefficient since it generates huge communication overhead and occupies huge storage spaces. Fortunately, when one of the matrices is very small, we can distribute one matrix using the distributed cache functionality provided by Flink.
+
+As for the multiplication of a large matrix and small matrix ? as presented in Table I, the content of rows are generally small. Therefore, we can partition the large matrix by rows in the form of RDST or BRDST. Take RDST as a example, a Map function is defined which takes the pair <rowIndex, vector> as its input. The user-defined Map function is employed to the RDST object. During each Mapper, the pair is multiplied by all the columns of the ?.
+
+4) Adaptive Transpose Hidden Matrix Multiplication: In terms of the large matrix, large matrix multiplication, such as HiTHi, HiTOi?1, HmTHm, and HmTT as presented in Table I, an adaptive algorithm is proposed. Let us take A ? B as an example. If one of these two matrices is smaller than a thresh- old so that one matrix is appropriate to be stored in a single computer node, CPBMM algorithm can be utilized. While, if these two matrices are so large that it is inappropriate to cache them in a single node, these two matrices are needed to be partitioned. As discussed in Section IV-C1, the best choice is to partition A by rows as the RDST format and B by columns as the CDST format. To further improve the performance, we can combine several rows of A into a group (BRDST format), and combine several columns of B into a group (BCDST format). Let us take RDST and CDST as an example. First, each row of A is joined with all the columns of    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+(a) (b)  Fig. 3. GFlink architecture. (a) Architecture of a work node. (b) Heterogeneous task management.
+
+B. After that, the user-defined Mappers are invoked to multiply the row vector of A and the column vector B.
+
+However, if the width of A is so large that it is inappro- priate to be processed in a single Mapper, we need to split each row of A into blocks. SBDST and SCDST format can be utilized to deal with this situation. First, the corresponding splits of A and B are joined. Then, the user-defined Mappers are used to conduct the vector multiplication. After that, an extra Reduce phase is needed to sum up the intermediate results.
+
+
+
+V. GPU-ACCELERATED H-ELM FRAMEWORK  A. Combination of Flink and GPUs  As we know, CUDA kernels running on GPUs could only be invoked by host applications or libraries programmed by C/C++ or Python. However, the tasks of Flink are exe- cuted in Java virtual machines (JVMs). Therefore, to integrate GPUs into the existing architecture of Flink, the first problem to be solved is to provide an efficient strategy for com- munication between JVM and GPUs. A number of issues complicate the efficient communication strategy. First, CPUs and GPUs have separate memory spaces, requiring explicit data transfers between CPU and GPU memory. What is worse, during the classical implementations of CUDA programming model, data transfers from the host to GPUs are in the form of buffers. The native solution is to transform the JVM objects to buffers manually, which decreases the performance greatly.
+
+1) Architecture: To overcome the challenges described above, we designed the strategy for combining Flink and GPU carefully. It is an extension of our previous work [16]. Our architecture is based on Flink?s cluster computing environ- ment, such as HDFS and job manager. Java native interface (JNI) is utilized to communicate between JVM and GPUs and invoke the CUDA kernels in work nodes.
+
+Fig. 3(a) shows the architecture of a work node. Flink com- municates with GPUs by calling JAVA interfaces. While, the JAVA interfaces communicate with CUDA host which is pro- grammed by C/C++ through JNI. CUDA host controls the management of GPUs and invokes CUDA kernels to execute  operations on GPUs. Fig. 3(b) shows the heterogeneous task management for hybrid CPUs and GPUs. During the pro- gramming model of GPGPU, the CPU and GPU work in master?slave mode, with the CPU as master and the GPU as slave. Part of the task can be assigned and executed on the CPU in parallel on the original task slots provided by Flink.
+
+The rest of the task can be assigned and be executed on the GPU in parallel with support from the CPU on the GPU task slots.
+
+2) Memory Mapping Scheme: A memory mapping scheme is utilized to avoid manual transformation from JVM objects to buffers, thus improving the performance. We use the fact that, the Tuple objects in Flink are stored in the cache of JVM in a sequential way. During our scheme, we transfer the buffers in JVM in raw bytes to the device memory of GPUs by JNI without any modifications. After that, a user-defined Struct pointer according to the definition of Tuple can be utilized to indicate the content of a Tuple as the code presented as follows: 1 # pragma pack ( 1 ) 2 t y p e d e f s t r u c t P o i n t { 3 long x ; 4 double y ; 5 } ;  7 P o i n t ? p t r ; 8 long p o i n t _ x = p t r ?>x ; 9 double p o i n t _ y = p t r ?>y ;  B. Algorithm Design  CPUs and GPUs have different properties and should take on computing tasks matching their abilities to obtain the max- imum benefit. The CPU is good at complexity control and lowering the latency of computing while the GPUs do well in high throughput. In other words, various aspects of each task should be assigned to the CPU and GPU based on their prop- erties to achieve the effect of ?one plus one is larger than two.?  To design efficient algorithms for H-ELM framework on Flink and GPUs, we need to find out the parts which are appropriate for being accelerated by GPUs at first. And then, the corresponding CUDA kernels will be developed. After that, we need to write programs about transferring the data to be processed in Flink to GPUs, invoking the kernels by JNI    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+CHEN et al.: GPU-ACCELERATED PARALLEL H-ELM ON FLINK FOR BIG DATA 9  (a) (b)  Fig. 4. Acceleration of CPBMM and ATHMM by GPUs. (a) GCPBMM. (b) GATHMM.
+
+in an asynchronous model, and transferring the results from GPUs to Flink. Through analyzing the parallel parts of H-ELM Framework on Flink, we find that the parts which are time- consuming and requires large-scale computing are those in Mappers and Reducers. Therefore, these parts are accelerated by GPUs to improve the performance. While other parts (e.g., join and group) are in need of large-scale complexity con- trol and memory operations, thus making them inappropriate for GPUs.
+
+C. Implementation Details of Acceleration  1) Acceleration of CPHOM by GPUs: Through analyzing the CPHOM algorithms, we find that the time-consuming sub- process is to apply G(ai, bi, x) execution for each sample as described in Algorithm 3. As GPUs can process many items concurrently, the mapPartition function, which is similar to Map function, but runs separately on each partition of the DST, is utilized in our implementation.
+
+The GPU-accelerated CPHOM algorithm is as shown in Algorithm 4. First, we check if there is a free GPU or not. If there are no appropriate GPUs, Map function is then adopted to execute the operations on CPUs. If there are appropriate GPUs, a GPU is selected and marked as busy. Then the buffers to be processed are transferred to GPUs and the cuCPHOM kernel is invoked. After the executions are finished, the con- tents are transferred from GPUs to the main memory. Lastly, the selected GPU is released.
+
+2) Acceleration of CPBMM by GPUs: In terms of CPBMM algorithm, we find that suboperation which is the most time- consuming and appropriate for being accelerated by GPUs is the multiplication of submatrices and hidden matrix ?. The procedure of accelerating CPBMM algorithm by GPUs is as shown in Fig. 4. The large matrix is stored in RDST. First, matrix ? is broadcasted to all the work nodes in the cluster.
+
+Then the map phase is invoked. During the map phase, map- Partiton function provided by Flink is implemented, which is similar to Map function. By this means, each partition is pro- cessed together without the need of processing elements one by one. The CUDA kernel utilized to multiply the submatrices and ? is cublasCgemm interface in cuBLAS [27].
+
+As shown in Fig. 4(a), we take A?B as an example. where A is a large matrix and B represents the matrix ?. Suppose that  Algorithm 4 Accelerate CPHOM Algorithm by GPUs Input: A distributed DataSet which contains a sequence of  pairs in the form of < index, sample > pair, where the index is the key which represents the index of the sample, sample is the value which represents the content of the sample.
+
+Distributed cache: parameters of the hidden nodes (ai, bi).
+
+Output: < key, hValue >: hValue represents one value in the hidden output matrix.
+
+1: MapPartition (list(index, sample)) //map function 2: if There is no free GPU then 3: Call the Map function as described in Algorithm 3 for  all the elements in the list; 4: return ; 5: end if 6: Select an appropriate GPU; //need lock 7: Transfer the buffers in the list to the selected GPU; 8: Transfer the buffers of hidden nodes to the selected GPU;  9: Invoke cuCPHOM kernel to process the data by GPU; 10: Transfer the partial resulted vector valueList to main  memory; 11: Release the selected GPU; //need lock 12: Convert and insert valueList to pU; 13: return pU;  there are three workers in the cluster: 1) worker0 with 1 CPU and 1 GPU; 2) worker1 with 1 CPU; and 3) worker2 with 1 CPU and 2 GPUs. First, we partition the sparse matrix to RDST format. Suppose that there are six partitions (e.g., A0, A1, A2, A3, A4, and A5). During the execution, the matrix B is broadcasted to every worker in the cluster. Each partition alike to a submatrix of the huge matrix is processed in mapPartiton function by a task. In terms of our example, 2 tasks in worker0, 1 task in worker1, and 3 tasks in worker2 are invoked by the master. As for the executions on GPUs, our implemented kernel is invoked to execute matrix multiplication in one GPU.
+
+3) Acceleration of ATHMM by GPUs: In terms of ATHMM, if one row of the matrix is not very large, the first matrix is partitioned by RDST format or BRDST format and    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+TABLE II SYMBOLS OF COST MODEL  the second matrix is partitioned by CDST or BCDST for- mat. We take this format as an example and the work flow is as described in Fig. 4(b). For A ? B, suppose that A has 2 rows and B has 2 columns. Suppose that there are two workers in the cluster: 1) worker0 with 1 CPU and 1 GPU and 2) worker1 with 1 CPU and 1 GPU. Like acceleration of CPBMM by GPUs (GCPBMM), to multiply two submatrices in GPUs, cublasCgemm interface is adopted.
+
+The rows in the first matrix with the same indexes as the columns in the second matrix are joined together and are grouped into four groups. Second, these groups are processed in mapPartiton function. In terms of our example, 2 tasks in worker0 and 1 task in worker1 are invoked by the master.
+
+Then, A0 ? B0 is executed in CPU0 in worker0, A0 ? B1 in GPU0 in worker0, A1?B0 in CPU0 in worker1, and A1?B1 in GPU0 in worker1, respectively. Then all the partial results are shuffled across networks and accumulated together as a new matrix by reduceByKey procedure.
+
+
+
+VI. ALGORITHMS ANALYSIS  In this section, we build a brief time cost model to evaluate our proposed algorithms. The symbols used in the cost model are defined in Table II.
+
+A. ATHMM Analysis  Suppose that the rows of the first matrix are divided into r blocks, the columns of the first matrix are divided into s blocks, and the columns of the second matrix are divided into t blocks. We take HiTHi as an example. As Fig. 4(b) shows, the cost of the whole procedure of ATHMM algorithm can be divided into four steps.
+
+1) Partition Stage: During the partition stage, each block in matrix HiT will be emitted t times, while each block in matrix Hi will be emitted r times, thus the cost can be denoted as IOM(((t+r))?|Hi|) = IOM((t+r)?N? li).
+
+2) Join Stage: During the join stage, only one matrix (Hi) is shuffled. through the network. The cost spending on the network communication can be derived as Network(r? |Hi|) = Network(r ? N ? li).
+
+3) Map Stage: Once two related submatrices are gath- ered together by fetching from the network and reading locally, the matrix multiplication would be conducted locally. It is clear that the computing cost of this step is Compute(N ? li ? N).
+
+4) Reduce Stage: Finally, during the Reduce stage, the related submatrices are fetched through network, and then s ? 1 addition is performed. The cost is close to Network(s? li ? N).
+
+The cost model of ATHMM algorithm is total cost of these four steps  Cost(ATHMM) = IOM((t + r)? N ? li) + Network(r ? N ? li) + Compute(N ? li ? N) + Network(s? li ? N). (16)  B. CPHOM Analysis  The total execution time of CPHOM consists two parts: 1) broadcasting the hidden parameters (wi, bi) of the hidden nodes and 2) the conducting G(ai, bi, x) execution in all the nodes. The cost model of CPHOM algorithm can be derived as  Cost(CPHOM) = Network(2? n? li?1 ? li) + Compute(N ? li?1 ? li) (17)  where l0 is equal to the dimension of samples d.
+
+C. CPBMM Analysis  Like CPHOM, first, the matrix ? is broadcasted to all the computing nodes in the cluster. Then the submatrix of the first large matrix is multiplied with ? in the computing nodes locally. As for the execution of O? and H?, it is clearly that the computing cost of the second step is O(N? li? li+1). The cost model of CPBMM algorithm can be derived as  Cost(CPBMM) = Network(n? li ? li+1) + Compute(N ? li ? li+1). (18)  D. GPU Acceleration Analysis  During our scheme, GPU is only utilized to accelerate the Compute stage. As for the GPU execution, the data is first transferred from the main memory to the device memory of GPUs before being processed in the GPUs. After that, the results are transferred from GPUs to the main memory. The execution time of a GPU can be denoted as  Tg = Tgm_data + Tgp + Tgm_result + Tgf (19) where Tg represents the total execution time on a GPU, Tgm_data refers to the moving data buffers between the CPU and the GPU, Tgp represents the real execution time on a GPU, Tgm_result represents the moving results from GPUs to the main memory, while Tgf denotes the fixed time for invoking GPU.
+
+E. Overall Analysis  When processing large-scale DSTs, N is much larger than other parameters. Through analyzing these three basic algo- rithms and suboperations, we can find that the bottleneck of PH-ELM and GPH-ELM is ATHMM algorithm (including HiTHi, HiTOi?1, HmTHm, and HmTT ). The number of hid- den nodes has an effect on the execution of HiTHi, HiTOi?1, and HmTT . From the cost model of ATHMM, the execution    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+CHEN et al.: GPU-ACCELERATED PARALLEL H-ELM ON FLINK FOR BIG DATA 11  (a) (b) (c)  Fig. 5. Performance results overview. (a) Performance speedup of small DSTs. (b) Performance speedup of medium DSTs. (c) Average running time of large-scale DSTs.
+
+TABLE III DSTS FROM THE UCI MACHINE LEARNING REPOSITORY  time of ATHMM is linearly with the number of hidden nodes theoretically. The dimension of samples has an impact on the execution of H and HiTOi?1. The influence of dimension is smaller than that of the number of hidden nodes. However, the dimension of labels merely affect the performance of HmTT .
+
+Due to the fact that one row of matrix T only contains one element, the dimension of labels has little influence on the overall performance.
+
+
+
+VII. EXPERIMENTS  In this section, some experiments are conducted to evaluate the performance of PH-ELM and GPH-ELM. First, a series of experiments are conducted to evaluate the execution efficiency by comparing them with the original H-ELM framework in terms of the average running time and speedup. Then, for comparison, we also evaluate the performance of other PELM algorithms. Lastly, the performance of our three basic parallel algorithms, and the effects of the acceleration by GPUs are evaluated in detail by comparing them with other distributed matrix algorithms.
+
+A. Experimental Setup  All the experiments are performed on a Flink cluster, in which each test computer in the cluster is equipped with one Intel Corei5-4590 CPU which contains four cores running at 3.30 GHz, 12 GB memory and 2 NVIDIA GeForce GTX 750 GPUs. Each GPU has 512 CUDA processor cores, working on 1020 MHz clock and 1 GB global memory with 128 bits bus.
+
+As for the software, the test machine runs in the UBUNTU 14.04, NVIDIA CUDA toolkit 7.5 and Flink 0.10.1. The DSTs used in the experiments are from the UCI machine learning repository as shown in Table III.
+
+B. Results Overview  This section presents the results of the overall perfor- mance of our proposed PH-ELM and GPH-ELM algorithms.
+
+The performance speedup on small DSTs is presented in Fig. 5(a). For a clear observation of the results, three groups of DST are utilized: 1) small data samples; 2) medium data samples; and 3) large-scale data samples. Four sparse encoder layers and the original ELM layer are utilized. The number of hidden nodes of all layers is set as 1000.
+
+During the experiment for small data samples, the number of instances of all DSTs is 50 000 created by replicating the original DSTs and the cluster contains ten computing nodes.
+
+Both PH-ELM and GH-ELM do not get an ideal speedup. That is because, in terms of small DSTs, the communication over- head in PH-ELM and GH-ELM greatly affects the efficiency of the parallelization. The running time of serial executions in PH-ELM and GPH-ELM also occupies a large proportion.
+
+Moreover, there also exists a fixed time for the application submission and configuration, it is reasonable that the whole speedup of processing small DSTs is small. Fig. 5(b) presents the speedup of the medium DST with 400 000 instances. We can see that the speedup of all these four DSTs is higher than the speedup with small data samples. The speedup of PH-ELM achieves almost 4?, while GPH-ELM achieves almost 9?.
+
+Fig. 5(c) shows the average running time of large-scale training samples with 2 000 000. H-ELM even fails to finish because of limited memory. Therefore, we cannot show the speedup of PH-ELM and GH-ELM. From this figure, we can find that the average running time of GISETTE DST is longer than that of other DSTs. That is because, the dimension of GISETTE DST is the largest. However, the running time of GISETTE DST is not much larger than that of other DSTs.
+
+That is because, as discussed in Section VI, different dimen- sions of samples just affect parts of the execution of one hidden layer.
+
+C. Results Under Different Circumstances  1) Results for Different Sizes of Records: Fig. 6(a) illus- trates the average running time of MINST. The number of samples is increased from 1 000 000 to 5 000 000 gradually.
+
+Four sparse encoder layers and the original ELM layer are utilized, and the number of hidden nodes of all layers is set as 1000. H-ELM even fails to finish because of limited mem- ory. From this figure, we can find that GPH-ELM has higher speedup (about 3? to 4?) over PH-ELM than processing small DSTs. As for PH-ELM and GPH-ELM, the running time increases faster than the increase of the number of instances.
+
+This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+(a) (b) (c)  Fig. 6. Performance results under different circumstances. Average running time under different: (a) data sizes, (b) numbers of slave nodes, and (c) numbers of hidden nodes.
+
+2) Results for Different Numbers of Slave Nodes: In this case, the effects of our proposed PH-ELM and GPH-ELM under different numbers of slave nodes are evaluated. The number of data samples is 5 000 000, both the number of the hidden nodes of the sparse autoencoder layers and the original ELM layer are set as 1000. The number of slave nodes is increased from 10 to 50. Fig. 6(b) illustrates the average running time under different numbers of slave nodes.
+
+From this figure, we can find that the average running time of PH-ELM and GPH-ELM algorithm decreases basically in a linear manner with the increase of the number of slave nodes. It demonstrates that our proposed algorithms have good scalability.
+
+3) Results for Different Numbers of Hidden Nodes: In this section, the effects of different numbers of the hidden nodes on the test results are examined. The number of slave mode computers is set as 10 and the size of records is 1 000 000.
+
+The number of hidden nodes of all layers is increased from 1000 to 5000 gradually. For different numbers of the hidden nodes, the time consumed by PH-ELM algorithm and GPH- ELM algorithm are shown in Fig. 6(c). We can see that the consumed time almost grows linearly along with the increase of the number of the hidden nodes, which is in accord with the analysis in Section VI.
+
+4) Comparison Results for Other Parallel ELM Algorithms: To the best of our knowledge, our proposed algorithm is the first kind of distributed versions of H-ELM. Therefore, in this section, we compare the performance of the original ELM layer of our proposed PH-ELM and GPH-ELM with other PELM algorithms, including PELM [20] and ELM* [22] which are both built on top of Hadoop. The number of hidden is 200, the cluster has ten slave mode computers and each DST contains 1 000 000 samples. From the comparison results as presented in Fig. 7, we can find that our proposed algorithms outperform both PELM and ELM*. That is because, every MapReduce in Hadoop needs to interact with other stages through the HDFS, which costs much time for disk I/O oper- ations. It can be estimated that the speedup of our proposed approaches will increase as the number of MapReduce stage increases. As we know, many MapReduce stages are required in H-ELM. That is an important reason why we choose Flink as the platform rather than Hadoop. Moreover, PELM and ELM* cannot utilize the high computing power of GPUs in the cluster.
+
+Fig. 7. Performance comparison with PELM and ELM*.
+
+Fig. 8. Performance comparison of CPBMM and GCPBMM.
+
+D. Results for Basic Parallel Algorithms  In this section, we first evaluate the results of our CPBMM, ATHMM, GCPBMM, and acceleration of ATHMM by GPUs (GATHMM) on a Flink cluster with 20 computing nodes by comparing them with other distributed matrix systems, including SUMMA and HAMA. SUMMA is a popular MPI- based matrix computation algorithm, while HAMA is a famous matrix computation library based on Hadoop. MINST DST is utilized. As for the CPBMM algorithm, Hm?m is taken as an example, where the number of hidden nodes is set as 1000.
+
+While in ATHMM algorithm, HTH is implemented, where BRDST is utilized for HT and BCDST is utilized for H. The number of records increases from 50 000 to 250 000, and the number of the hidden nodes is 1000.
+
+This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+CHEN et al.: GPU-ACCELERATED PARALLEL H-ELM ON FLINK FOR BIG DATA 13  Fig. 9. Performance comparison of ATHMM and GATHMM.
+
+Fig. 10. Performance comparison of different GPUs.
+
+Fig. 8 illustrates the comparison of CPBMM and GCPBMM with SUMMA and HAMA, while Fig. 9 presents the com- parison results of ATHMM and GATHMM. We find that the performance of CPBMM and ATHMM are comparable to SUMMA. Our GPU-accelerated algorithms GCPBMM and GATHMM are much faster than SUMMA. It can also be seen that the our proposed algorithms are much faster than HAMA. That is because, compared with our proposed algo- rithms, HAMA has many network synchronization operations and I/O overhead.
+
+Then, we evaluate the results of our ATHMM and GATHMM algorithms on different GPUs (including NVIDIA C2050, NVIDIA GeForce GTX 750, and NVIDIA K40) on a single node. The number of hidden nodes is set as 1000, and the number of records is 10 000. Fig. 10 shows that the execu- tions on K40 has the highest speedup, while the performance on C2050 and GTX 750 is almost the same. Therefore, our GPU-accelerated algorithms will get a higher speedup if the GTX 750 is replaced with K40.
+
+
+
+VIII. CONCLUSION  The proposed H-ELM has adopted a novel MLP training scheme based on the universal approximation capability of the original ELM, which achieves high-level representation with layerwise encoding, and outperforms the original ELM in various simulations. However, the capability of utilizing H- ELM to process large-scale DSTs is an urgent and challenging issue confronting researchers. This paper has proposed an effi- cient parallel algorithm based on Flink named as PH-ELM,  benefiting from the high performance, good reliability, and expandability of in-memory cluster computing. During PH- ELM, several optimizations have been adopted to improve the efficiency and scalability of parallelism. To further improve the performance, the existing high computing power of GPUs is leveraged to accelerate the PH-ELM. Experiments have demonstrated that our proposed PH-ELM and GPH-ELM are able to process large-scale DSTs, with excellent performance in speedup and scalability.
+

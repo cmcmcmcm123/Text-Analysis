@@ -1,0 +1,184 @@
+Near-optimal Approximate Membership Query over Time-decaying Windows
+
+Abstract?There has been a long history of finding a space- efficient data structure to support approximate membership queries, started from Bloom?s work in the 1970?s. Given a set A of n items and an additional item x from the same universe U of a size m ? n, we want to distinguish whether x ? A or not, using small (limited) space. The solutions for the membership query are needed for many network applications, such as cache directory, load-balancing, security, etc. If A is static, there exist optimal algorithms to find a randomized data structure to represent A using only (1+ o(1))n log 1/? bits, which only allows for a small false positive ? but no false negative. However, existing optimal algorithms are not practical for many Internet applications, e.g., social network services, peer-to-peer systems, network traffic monitoring, etc. They are too space- and time-expensive due to the frequent changes in the set A, because all items are needed to recompute the optimal data structure for each change using a linear running time. In this paper, we propose a novel data structure to support the approximate membership query in the time-decaying window model. In this model, items are inserted one-by-one over a data stream, and we want to determine whether an item is among the most recent w items for any given window size w ? n. Our data structure only requires O(n(log 1/?+log n)) bits and O(1) running time. We also prove a non-trivial space lower bound, i.e. (n? ?m) log(n? ?m) bits, which guarantees that our data structure is near-optimal. Our data structure has been evaluated using both synthetic and real data sets.
+
+
+
+I. INTRODUCTION  Membership query (or duplication detection) is a common query in a wide range of applications, which looks up whether a given item x is present in a large set A or not. In this paper, we propose a space-efficient randomized data structure to support approximate membership queries over a time-decaying window model, which can determine whether an item x is among the most recent w items or not for any w ? n. Such data structure can provide an efficient solution for various Internet applications, such as:  ? Caching and replication [1]: On a cache miss, a proxy will try to get a desired web page from other proxies before obtaining this page from the Internet. Furthermore, it needs the most recently updated page.
+
+? Web crawling [2]: A search engine may use multiple independent crawlers to harvest URLs from the Internet.
+
+A data structure can be shared by crawlers to determine whether an URL has been fetched recently or not.
+
+? Network security [3]: Duplicated requests from a denial- of-service attack can be detected and blocked by a web server.
+
+? Click frauds [4]: In a pay-per-click model, an attacker can earn extra incomes or deplete competitor?s budget by simply clicking the advertisement pages. An important issue for the online advertisement is to validate each click and detect duplicates.
+
+? Peer-to-peer application [5]: A data structure for the membership query can be used to provide a distributed search engine for the peer-to-peer application. Each peer can determine whether it has the keywords in the search queries efficiently.
+
+? Social networks [6]: When a user login into a social network, the server needs to find recent ?News feeds? or ?Tweets? from his/her friends. In order to reduce the database accesses, the server wants to determine whether a friend added ?News feeds? or ?Tweets? recently or not using an efficient data structure for the membership query.
+
+In these systems and applications, we are not only interested in whether an item is present in the set A or not, but also its order based on the arrival/updating time. Such information can be used to remove redundancy in the massive data streams resulting in resource and compute efficiency for downstream processing [7]. The set A will change dynamically in a stream of events. A data structure for the approximate membership query needs to be able to provide the most recent updated information for each item as well.
+
+In this paper, we study the problem of the approximate  membership query in a time-decaying window model. We pro- pose a novel data structure using Cuckoo hashing [8] to answer approximate membership queries in a time-decaying window model. Our data structure only requires O(n(log 1/?+logn)) bits and O(1) running time in average, which provides a better bound in both space and running time than existing solutions [4], [9]. We also provide the first space lower bound for the approximate membership query in the time-decaying window model, i.e. (n ? ?m) log(n ? ?m) bits, which guarantees that our data structure is near-optimal. We evaluate our data structure with both synthetic and real data sets, which shows the efficiency of our data structure in various applications.
+
+The remainder of this paper is organized as follows. In  Sec.II, we review related work for the approximate mem-   2013 Proceedings IEEE INFOCOM     bership query problem. The definition of the approximate membership query in a time-decaying window model is given in Sec.III. Next, we propose our data structure and its theoret- ical analysis in Sec.IV. A lower bound for the time-decaying window model is provided in Sec.V. Last, we evaluate our data structure in Sec.VI, and conclude this paper in Sec.VII.
+
+
+
+II. RELATED WORK  The approximate membership query has been widely stud- ied in different research areas such as database system [10], computer architecture [1], [11], network security [4], [9], etc.
+
+Formally, a randomized data structure for the membership query stores a function f(?) : U ? {true, false} for a set A ? U , such that it will return true if a given item x ? U is present in A, and otherwise false. Bloom [12] proposed the first data structure (Bloom filter) for this problem in the 1970?s, which used a bit vector to represent A. All the bits are initialized to 0 at the beginning. Each item in A is hashed using b independent hash functions and the corresponding bits are set to 1. Given a query whether an item x is present, it is hashed by the same hash functions. If all the corresponding bits equal to 1, it will return true and otherwise false. Due to the hash collisions, Bloom filter allows a few false positives but no false negative. By using log 1/? hash functions and a bit vector of the size n log 1/? log2 e (? 1.44n log 1/?), Bloom filter can guarantee that the false positive error is less than a given small probability ?.
+
+If no false negative is allowed, Bloom filter is quite close  to the entropy lower bound [13] (i.e., n log 1/? bits). This lower bound has been achieved by using the matrix solving technique for a static set [14]. This method constructs an one- sided error dictionary which maps n items in A to n keys.
+
+Given an item x, a dictionary can retrieve its key if this item is present in A. Otherwise, the dictionary may return any value.
+
+Such dictionary can be computed by solving sparse linear equations. By using a pairwise independent hash function to compute a log 1/?-bits key for each item inA, a dictionary can answer the approximate membership query in O(1) running time. However, the computation of the dictionary requires at least ?(n) running time.
+
+In many real-world applications, A can be changed dynam-  ically in a high speed. In this case, we cannot use Bloom filter or the optimal data structure. Currently, most data structures for the dynamic membership query are based on Bloom filter, which extends the bit vector to support additional operations on A, e.g., Counting Bloom Filter (CBF) [15], Stable Bloom Filter (SBF) [11], ACSMs [16], Invertible Bloom Filter (IBF) [17], Timing Bloom Filter (TBF) [9], Variable-Increment CBF [18] and so on.
+
+Metwally et al. [4] considered the problem of detecting  duplicates in a time-decaying window model for the click fraud problem in the online advertisement. They applied the CBF to detect duplicates in a data stream, which replaced each bit in Bloom filter by a counter to record the count of the items hashed to each position. When a new item x comes, they will first query whether x is a duplicate, and then insert  it into the CBF. They keep all recent n items in the memory in order to remove the oldest item from the CBF when a new item comes. Because all recent n items need to be kept in the memory, their method have to require a large memory.
+
+Zhang et al. [9] introduced the TBF, in which each bit in  Bloom filter was replaced by a logn-bits time stamp for the last updating. In this way, old items can be removed from the TBF if its time stamp is expired and the set A does not need to be maintained explicitly in the memory. We can detect any duplicated items using TBF with the same error bound as Matwally?s method. But the space requirement of the TBF can be reduced to ?(n log 1/? logn) bits, which is close to the lower bound.
+
+Existing data structures for the time-decaying window  model still require much more space than the entropy lower bound of the approximate membership query. Our data struc- ture only needs 1/ log(1/?) as much space as TBF. The optimal data structure for the static set cannot handle dynamic sets in this model. There may exist a better lower bound for the approximate membership query in the time-decaying window model, which has not been studied before. In this paper, we attempt to fill the gap between the practice and the theory for the approximate membership query in the time-decaying window model.
+
+
+
+III. PROBLEM DEFINITION  We consider a data stream of items [19], [20], [21], [22],  x1, x2, . . . , xi, . . . (1)  which are coming one-by-one at high speed. Let Aw denote the set that only includes the most recent w items,  Aw = {xi?w+1, . . . , xi}, (2) where w = 1, . . . , n, and n is the maximum possible window size for the approximate membership query.
+
+The problem of the approximate membership query in a  time-decaying model can be defined as follows: Definition 1: Given any item x ? U and a window size  w ? n, a data structure for the approximate membership query in a time-decaying window model can determine whether there is an identical item among the most recent w items with the following guarantees,  ? If x ? Aw, it will always return true.
+
+? If x /? Aw, it will return false with a probability at least  1? ?, and return true with a probability at most ?.
+
+
+
+IV. APPROXIMATE MEMBERSHIP QUERIES OVER  TIME-DECAYING WINDOWS  In this section, we propose a novel data structure to support approximate membership queries in a time-decaying window model. TBF [9] is the only existing data structure that can work in this model, which was proposed to answer approximate membership queries in a sliding window model as CBF [4].
+
+TBF replaces each bit in Bloom filter by a counter to maintain a timestamp. Because each timestamp requires ?(logn) bits and each item is associated with ?(log 1/?) timestamps, the  2013 Proceedings IEEE INFOCOM     space of the TBF is at least ?(n log 1/? logn) bits. To reduce the space requirement, we design a data structure to reduce the number of timestamps for each item to one, which is similar to the optimal algorithm for the static set [14].
+
+In this section, we first describe an ideal algorithm to show  the main ideas in our data structure and its difference to existing algorithms. Next, a detailed description of our data structure is provided in the algorithm part. Last, we prove its performance in the theoretical analysis part.
+
+A. An Ideal Algorithm  Our main idea is to use a dictionary structure to support approximate membership queries in the time-decaying window model. Given an item x, the dictionary can retrieve its key K(x) if x is among recent n items in the stream. Otherwise, the dictionary just returns any value. Each key K(x) consists of two parts: a log 1/?-bits signature S(x) and a logn-bits timestamp T (x). The signature is used to determine whether K(x) is the correct key for the given item x, and the timestamp is used to determine whether x is among the recent w items if the key is correct. In order to process a stream of items, we need two additional operations over the dictionary:  ? Insertion: Once a new item comes, we need to insert its key including a signature and a timestamp into the dictionary.
+
+? Deletion: And at the same time, we need to remove the oldest key from the dictionary because its item has been expired.
+
+Our primary goal is that each operation only requires O(1) running time in the ideal algorithm. In addition, the space of the dictionary can be bounded byO(n(log 1/?+logn)), where each key requires log 1/?+ logn bits and there are at most n keys in the dictionary.
+
+The dictionary-based solution provides a better guarantee  in both running time and space than TBF [9]. Because the dictionary only maintains one key for each item, the space is much smaller than TBF. And the query is also simplified. The dictionary only needs to retrieve one key for each query, but TBF needs to check log 1/? timestamps.
+
+B. Our Data Structure  Our data structure uses the Cuckoo Hashing [8] to design a dictionary to maintain the keys for each item. Two hash tables are used to resolve hash collisions. In order to provide a constant running time for each operation, the size of the hash table should be twice as large as the number of items. This may cause a poor space utilization compared to a conventional hash table with linked overflow chains. To solve this problem, we use the variable-bit-length array (VLA) [23] to implement the hash tables. The VLA is a space-efficient data structure that can maintain an array C[?] of the length ? using only O(?+  ? len(C[?])) bits, where len(C[?]) denotes the bit length  of the value stored at a counter C[?]. In other words, an empty position in the hash table will only cost O(1) bits.
+
+Because chained hashing needs to maintain an additional link for each hash collision, our algorithm can provide a better  Fig. 1. Dictionary with Cuckoo Hashing  space utilization. Furthermore, the running time of Cuckoo Hashing has been shown to be better than chained hashing and other conventional methods [24], [25].
+
+1) Dictionary with Cuckoo Hashing: There are two hash  tables as shown in Fig.1, denoted by Table-0 and Table-1.
+
+Each hash table is associated with an independent universal hash function for the lookups, denoted by h? 0(?) and h?1(?).
+
+The information of each item is maintained in either Table-0 or Table-1, but never both of them. At each position in both hash tables, we maintain three counters, i.e., the timestamp Tj[?], the signature Sj [?], and the position in the other table Pj [?], where j = 0, 1 denotes the index of the hash table.
+
+? Tj[?]: Each timestamp is chosen from {0, 1, 2, . . . , 2n}, and the empty entry is associated with ? = 0.
+
+? Pj [?]: Each position Pj [?] is in the range {0, . . . , ? ? 1}, where ? denotes the size of the hash table. We can use Pj [?] to move the information for each item between two hash tables to resolve hash collisions.
+
+? Sj [?]: Each signature is computed by an independent hash function ?(?), and the bit length of a signature is chosen as max{0, log(1/?)? log ? + 1}.
+
+Both the position and the signature are used together to determine whether this is a correct key for a given item.
+
+Besides these two hash tables, we also maintain a linked  list, denoted by L, which is used to store items that cannot be inserted into either hash table due to hash collisions.
+
+The standard Cuckoo hashing will rehash all items if we cannot insert an item into the hash table. Because we lose the information of original items due to the space limitation, we cannot rehash them into a new hash table. Therefore, if an item cannot be inserted into either hash table, we will maintain this item and its timestamp in the linked list L. If the size of the hash table ? is large enough, the insertion failure can only happen with a small probability.
+
+2) Insertion: When an item xi comes, we first update the  current timestamp ? as a wrapround counter,  ? = i mod (2n) + 1. (3)  We compute its positions in two tables and check whether one of them has the same signature Sj [h?j(xi)] = ?(xi) and the same position Pj [h?j(xi)] = h?j?(xi). If so, this item has already been maintained and we only update its timestamp to ? . Otherwise, we check the distance between the timestamps  2013 Proceedings IEEE INFOCOM     Fig. 2. Insertion  at the position of the new item xi in both tables and the current timestamp ? . The distance d(Tj [h?j(xi)], ?) equals to the number of timestamps from Tj [h?j(xi)] to ? .
+
+d(Tj [h?j(xi)], ?) =  { ? ? Tj [h?j(xi)] + 1 if ? ? Tj [h?j(xi)] ? + 2n? Tj[h?j(xi)] + 1 if ? < Tj [h?j(xi)]  (4) If d(Tj [h?j(xi)], ?) > n, we know that this timestamp has  already been outside the maximum time-decaying window, and we consider it as expired. If one of the timestamps is expired (d(Tj [h?j(xi)], ?) > n) or empty (Tj[h?j(xi)] = 0), we can insert xi into this table as  Tj[h?j(xi)] = ?  Sj [h?j(xi)] = ?(xi) (5)  Pj [h?j(xi)] = h?j? (xi)  where j, j ? ? {0, 1} and j = ?j ?.
+
+If there is no position expired or empty, we will randomly  select one hash table to insert xi by moving timestamps and their signatures between two hash tables. We insert xi into Table-j by moving the previous timestamp T j[h?j(xi)] and its signature Sj[h?j(xi)] into the other table at the position Pj [h?j(xi)]. If the timestamp Tj? [Pj [h?j(xi)]] in the other table is expired or empty, we can set them as  Tj? [Pj [h?j(xi)]] = Tj [h?j(xi)]  Sj? [Pj [h?j(xi)]] = Sj [h?j(xi)] (6)  Pj? [Pj [h?j(xi)]] = h?j(xi)  and stop. Otherwise, we move the timestamp Tj? [Pj [h?j(xi)]] and its signature Sj? [Pj [h?j(xi)]] to the position Pj? [Pj [h?j(xi)]] in Table-j, and set them in a similar way as Eq.(6). We can continue the move operation until we find an expired or empty timestamp, as shown in Fig.2.
+
+However, there is a small probability that the insertion  procedure may fail. If we cannot find an expired or empty timestamp within O(log n) move operations, we will keep all timestamps and their signatures in their original positions, and insert this new item xi and its timestamp ?xi = ? into the linked list L,  L = L ? {(xi, ?xi)}. (7) The linked list L is implemented as a doubly linked list where the head is the newest item and the tail is the oldest one.
+
+Fig. 3. Deletion  3) Query: Given an item x ? U and a time-decaying window size w, we use two hash functions h?0(?) and h?1(?) to find its positions in both hash tables, as shown in Fig.1. If one of them, e.g. Table-j, has the following properties,  ? Tj[h?j(x)] is not expired or empty, ? Sj [h?j(x)] = ?(x), ? Pj [h?j(x)] = h?j? (x) for j ? = ?j,  we get a correct key for this item. Next, we will compute the distance between Tj[h?j(x)] and ? to determine whether this item is within the time-decaying window. If d(Tj [h?j(x)], ?) ? w, we will return true, and otherwise false. If there is no position with the above properties, we check whether x is maintained in the linked list L. If x ? L and d(?x, ?) ? w, we will return true, and otherwise false.
+
+4) Deletion: After the insertion procedure, we check ?/n?  positions in each hash table, and for each of them, we reset it to empty if its timestamp gets expired. To do this, we can simply divide the hash table into n blocks and each block contains  ?/n? positions. At each step, we check the positions in the (? mod n)-th block, as shown in Fig.3. In this way, we can reset an expired timestamp to empty before ? counts back to the same value. We also check the last item in L and delete it if its timestamp gets expired.
+
+C. Theoretical Analysis  We first prove that our data structure can provide a false positive error bound for the approximate membership query in the time-decaying window model.
+
+2013 Proceedings IEEE INFOCOM     Theorem 1: Given the bit length of a signature as len(Sj[?]) = max{0, log(1/?)? log ?+1}, our data structure can answer the approximate membership query in the time decaying window model with no false negative and a false positive error at most ?.
+
+Proof: Given an item x ? U and the size of the time- decaying window w, we want to determine whether x ? Aw or not. If x ? Aw, there is an item xi? in Aw such that xi? = x.
+
+The timestamp of xi? must be maintained in either one of the hash tables or the linked list. The distance from its timestamp to ? must also be at most w. If xi? is maintained in one of the hash table, we can always find its signature and return true.
+
+Otherwise, we can find xi? in the linked list and also return true. Therefore, there is no false negative.
+
+If x /? A, we will return true only if there are the same  signature ?(x) and the same position Pj [h?j(x)] at either h?0(x) or h?1(x). Because the size of the signature is at least log(1/?) ? log ? + 1, there are 2log(1/?)?log ?+1+log ? = 2/? possible pairs of the position and the signature. Thus, the probability that two items has both the same signature and the same position is at most ?/2. Therefore, the probability that one of the two hash tables has the same signature and the same position as x is at most ?. In sum, the false positive error is ? at most.
+
+The standard Cuckoo hashing [8] has the worst case con-  stant lookup time and amortized expected constant time for updates with only O(n) space. We can choose the size of the hash table as ? = 2n to provide a constant running time. Our data structure has the following property.
+
+Theorem 2: Given ? = 2n, our data structure only uses  O(1) running time and O(n(log 1/? + logn))-bits space for the approximate membership query in the time-decaying window model.
+
+Proof: Running Time: For the query, we only need to check two positions in the  hash table and all items in the linked list. Because the size of L is O(1) in average, the running time for the approximate membership query is bounded by O(1) in average.
+
+For the insertion, we first try to insert an item into one of the  hash tables using Cuckoo hashing. Based on the property of Cuckoo hashing [8], the expected number of moves is bounded by O(1) with the size of the hash table ? = 2n in our data structure. If the insertion fails, we will insert this item into the linked list L, which will only take O(1) running time.
+
+Therefore, the running time to insert an item into our data structure is O(1) in average.
+
+For the deletion of expired timestamp, we need to check two  positions in each hash table, which takes O(1) running time.
+
+For the linked list, we only need to check whether the item at the tail is expired or not, which also takes O(1) running time. Therefore, it only takes O(1) running time to remove the information of the expired items from our data structure.
+
+Space: The bit length of each timestamp is log(2n). The total bit  length of a position and a signature is at most max{log 1/?+  1, log 2n}. There are 2n positions in two hash tables. There- fore, the total space of the hash tables in our data structure is O(n(log n+ log 1/?)).
+
+Based on the property of the Cuckoo hashing [8], the  probability that an insertion fails is at most O(1/n). We will insert an item into the linked list if and only if there is an insertion failure in the Cuckoo hashing. Thus, the size of the linked list L is n?O(1/n) = O(1) in average. Therefore, the space of the linked list is O(logm+ logn), which should be much smaller than n.
+
+In sum, the space requirement of our data structure is  bounded by O(n(log n+ log 1/?)).
+
+
+
+V. LOWER BOUND  If logn = O(log 1/?), the space requirement of our data structure is already within a constant factor of the entropy lower bound n log 1/?. Our data structure may not be optimal only if n is sufficiently large. In this section, we provide a non-trivial lower bound for the approximate membership query in the time-decaying window model, when n is sufficient large and ? is small. As far as we know, this is the first work to provide a lower bound for this problem in the time- decaying window. This lower bound can guarantee that our data structure is still near-optimal if n is very large.
+
+We consider the randomized data structures which have only  false positives but no false negative. The space requirement is only related to the bound of the false positive error ?, the size of the maximum time-decaying window n, and the size of the universe m. Our lower bound is provided in the following theorem.
+
+Theorem 3: Given a maximum window size n, a universe  of the size m, and a false positive error bound ?, a randomized data structure for the approximate membership query in the time-decaying window model must require at least  (n? ?m) log(n? ?m) (8) bits in space.
+
+In a time-decaying window model, a randomized data  structure needs to maintain the timing information in order to remove expired items. As a consequence, the same set of items may require several binary representations, i.e. the instances in the randomized data structure, to record their orders, and thus the space requirement will also become larger than that for the static set. Based on this property, our main idea to find a new lower bound is that an adversary can also observe the items in the data stream, and make queries using an observed item rather than a randomly selected item.
+
+
+
+VI. EVALUATION  We evaluate our data structure using both synthetic and real data sets in this section. All experiments run on a Linux (Fe- dora 13) machine with 3.2 GHz Pentium dual-core processor and 2GB RAM. Both algorithms are implemented in a single- threaded version. We compare the performance of our data structure with the TBF which is the only existing data structure for the time-decaying window model. Both data structures are  2013 Proceedings IEEE INFOCOM     Fig. 4. False Positives in Zipfian Distributions  Fig. 5. Update Time in Zipfian Distributions  Fig. 6. Query Time in Zipfian Distributions  Fig. 7. Maximum Linked List Sizes in Zipfian Distributions  implemented with C++. Each data structure is provided with the same number of counters and a small additional space for the hash functions and the linked list. Let ? denote the total number of counters in the TBF. In our data structure, we use two different configurations based on the error bound ? and the maximum window size n. If ? is large, i.e. ? > 1/n, we do  not need to maintain the signatures, and can bound the errors only based on the positions. In this configuration, we set the size of the hash table as ? = ?/4. Otherwise, we also maintain a signature at each position in the hash table. And we set the size of the hash table as ? = ?/6. Let K denote the size of the signature in our data structure, and the number of hash  2013 Proceedings IEEE INFOCOM     Fig. 8. Running Time with Different Window Sizes  Fig. 9. False Positive Error with Different Window Sizes  Fig. 10. Linked List Size with Different Window Sizes  functions in TBF. We use the same universal hash functions as the TBF to construct our data structure. In this way, we guarantee a fair comparison between the TBF and our data structure. The space is measured by bits, and the running time is measured by seconds.
+
+A. Synthetic Data  In this part, we compare two data structures with synthetic data sets produced by a Zipfian distribution, which is the state- of-the-art model of the HTTP requests [26]. We used integers as data items, and the size of the universe is chosen as 100,000.
+
+In each evaluation, we compare their false positive errors and running time for update and query.
+
+1) Zipfian Distribution: We choose two different param-  eters in the Zipfian distribution: z = 0 (uniform data) and z = 1 (skewed data) to evaluate the performance of our data structure. The window size is chosen as 1000. Therefore, each hash table in our data structure should be at least 2000. We  evaluate both data structure with ? = 4000, ..., 10000. The false positive errors are shown in Fig.4. The y-axis is in logarithmic scale, and the x-axis is the total space in the TBF or our data structure. We can see that the errors in our data structure are much smaller than those in the TBF. The average running times for update and query are shown in Fig.5 and Fig.6, respectively, which are measured in seconds. When the size of the hash tables is small, our data structure maintains many items in the linked list, as shown in Fig.7. In this case, the running time will become large, but the false positive error can still be bounded by ?. There are not significant differences between the performances with uniform or skewed data sets.
+
+In the following parts, we choose z = 0 and there will be more distinct items in each time-decaying window than that with z > 0.
+
+2) Time-decaying Window Size: We evaluate our data struc- ture with different sizes of the time-decaying window. We change the time-decaying window size n from 1000 to 10000.
+
+The size of the hash tables in our data structure is chosen as ? = 5000 if K = 0, and ? = 3333 if K = 4. The size of the TBF is chosen as ? = 20000 for a fair comparison.
+
+The false positive error in the TBF and our data structure is shown in Fig.9 (left). When the time-decaying window size increases, our data structure will maintain more items in the linked list whose size will increase as shown in Fig.10. The running time of the TBF will remain the same, and the running time in our data structure will increase as the size of the linked list increases, as shown in Fig.8.
+
+3) Signature Size: We evaluate our data structure with different sizes of the signatures K , which changes from 1 to 10. The number of hash functions in TBF is also chosen as K . The size of the TBF is chosen as ? = 10000 and the size of the hash tables in our data structure is chosen as ? = 1667. The maximum size of the sliding window is chosen as n = 1000. The false positive errors are shown in Fig.12, and the running times are shown in Fig.11. WhenK increases, the false positive error in our data structure will decrease very quickly. But the false positive error in the TBF will increase if K is too large. And the running time of the query is mainly determined by the number of memory accesses. The query running time in the TBF will increase but it will remain the same in our data structure as K increases.
+
+2013 Proceedings IEEE INFOCOM     Fig. 11. Running Time with Different Signature Sizes  Fig. 12. False Positives with Different Signature Sizes  B. Real Data  We use three different data sets to evaluate our data structure in different applications. The first one is a packet trace from a backbone link of a national ISP [27], which is used for the caching and replication application. The second one contains the HTTP request logs from a busy WWW server [28]. We evaluate our data structure for the load balancing and DoS attack defending using this data set. The last one is a log of the user activities on a popular social network (FACEBOOK) [6], which can capture some new trends in the Web applications.
+
+We mainly focus on the false positive errors. The running time follows a similar pattern as the synthetic data set, which is skipped due to the page limitation.
+
+1) Caching and replication: The WIDE trace [27] was  collected on Mar 18, 2008, which consisted of packets on a 150 Megabit Ethernet external link between WIDE backbone and its upstream. The first 96 bytes were captured per each packet, which can be used to extract all HTTP packets and the URLs after the GET command in HTTP packets. When each URL comes, we first query whether it is maintained in the proxy by using the TBF or our data structure. If so, we consider that this web page is maintained at this proxy and skip this URL. Otherwise, we need to fetch the web page from the Internet and insert the URL into our data structure for a new available web page. A web page will become expired after n = 10000 packets. The false positive errors in both data structure are shown in Fig.13 (left). We can see that the errors in our data structures are much smaller than the TBF.
+
+2) Denial-of-service Attack: In this data set, each item is  an HTTP request with a host name, a timestamp, a URL, a  HTTP reply code, and bytes in the reply. Based on the URL, the requests can be divided into seven categories: HTML, Images, Sound, Video, Dynamic, Formatted, and Other. We consider the HTML requests as a data stream in our evaluation.
+
+A detailed analysis of this data set can be found in [29]. As a typical application of the membership query, we simulate a DoS attack on this server by replaying duplicated requests randomly to the server in the data stream. The TBF and our data structure are implemented to filter these duplicated requests from the normal requests. In our evaluation, when a request xi comes, we first query whether xi is a duplicated request, and then update the data structures for it. If a request is a DoS request, the data structure should always determine it as a duplicated request and return true. Otherwise, it should return false with a probability at least 1? ?. We use the same configurations as the WIDE trace. The false positive errors are shown in Fig.13 (middle). The false positive errors are a litter higher than the WIDE trace, which is because there are more distinct requests in this trace.
+
+3) Social Networks: We also use a trace of all of the wall  posts from the Facebook New Orleans networks from [6].
+
+Each item contains two anonymized user IDs, which means the second user posted on the first user?s wall. And a UNIX timestamp of the wall post is also included. When each item comes, we insert the first user ID into the TBF or our data structure, and query whether the second user has some new posts from his friend in the time-decaying window. The false positive errors with the same configuration as the WIDE trace are also shown in Fig.13. We also estimate the last updating time for the second user, i.e., the smallest w such that this item is still active. The distribution of the estimation error in the TBF (? = 20000 and k = 4) and our data structure (? = 5000 and k = 0) is shown in Fig.14. We can see that the estimation error in our data structure is much smaller.
+
+
+
+VII. CONCLUSION  We provide a novel data structure for the approximate membership query over the time-decaying window model. Our data structure has been proved to be near-optimal in both space and running time for a wide range of parameters. The space can be bounded by O(n(log 1/? + log n)) and the running time is bounded by O(1) for both update and query. We hope that our work can be used to improve the practice for various  2013 Proceedings IEEE INFOCOM     Fig. 13. False Positives with WIDE Trace (left), DoS Attack (middle), and Facebook Wall Post (right)  Fig. 14. Estimation Error Distribution  real-world applications, i.e., user behavior monitoring, web crawling, network security, etc.
+

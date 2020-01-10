@@ -1,0 +1,268 @@
+Efficient discovery of statistically significant association rules
+
+Abstract  Searching statistically significant association rules is an important but neglected problem. Traditional association rules do not capture the idea of statistical dependence and the resulting rules can be spurious, while the most signifi- cant rules may be missing. This leads to erroneous models and predictions which often become expensive.
+
+The problem is computationally very difficult, because the significance is not a monotonic property. However, in this paper we prove several other properties, which can be used for pruning the search space. The proper- ties are implemented in the StatApriori algorithm, which searches statistically significant, non-redundant association rules. Based on both theoretical and empirical observa- tions, the resulting rules are very accurate compared to traditional association rules. In addition, StatApriori can work with extremely low frequencies, thus finding new in- teresting rules.
+
+1. Introduction  Traditional association rules [1] are rules of form ?if event X = x occurs, then also event A = a is likely to oc- cur?. The commonness of the rule is measured by frequency P (X = x,A = a) and the strength of the rule by confi- dence P (A = a|X = x). For computational purposes it is required that both frequency and confidence should exceed some user-defined thresholds. The actual interestingness of the rule is usually decided afterwards, by some interesting- ness measure.
+
+Often the associations are interpreted as correlations or dependencies between certain attribute value combinations.
+
+However, traditional association rules do not necessarily capture statistical dependencies, but they can associate ab- solutely independent events while ignoring strong depen- dencies. As a solution, it is often suggested (following the axioms by Piatetsky-Shapiro [18]) to measure the lift (in-  terest) instead of the confidence (e.g. [21]). This produces also statistically more sound results, but still it is possible to find spurious rules while missing statistically significant rules. Often, these two error types are called type 1 and type 2 errors (in computer science terms, false positive and false negative). In the worst case, all discovered rules can be spurious [23, 24]. In practice, this means that the fu- ture data does not exhibit the discovered dependencies and the conclusions based on them are erroneous. The results can be expensive or even fatal, as the following example demonstrates.
+
+Example 1. A biological database contains observation re- ports from different kinds of biotopes, like grove, marsh, waterside, coniferous forest, etc. For association analysis, each report is represented as a binary vector, listing the ob- served species, along with biotope characteristics. Local forestry societies as well as individual land owners can use the data when they decide e.g. fellings or protected sites.
+
+The forestry society FallAll is going to drain swamps for new forests. Before any decisions are made, they search as- sociations from the 1000 observations on marsh sides. They use minimum frequency 0.05 and minimum confidence 0.80.
+
+One discovered rule is leather leaf ? cloudberry with fre- quency 0.06 and confidence 0.80. Since cloudberries are commercially important product, the forestry society de- cides to protect a marsh growing leather leaves, when other swamps are drained.
+
+The decision is excellent for the leather leaf, but all cloudberries in the area disappear. The reason is that cloudberries require a wet swamp, while leather leaves can grow in both moist and wet sides. The only protected swamp in the area was too dry for cloudberries. This catastrophe was due to a spurious rule leather leaf ? cloudberry. The rule has p-value 0.13 which means that there 13% proba- bility to make a type 1 error.
+
+In the same time, the forest society misses an important rule, namely wet swamp,leather leaf ? cloudberry. This rule was not found, because it had too low frequency, 0.04.
+
+However, it is a strong rule with confidence 1.0. The p-   DOI 10.1109/ICDM.2008.144    DOI 10.1109/ICDM.2008.144     value is 0.011 which indicates that the rule is quite reliable.
+
+Roughly speaking, it means that there is only 1.1% proba- bility that the rule is spurious.
+
+The problems of association rules and especially the frequency-confidence-framework are well-known ([23, 24, 6, 16]), but still there have been only few attempts to solve the problem. Quite likely, the reason is purely practical: the problem has been considered computationally intractable.
+
+Statistical significance is not a monotonic property and therefore it cannot be used for pruning the search space in the same manner as the frequency.
+
+However, when we search directly statistically signifi- cant rules (instead of sets), we can utilize other properties for efficient pruning. More efficiency is achieved by search- ing only minimal (non-redundant) statistically significant rules. Such rules are at least as good as the pruned rules, but simpler, and no information is lost. In practice, the sim- pler rules avoid overfitting and hold better in the future data.
+
+In this paper, we introduce a set of properties which can be used for searching minimal, statistically most significant association rules. The properties are implemented in the StatApriori algorithm. StatApriori guarantees that no sig- nificant rules are missed, while the number of spurious rule candidates generated during the execution is kept minimal.
+
+Compared to a modification of the classical Apriori algo- rithm, which also produces all significant association rules, StatApriori is very efficient. It can tackle problems which are impossible to compute with the classical Apriori.
+
+As far as we know, the algorithm is the first of its kind. The previous algorithms have restricted in statisti- cally significant classification rules using ?2-measure (e.g.
+
+[15, 16, 4, 22, 17]). This is quite a different problem, be- cause in classification both X ? C and ?X ? ?C should be accurate. In other words, classification rules describe de- pendencies between attributes, while association rules de- scribe dependencies between events.
+
+Webb [24] has done pioneering work in testing the statis- tical significance of association rules by Fisher?s exact test.
+
+Fisher?s exact test like ?2 is designed for measuring depen- dence between attributes and some significant association rules can be missed (type 2 error). However, no new algo- rithms were introduced in these experiments and the search proved to be infeasible on large data sets with the existing techniques.
+
+In addition, several interestingness measures (see e.g. [9] for an overview) have their origins in statistics, but they do not measure the statistical significance of association rules.
+
+As a result, they can cause both type 1 and type 2 errors.
+
+The organization of the paper is the following: The basic definitions are given in Section 2. The main principles of the search are given in Section 3 and the StatApriori algorithm in Section 4. Experimental results are reported in Section 5 and the final conclusions are drawn in Section 6.
+
+2. Basic definitions  In the following we give basic definitions of the associa- tion rule, statistical dependence, statistical significance, and redundancy. The notations are introduced in Table 1.
+
+Table 1. Basic notations.
+
+Notation Meaning A, B, C,. . . binary attributes a, b, c, . . . ? {0, 1} attribute values R = {A1, . . . , Ak} set of all attributes |R| = k number of attributes Dom(R) = {0, 1}k attribute space X, Y, Z ? R attribute sets Dom(X) = {0, 1}l domain of X , |X| = l (X = x) = {(A1 = a1), . . . , event, |X| = l (Al = al)} t = {A1 = t(A1), . . . , Ak = t(Ak)} row (tuple, transaction) r = {t1, . . . , tn | ti ? Dom(R)} relation (data set) |r| = n size of relation r ?X=x(r) = {t ? r | t[X] = x} set of rows where  X = x m(X = x) = |?X=x(r)| number of rows where  X = x  P (X = x) = m(X=x)  n relative frequency of X = x  i(fr, ?) measure functions I(X ? A) = i(P (XA), ?(X, A)) upperbound(f) an upperbound for function f bestrule(X) = the best rule which can be arg maxA?X{I(X \ A ? A)} constructed from X PS(X) property ?potentially significant?;  whether significant rules can be derived from X or its supersets  minattr(X) = ?minimum attribute? of X; arg min{P (Ai)|Ai ? X} one with the lowest frequency  2.1. Association rules  Traditionally, association rules are defined in the frequency-confidence framework:  Definition 1 (Association rule). Let R be a set of binary attributes and r a relation according to R. Let X ? R, A ? R \ X , x ? Dom(X), and a ? Dom(A).
+
+The confidence of rule (X = x) ? (A = a) is  cf(X = x ? A = a) = P (X = x,A = a) P (X = x)  = P (A = a|X = x) and the frequency (support) of the rule is  fr(X = x ? A = a) = P (X = x,A = a).
+
+Given user-defined thresholds mincf ,minfr ? [0, 1],  rule (X = x) ? (A = a) is an association rule in r, if     (i) cf(X = x ? A = a) ? mincf , and (ii) fr(X = x ? A = a) ? minfr.
+
+The first condition requires that an association rule should be strong enough and the second condition requires that it should be common enough. In this paper, we call rules association rules, even if no thresholds minfr and mincf are specified.
+
+Usually, it is assumed that the rule contains only positive attribute values (Ai = 1). Now, the rule can be expressed simply by listing the attributes, e.g. A1, A3, A5 ? A2.
+
+Another common restriction is to assume that the conse- quent contains just one attribute. Often the rules with a set of attributes in the consequence can be derived afterwards.
+
+Derivation rules are simple, when the confidence is 1, but the exact calculi for different measure functions should be researched.
+
+2.2. Statistical dependence  Statistical dependence is usually defined through statis- tical independence (e.g. [20, 14]):  Definition 2 (Independence and dependence). Let X ? R and A ? R \ X be sets of binary attributes.
+
+Events X = x and A = a, x ? Dom(X), a ? Dom(A), are mutually independent, if P (X = x,A = a) = P (X = x)P (A = a).
+
+If the events are not independent, they are dependent.
+
+The strength of the statistical dependence between (X = x) and (A = a) can be measured by lift or interest:  ?(X = x,A = a) = P (X = x,A = a)  P (X = x)P (A = a) .
+
+In the following, we will concentrate on the dependen- cies between events containing only positive attributes. The lift of rule X ? A is denoted simply ?(X,A).
+
+2.3. Statistical significance  In this work, we analyze the statistical significance of association rules in the classical (frequentist) framework.
+
+Bayesian significance testing offers an interesting alter- native, but it is still little studied in this context. Both approaches produce asymptotically similar results (under some assumptions, the test results are identical), although the Bayesian testing is sensitive to the selected prior proba- bilities. [3]  The idea of classical statistical significance tests (see e.g.
+
+[8, Ch. 26] or [12, Ch. 10.1]) is to estimate the probability of the observed or a rarer phenomenon, under some null hy- pothesis. When the objective is to test the significance of the  dependency between events X and A, the null hypothesis is the independence assumption: P (X,A) = P (X)P (A).
+
+The task is to calculate the probability p that the observed or higher frequency occurs in the data, if the events were actually independent. If the estimated probability p is very small, then the observed dependency is said to be significant at level p.
+
+The significance of the observed frequency m(X,A) can be estimated exactly by the binomial distribution. Each row in relation r, |r| = n, corresponds to an independent Bernoulli trial, whose outcome is either 1 (XA occurs) or 0 (XA does not occur). All rows are mutually independent.
+
+Assuming the independence of attributes X and A, com- bination XA occurs on a row with probability P (X)P (A).
+
+Now the number of rows containing X,A is a binomial ran- dom variable M with parameters P (X)P (A) and n. The mean of M is ?M = nP (X)P (A) and its variance is ?2M = nP (X)P (A)(1?P (X)P (A)). Probability P (M ? m(X,A)) gives the significance p:  p = m(X)?  i=m(X,A)  (n i  ) (P (X)P (A))i(1 ? P (X)P (A))n?i.
+
+The significance can be used in two ways to prune as- sociation rules: either 1) we can set the significance level (maximum p) and search all rules with sufficiently low p, or 2) use the p-values to search the K most significant rules.
+
+Deciding the required significance level is a difficult problem, which we do not try to solve here. The problem is that the more rules we test, the more spurious rules are likely to pass the significance test. Webb [24] has suggested a solution in the context of association rule discovery using the Bonferroni adjustment [19].
+
+2.4. The z-score  The binomial probability is quite difficult to calculate, but for our purposes it is enough to have an upper bound for the p-value. This guarantees that no rules with a low p- value are lost when the search space is pruned. Additional pruning and ranking can be done afterwards, when the ac- tual binomial probabilities are calculated.
+
+The simplest upper bound is based on the (binomial) z- score:  z(X,A) = m(X,A) ? ?M  ?M  = m(X,A) ? nP (X)P (A)?  nP (X)P (A)(1 ? P (X)P (A))  = ?  n(?(X,A) ? 1)? ?(X,A) ? P (X,A) .
+
+The z-score measures how many standard deviations (?M ) the observed frequency m(X,A) deviates from the expected value ?M = nP (X)P (A). The corresponding probability can be easily approximated, because z follows the standard normal distribution, when n is sufficiently large and P (X)P (A) (or 1?P (X)P (A)) is neither close to 0 nor to 1. As a rule of thumb, the approximation can be used, when nP (X)P (A) ? 5 (e.g. [12, 147]). According to [7], the approximation works well even for nP (X)P (A) ? 2, if continuity correction (subtracting 0.5 from m(X,A)) is used.
+
+When P (X)P (A) is low, the binomial distribution is positively skewed. This means that the z-score overesti- mates the significance. Therefore, we will not use normal approximation to estimate the p-values, but the z-score is used only as a measure function.
+
+We note that the z-score is not crucial to our method, but several other measure functions can be used, as well.
+
+The requirement is that the measure I is a monotonically increasing or decreasing function of m(X,A) and ?(X,A).
+
+For example, when the expected value P (X)P (A) is very low, we can derive a tight upperbound for p from the Cher- noff bound [10]:  P (M > ?M (1 + ?) < e??M  (1 + ?)(1+?)?M .
+
+By inserting ? = ? ? 1, where ? = ?(X,A), and using ?? = m(X,A), we achieve  pch = P (M > m(X,A)) <  ( e  (??1) ?  ?  )m(X,A) .
+
+This is monotonically decreasing with both m(X,A) and ?.
+
+2.5. Redundancy  A common goal in association rule discovery is to find minimal (or most general) interesting rules, and prune out redundant rules [5]. The reasons are twofold: First, the number of discovered rules is typically too large (even hun- dreds of thousand rules) for any human interpreter. Accord- ing to the Occam?s Razor principle, it is only sensible to prune out complex rules X ? A, if their generalizations Z ? A, Z ? X are at least equally interesting. The user just has to define the interestingness measure carefully, according to the modelling purposes. Second, pruning re- dundant rules can save the search time enormously, if it is done on-line. This is not possible with many interestingness functions, and usually the pruning is done afterwards.
+
+In our case, the interestingness measure is the statistical significance, but in general, redundancy and minimality can be defined with respect to any other measure function.
+
+Definition 3 (Redundant rules). Given an increasing inter- estingness measure I , rule X ? A is redundant, if there exists rule X ? ? A? such that X ? ? {A?} ? X ? {A} and I(X ? ? A?) ? I(X ? A). If the rule is not redundant, then it is called non-redundant.
+
+
+
+I.e. a rule is non-redundant, if all its generalizations (?parent rules?) are less significant. It is still possible that some or all of its specializations (?children rules?) are bet- ter. In the latter case, the rule is unlikely interesting itself.
+
+Non-redundant rules can be further classified as minimal or non-minimal:  Definition 4 (Minimal rules). Non-redundant rule X ? ? A? is minimal, if for all rules X ? A, such that X ??{A?} ? X ? {A}, I(X ? A) ? I(X ? ? A?).
+
+
+
+I.e. a minimal rule is more significant than any of its par- ent or children rules. In the algorithmic level this means that we stop the search without checking any children rules, if we have just ensured that the rule is minimal.
+
+3. Main principles  In this section, we will introduce the main principles of the search algorithm. The results are given on such a general level that any suitable measure function or search strategy can be applied.
+
+3.1. Problem definition  Let us first define the problem formally:  Definition 5 (Search problem). Let p(X ? A) denote the p-value of rule X ? A. Given binary data r and threshold pmax ? R, the problem is to search a set of association rules S such that for all X ? A ? S  1. X ? A expresses a positive correlation, i.e. ?(X ? A) > 1,  2. X ? A is non-redundant, 3. for all Y ? B /? S, p(X ? A) ? p(Y ? B), and 4. p(X ? A) ? pmax.
+
+We note that the user has to select only one parame-  ter, pmax. Alternatively, we could define an optimization problem, where the N best rules (with lowest p-values) are searched.
+
+Let us now assume that we have a measure function i(fr, ?) which defines an upperbound for the binomial probability. For any rule X ? A, I(X ? A) = i(P (XA), ?(X,A)). In addition, let i be either monotoni- cally increasing or decreasing with both frequency fr and lift ?. The search problem can be divided into two subprob- lems:     Figure 1. The general Apriori algorithm.
+
+Input: set of attributes R, data set r, an anti-monotonic property ? Output: {X ? P(R)|?(X) = 1} Method:  // Initialization S1 = {Ai ? R|?(Ai) = 1} l = 1 while (Sl 	= ?)  // Step 1: Candidate generation Generate Cl+1 from Sl // Step 2: Pruning Sl+1 = {c ? Cl+1|?(c) = 1} l = l + 1  return ?lSl  1. Search all non-redundant rules X ? A for which p(X ? A) ? pmax using i.
+
+2. Calculate the exact p-values and output rules with suf- ficiently low p.
+
+The postprocessing step is trivial and we will concen- trate on only the search step. For simplicity, we assume that i is monotonically increasing; a monotonically decreasing measure function is handled similarly.
+
+The measure function I guarantees that all significant rules at level pmax are discovered. For efficiency, i should also prune out as many insignificant or redundant rules as possible.
+
+3.2. Monotonic and anti-monotonic proper- ties  The key idea of the classical Apriori algorithm [2, 13] is the anti-monotonicity of frequency. For attribute sets, the monotonicity and anti-monotonicity are defined as follows:  Definition 6 (Monotonic and anti-monotonic properties).
+
+Property ? : P(R) ? {0, 1} is monotonic, if (?(Y ) = 1) ? (?(X) = 1) for all X ? Y , and anti-monotonic, if (?(X) = 1) ? (?(Y ) = 1) for all Y ? X .
+
+When ? is anti-monotonic (?(Y ) = 0) ? (?(X) = 0) for all X ? Y .
+
+When the measure function defines an anti-monotonic property, the interesting sets or rules can be searched with the general Apriori algorithm (Figure 1). The problem is that the measure functions for the statistical significance do not define any anti-monotonic property. However, it turns out that the upper-bound for the measure function I defines an anti-monotonic property for most set-inclusion relations.
+
+3.3. Property PS  Let us define the property PS, ?potentially significant?.
+
+Potential significance of set X is a necessary condition for constructing any significant rule X \ A ? A.
+
+Definition 7. Let measure function I be as before, minI a user-defined threshold, and upperbound(f) an upperbound for function f . Let bestrule(X) = arg maxA?X{I(X \ A ? A)} be the best rule which can be constructed from attributes X . Property PS : P(R) ? {0, 1} is defined as PS(X) = 1, iff upperbound(I(bestrule(X))) ? minI .
+
+Now it is enough to define the conditions under which PS behaves anti-monotonically. The following theorem is the core of the whole search algorithm:  Theorem 1. Let PS, X , and Y be as before. If (PS(X) = 1), then (PS(Y ) = 1) for all Y ? X such that minattr(X) = minattr(Y ).
+
+Proof. First observe that for all B ? X we have ?(X \ B,B)) ? 1P (B) ? 1P (minattr(X)) and upperbound(I(X \ B ? B)) = i(P (X), 1P (minattr(X)) ).
+
+By them we have upperbound(I(bestrule(X))) = i(P (X), 1P (minattr(X)) ) ? i(P (Y ), 1P (minattr(Y )) ) = upperbound(I(bestrule(Y ))) for all Y ? X such that minattr(X) = minattr(Y ).
+
+We have minI ? upperbound(I(bestrule(X))) by the definition of PS(X) = 1. Hence the reasoning above yields also minI ? upperbound(I(bestrule(Y ))), as re- quired for the definition of PS(Y ) = 1.
+
+Corollary 1. If PS(Y ) = 0, then PS(X) = 0 for all X ? Y such that minattr(X) = minattr(Y ).
+
+We have shown that property PS defines an anti- monotonic property among sets having the same minimum attribute. Let us now consider the exceptional case, when the anti-monotonicity does not hold.
+
+Let us call X an l-set, if |X| = l. Let the (l?1)-subsets, Yi ? X , |Yi| = l ? 1, be called X?s parent sets. Now X has l parent sets, from which only one has a different minimum attribute. The exceptional parent set is Yl = X \ {minattr(X)}. If P (minattr(Yl)) > P (minattr(X)), Yl has a lower upperbound for ? than Y1, . . . , Yl?1 and X have. Therefore, it is possible that Yl is non-PS, even if X is PS.
+
+4. Algorithm  Next, we give the StatApriori algorithm, which imple- ments the pruning properties.
+
+4.1. The main idea  The StatApriori algorithm proceeds like the general Apriori (Figure 1) using property PS. It alternates between the candidate generation and pruning steps, as long as new non-redundant, potentially significant rules can be found.
+
+However, special techniques are needed, because property PS is not anti-monotonic in all respects.
+
+First, the attributes are arranged into an ascending or- der by their frequencies. Let the renamed attributes be {A1, . . . , Ak}, where P (A1) ? . . . ? P (Ak). The idea is that the candidates are generated in the canonical order.
+
+From l-set X = {A1, . . . , Al}, we can generate (l+1)-sets X ? {Aj}, where j > l. Now all supersets of X have the same upper-bound for the lift, ? ? 1P (A1) . If X is non-PS, then none of its descendants can be PS. Otherwise, we should check the other parent sets Z ? X ? {Aj}, |Z| = l.
+
+If at most one of them, (X \ {A1}) ? {Aj}, is non-PS, then X ?{Aj} is added to the candidate collection Cl+1. If (X \ {A1}) ? {Aj} was non-PS, it is also added to a tem- porary collection of special parents for frequency counting.
+
+After candidate generation, the exact frequencies are counted from the data. Candidates which are non-PS or can produce only redundant descendants, will be pruned, and others are added to collection Sl+1. The minimality of PS rules is checked, because no new candidates are gener- ated from minimal rules. The principles for redundancy and minimality checking are  1. If we have ?(bestrule(X)) = 1P (minattr(X)) , then the lift is already maximal possible, and none of X?s specializations can gain a better p-value. The rule is marked as minimal.
+
+2. If we have upperbound(i(bestrule(X ? {Aj}))) ? i(bestrule(Z)) for some attributes Z ? X ? {Aj}, then X ? {Aj} and all its specializations will be re- dundant with respect to Z. X ? {Aj} is removed.
+
+4.2. Enumeration tree  The secret of StatApriori is a special kind of enumer- ation tree, which enables an efficient implementation of pruning principles. A complete enumeration tree lists all sets in the powerset P(R). In practice, it can be imple- mented as a trie, where each root?node path corresponds an item set. StatApriori uses an ordered enumeration tree, where the attributes are arranged into ascending order by their frequencies. Figure 2) shows an example, when R = {A,B,C,D,E}, and P (A) ? P (B) ? . . . ? P (E). Solid lines represent an example tree, when two levels are gener- ated, and dash lines show the nodes missing from a com- plete tree.
+
+Let us now consider the candidate generation at the third level. The missing nodes at the second level are either in- significant or they and all their descendants are redundant.
+
+Set {A,B,C} is added to the tree, because all its parent sets, {A,B}, {A,C}, and {B,C} are in the tree (i.e. PS) and non-minimal. Sets {A,B,D} and {A,B,E} are not added, because they have non-PS parents (missing sets {A,D} and {A,E}) with the same minimum attribute A.
+
+The same holds for {A,C,D} and {A,C,E}. However, {B,C,D} is added to the tree, because the only missing parent, {C,D}, has a different minimum attribute. This is a special case, and also {C,D} is added to a tempo- rary collection for frequency counting. Sets {B,C,E} and {B,D,E} are not added, because {B,E} is missing. Af- ter frequency counting, non-PS candidates will be removed from the tree.
+
+A  C  D E  C B  E D  E  D  D EB  E  E  E  D  C  D  E  C  E  D E  E E E  ED  E E  Figure 2. A complete enumeration tree (dash line) and an example tree (solid line).
+
+4.3. Pseudocode  The StatApriori algorithm is given in Figures 3, 4, and 5.
+
+In the pseudocode it is assumed that the measure function I for statistical significance is increasing.
+
+4.4. Time complexity  It is known that the problem of searching all frequent attribute sets is NP -hard, in the terms of the number of attributes, k [11]. The worst case happens, when the most significant association rule involves all k attributes, and all 2k attribute sets are generated. The worst case complexity of the algorithm is O(max{k2, nk}2k). Usually, when k < n, this reduces to O(n22k).
+
+Theorem 2. The worst-case time complexity of StatApriori is O(max{k2, nk}2k), where n is the number of rows and k is the number of attributes.
+
+Figure 3. Algorithm StatApriori.
+
+Input: set of attributes R, data set r, increasing measure function I , threshold K Output: non-redundant rules which are significant Method:  // Initialization 1 S1 = {Ai ? R|PS(Ai) = 1} 2 l = 1 3 while (Sl 	= ?) 4 // Step 1: Candidate generation 5 Cl+1=GenCands(Sl, l) 6 // Step 2: Pruning 7 Sl+1=PruneCands(Cl+1, l + 1,K) 8 l = l + 1 9 for all Xi ? ?lSl such that (?Xi.redundant)  and (Xi.maxI ? K) 10 output bestrule(Xi)  Figure 4. Algorithm GenCands.
+
+Input: potentially significant l-sets Sl, size l Output: (l + 1)-candidates Cl+1, special parents SpecPar Method:  1 Cl+1 = ?; SpecPar = ?; // Xi and Xj have l ? 1 common attributes, the same // minimum attribute and none of them is minimal  2 for all Xi,Xj ? Sl such that ((|Xi ? Xj | == l ? 1) and ?Minimal(Xi) and ?Minimal(Xj))  // check the other parents with the same minattr 3 if ?Z ? Xi ? Xj such that ((|Z| = l) and  (minattr(Z) == minattr(Xi)) if (?Minimal(Z) and Z ? Sl?1)  4 add Xi ? Xj to Cl+1 // check special case  5 if ((Xi ? Xj) \ minattr(Xi) /? Sl) 6 add (Xi ? Xj) \ minattr(Xi) to SpecPar 7 return (Cl+1, SpecPar)  Figure 5. Algorithm PruneCands.
+
+Input: l-candidates Cl, size l, threshold K Output: potentially significant l-sets Sl Method:  1 Sl = ?; 2 for all Xi ? Cl, Yj ? SpecPar 3 count frequencies P (Xi) and P (Yj) from r 4 for all Xi ? Cl 5 max? = P (minattr(X))?1  // check if Xi is PS and its descendants can // produce non-redundant rules  6 if (PS(P (Xi),max? ,K) and (?Redundant(P (Xi),max?))  7 add Xi to Sl 8 if i(bestrule(Xi)) ==  upperbound(i(bestrule(Xi))) 9 Xi.minimal = 1  // check if Xi is redundant; its descendants // can still be non-redundant  10 if (Redundant(P (Xi), ?(bestrule(Xi)))) 11 Xi.redundant = 1 12 Xi.maxI = max{Yj .maxI | Yj ?  Parents(Xi)} 13 return Sl;  Proof. The initialization (generation of 1-sets) takes n ? k steps. Producing l-sets and their best rules takes l2|Cl| + 2n|Cl|k + 2|Sl|l time steps.
+
+The first term is the time complexity of the candidate generation. Each candidate has l parents and each parent can be found in the trie in l ? 1 steps.
+
+The second term is the complexity of the frequency counting. The database is read (n rows) and on each row |Cl| candidates are checked. In the worst case, all candi- dates have an extra parent which has to be checked, too.
+
+Checking takes in the worst case log k steps, when the data is stored as bit vectors and inclusion test is implemented with logical bit operations.
+
+The third term is the complexity of the rule selection phase: for each of |Sl| sets, all l parents are checked.
+
+Checking is done at most twice: once for calculating the maximal I-value (selecting the best rule) and second time for checking the redundancy. Each checking can be imple- mented in constant time, if the parent pointers are stored into a temporary structure in candidate generation phase.
+
+Since |Cl| ? |Sl|, the total complexity is k?  l=2  max{l2, n}|Cl| < max{k2, n} k?  l=2  ( k  l  )  = O(max{k2, nk}2k).
+
+5. Experiments  The main goal of the experiments was to evaluate the speed?accuracy ratio of the StatApriori algorithm. Even a clever algorithm is worthless unless it can produce better results or perform faster than the existing methods. It was expected that StatApriori cannot compete in speed with the traditional methods, but instead it is likely to produce more accurate rules.
+
+The data sets and test parameters are described in Table 2. The first four data sets are classical benchmark data sets from FIMI repository for frequent item set mining (http: //fimi.cs.helsinki.fi/). Plants lists all plant species growing in the U.S.A. and Canada. Each row con- tains a species and its distribution (states where it grows).
+
+The data has been extracted from the USDA plants database (http://plants.usda.gov/index.html). Gar- den lists recommended plant combinations. The data is extracted from several gardening sources (e.g. http:// baygardens.tripod.com/).
+
+Each data set was tested with two minimum confidences, 0.90 and 0.60. The goal was to find both strong (and prob- ably accurate) rules and strong correlations. For all tested measures we have calculated the average prediction accu- racy (error in the test set) and lift among 100 best rules dur- ing 10 executions. All experiments were executed on In- tel Core Duo processor T5500 1.66GHz with 1 GB RAM, 2MG cache, and Linux operating system.
+
+The quality of rules is summarized in Table 3. In Stat- Apriori, the main measure function was the z-score, but the binomial probabilities (p-values) were used for redun- dancy reduction, too. A rule was considered redundant, if it had either a lower z-score than its parent rules or if the lower bound of log(p) was higher than the minimum up- perbound for parents? log(p). This strategy proved to be efficient when the frequencies become low and z-scores ex- pand. For comparison, the rules we selected with the ?2- measure, J-measure, z-score and frequency, after normal frequency-based pruning.
+
+StatApriori produced very accurate results on all data sets, except Chess and Garden. The latter was dif- ficult for all measures, because all patterns are very rare. For proper analysis, an ontology of Genus?Species? Subspecies?Variety should be used. The poor behaviour on Chess is harder to explain. For all other measures the rules were selected with exceptionally high minimum frequency  (minfr = 0.75). This means that the consequence holds on at least 75% of rows and the error is less than 25%, even if the antecedent is empty. In fact, the rules did not represent any correlations, but the consequents were totally indepen- dent from the antecedents. The rules were also very simple, containing in average just two attributes in the antecedent.
+
+On the other hand, StatApriori discovered strong correla- tions and the rules were more specific, with in average three attributes in the antecedent.
+
+In all cases, StatApriori produced the strongest lift. This is natural, because the statistical significance measures the correlations. When the z-score was used with the minimum frequency thresholds, the lift values were much smaller.
+
+The accuracy was also poorer, which suggests that the z- score suffers for frequency-based pruning. Quite likely, the same holds for the ?2.
+
+It is noteworthy that the StatApriori performed faster than the traditional Apriori in all test cases, even if no min- imum frequency thresholds were used. The maximum ex- ecution time was for Chess, 110s. The large minimum fre- quencies for the Apriori are partly due to heavy postprocess- ing. For feasibility, the thresholds were set to avoid over 500 000 rules. However, the dense data sets are difficult for Apriori even without this restriction. For example, Apriori cannot handle Chess with minfr < 0.50.
+
+6. Conclusions  Searching statistically significant association rules is an important but neglected problem. So far, it has been consid- ered computationally infeasible with any larger data sets.
+
+In this paper, we have shown that its is possible to search all statistically significant rules in a reasonable time. We have introduced a set of effective pruning properties and a breadth-first search strategy, StatApriori, which implements them.
+
+StatApriori can be used in two ways: either to search K most significant association rules or all rules passing the given significance threshold (minimum z-score). This en- ables the user to solve the multiple testing problem (i.e. set- ting the significance threshold) in a desired way or use the algorithm only for ranking the most significant rules.
+
+In the same time, StatApriori solves another important problem, and prunes out all redundant association rules.
+
+According to experimental results, this improves the rule quality by avoiding overfitting. Together, the z-score and redundancy reduction provide a robust method for rule dis- covery. I.e. the discovered rules have a high probability to hold in the future data.
+
+As far as we know, this is the first algorithm of its kind.
+
+The few existing algorithms have either searched only clas- sification rules with statistical measures or used frequency- based pruning in some extent. Both of these strategies are     likely to lose significant association rules.
+
+In the future research, we are going to improve the effi-  ciency further, using a suitable indexing structure or addi- tional pruning criteria. The final goal is to develop an ef- ficient algorithm for searching the most significant, general association rules, containing propositional logic formulas.
+
+7. Acknowledgments  We thank Finnish Concordia Fund (http://www.
+
+konkordia-liitto.com/) for supporting this re- search.
+

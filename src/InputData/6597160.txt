@@ -1,0 +1,248 @@
+Distributed SPARQL query answering over RDF data streams
+
+Abstract?The RDF framework is the underpinning element of Semantic Web stack; its widespread adoption requires efficient tools to store and query RDF data. A number of efficient local RDF stores already exist, while distributed indexing and distributed query processing are only starting to develop; fur- thermore dynamically growing and fail-safe solutions are not yet available. To remedy this situation, we propose an approach for efficient and scalable query processing over RDF graphs, distributed over a local data grid. Our system is based on a distributed architecture, where neither single point of failure nor specialised nodes exist. The query processing framework, presented in the paper, includes a sophisticated query planning and query execution algorithm, which is designed expressively for storage and query of a stream of incoming RDF triples; allowing the users to register queries that will be notified in real time of new relevant data. We finally evaluate our approach through performance measurement of a real deployment in the areas of business process monitoring.
+
+Index Terms?Semantic Web, Query Processing, Distributed Storage, Graph Database.
+
+
+
+I. INTRODUCTION  The Semantic Web vision is nowadays becoming a reality: the various elements composing the Semantic Web stack are becoming mature, and in particular its underpinning elements: such as the Resource Description Framework (RDF) [1] and the SPARQL query language [2]. With the boost from Linked Open Data (LOD) project [3] and the adoption, by many government and private organization, of the RDF framework to publish their data; the need for systems to store and retrieve data represented in RDF format is becoming more and more urgent.
+
+A number of efficient centralised RDF stores already exist [4], however distributed indexing and distributed query pro- cessing are only starting to develop; furthermore dynamically growing and fail-safe solutions are not available.
+
+To remedy this situation, we propose an approach for efficient and scalable query processing over RDF graphs distributed in a grid. Our solution is based on a distributed architecture, where no single point of failure or specialised nodes exist. Our query processing framework includes a so- phisticated query planning and query execution algorithm, and, in addition to traditional synchronous query processing, our system is designed expressively for storage and query of a stream of incoming RDF triples following a push approach to notify the clients about new results.
+
+This paper is structured as follows: Section II outlines the motivations behind this work; this section is followed by Section III, which describes in details the proposed solution.
+
+The evaluation of the approach is presented in Section IV, while related works is reported in Section V. The paper concludes with Section VI that outlines final considerations and future work on this topic.
+
+
+
+II. MOTIVATION  Nowadays, big enterprises such as BT and Etisalat cannot fully exploit their huge knowledge bases for analytical and predictive processes, because information is scattered and duplicated across numerous applications and databases; hence leading to inconsistent information, complex systems and inefficient processes. Approaches like data warehousing and Service-Oriented Architecture all tackle parts of the problem, but none provide a complete solution. The use of RDF and LOD represents a big step towards this direction, by providing a single source of information that is easy to use and that data consumers (human or machine) can trust. RDF moreover provides a standard data model that can be exchanged seam- lessly across departments and enterprises, with well defined semantics. Applications consuming RDF and LOD do not need to worry anymore about data quality, data mapping and translation processes, focusing directly on the application itself; starting from a reliable and standardised source of information. However the use of RDF in big enterprises is still in its early adoption phase: RDF data storage and retrieval requires specialised applications and as we describe in SectionV, available applications are facing problems such as on demand allocation of storage space, computational power, and fail safety. The system we describe in detail in the next section has been expressively defined to solve those issues.
+
+
+
+III. SYSTEM ARCHITECTURE  The system we propose is based on the concept of horizontal scalability with no specialized nodes; new nodes can be added or nodes can disappear while the system is on line: in case more space or computational power is required new nodes can be added to the grid.
+
+The system can be logically divided between two separate layers: the data layer that is used to contain and make the data available in the grid and the application layer: which refers to  2013 IEEE International Congress on Big Data  DOI 10.1109/BigData.Congress.2013.56     the processes that are running on every node which is used for storing data in the tables and answering the queries. This layer is divided into two functional modules: the storage module and the query answering module. Every node in the grid executes exactly the same code, in order to avoid node specialization.
+
+A. Data layer  The system is designed around the concept of a Distributed Hash Table (DHT) [5]. In our implementation the DHT layer is represented by Oracle Coherence1, an in-memory data grid built on a Java DHT implementation, however our approach is designed in such a way that other implementations of DHT can be used (e.g. Hazelcast2, Accumulo3, Riak4). These DHT can be easily configured for redundancy and fail-safety; moreover, as the size of the data grows, the system is able to scale out by adding nodes to the grid. The data layer consists of four primary distributed hash tables.
+
+1) Triples Table: the triples table stores all the triples in the system, in their numeric representation (with the exception of literals that are stored as their string representation).
+
+2) Lookup Table: the lookup table stores the mapping from strings representation of the triple elements to numbers and vice versa.
+
+3) Distributed incremental Sequence Number: this table stores a single long number which is the value of the next unique identifier that will be assigned to a data element to be stored in the Lookup Table.
+
+4) Predicates Frequency Table: this table is used to maintain trace of the frequency of each predicate in the triples stored in the Triples table. The information stored in this table is used to optimize the query execution, as described in detail in section III-C2.
+
+B. Storage Module  The Storage Module takes care of storing the incoming RDF triples into the data layer. As shown in Figure 1 the Storage Module is composed by two main components: the Message Listener and the Sequence Generator. The message listener takes care of parsing the incoming triple and storing the information in the Data Layer. This component will invoke the Sequence Generator in order to convert the elements of the triples (subject, predicate or object) into a numerical representation, so that a triple will be represented by three numeric values (with the exception of cases where the objects are literals, which are used by filters in the query). The Sequence Generator will check if the triple element is present in the Lookup Table and retrieves the corresponding numeric value. In case the element is not present in the Lookup table, the Sequence Generator will assign a new numeric value to the triple element taken from the Distributed incremental Sequence Number. This way, consistency is maintained across  1http://coherence.oracle.com 2http://www.hazelcast.com/ 3http://accumulo.apache.org/ 4http://wiki.basho.com/Riak.html  the Data Grid: if the same element is encountered by multiple nodes, it will be assigned the same numeric value. This is useful, for example, if there are several nodes that are listening to incoming messages from the outside world. Once the triple has been converted into a numeric representation it is stored in the Triples table, and the value in the Predicates Frequency table is incremented.
+
+Fig. 1. Architecture of the Storage Module.
+
+C. Query answering  The Query answering module takes care of executing SPARQL queries on the distributed data layer. To answer queries in a triple store means resolving conjunctive queries over the RDF Graph in the store (the Triples Table in the data layer). The query language used in our system is the W3C standard SPARQL (and its extension [6]). Due to the highly interconnected nature of RDF graphs, the storage of data and query processing are extremely demanding in terms of space and computational power. Our query answering module can execute the queries quickly and efficiently using a distributed and fully scalable approach; Figure 2 represents the various steps of the process distributed across three nodes. The various steps will be now described in more detail, with the help of the following SPARQL query that will be used through this section:  SELECT ?product ?label ?testVar WHERE { ?product rdfs:label ?label .
+
+?product a bsbm-inst:ProductType205 .
+
+?product bsbm:productFeature  bsbm-inst:ProductFeature88 .
+
+?product bsbm:productPropertyNumeric1 ?p1 .
+
+?product bsbm:productPropertyNumeric3 ?p3 .
+
+OPTIONAL { ?product bsbm:productFeature  bsbm-inst:ProductFeature1221 .
+
+?product rdfs:label ?testVar } FILTER ( ?p1 > 427 ) FILTER (?p3 < 473 ) FILTER (!bound(?testVar))  } ORDER BY ?label  1) Parsing the Query and Creating the Query Model: a query is submitted to the SPARQL query interface, which chooses randomly a node in the grid to submit the initial work: the parser processes the query string and generates the     Fig. 2. Query answering process flow.
+
+corresponding query model that is forwarded to all the grid nodes for execution. This model is an internal representation of the SPARQL query. Its main component is a set of query paths representing the graph patterns contained in the WHERE clause of the query.
+
+A query path is composed by a set of variables, a set of query atoms and a set of nested query paths (in case of branches). A query atom represents a triple pattern; it is composed by subject, predicate and object elements that can be either constant values or variables. Filters can be associated to atoms, in case the filter?s scope is entirely referred to variables belonging to that atom. As an example, the query above is parsed and converted to the query model in Table I.
+
+Path=1: Return: ?product, ?label, ?testVar OrderBy: ?label Atom 1: ?product rdfs:label ?label Atom 2: ?product a bsbm-inst:ProductType205 Atom 3: ?product bsbm:productFeature bsbm-inst:ProductFeature88 Atom 4: ?product bsbm:productPropertyNumeric1 ?p1  FILTER ( ?p1 > 427 ) Atom 5: ?product bsbm:productPropertyNumeric3 ?p3  FILTER (?p3 < 473 ) Atom 6: ?product bsbm:productFeature bsbm-inst:ProductFeature1221  OptionalPath=1 Atom 7: ?product rdfs:label ?testVar  OptionalPath=1 FILTER (!bound(?testVar))  TABLE I QUERY MODEL REPRESENTING THE QUERY OF TABLE III-C  Logically, the set of filters assigned to the various query atoms is equivalent to the conjunction of all these filters. Filters defined in this manner suit our algorithm optimally, as the information flow between the atoms (as described in the next sections) implicitly handles conjunctions with no redundant information transmitted to dependent atoms.
+
+On the other hand, in case the filter is defined as a disjunction spreading over multiple query atoms, our approach is not optimal, since it has to consider every particular case.
+
+We mitigate this problem by reducing the disjunctions to a normal form, in order to work with a consistent disjunctive representation. This approach is also useful in order to obtain a normal representation of filters in the query model. Since SPARQL allows the user a high degree of expressiveness, our algorithm converts these filters into a normalized representa- tion.
+
+To obtain this, we apply the Disjunctive Normal Form transformation to the filters in the query path, so that all the disjunctions appear as the topmost element of the filter.
+
+To assign a filter to a query atom, we follow an all-or- nothing approach: in case a disjunction exists in the final filter, the entire filter has to be associated with an atom, therefore all the variables in the filter have to be present in the atom.
+
+In case the entire filter can not be assigned entirely to a query atom, we split the filter over the disjunctive operator and create a copy of the query path, one for each resulting sub-filter. Let us consider the following query example:  SELECT ?a ?b WHERE { ?d rdf:type bsbm:Product.
+
+?d bsbm:ProductType ?type1.
+
+?d bsbm:ProductType ?type2.
+
+?task1 rdf:type ?a.
+
+?task2 rdf:type ?b.
+
+FILTER (?a != ?b).}  In this case it is not possible to assign the filter to a query atom. Such filters are then assigned to the query path and evaluated during the final join of the results.
+
+Once the query model is created, it is passed to the next step.
+
+2) Calculating Query Weights: the execution of a query model is designed to run in parallel over several nodes; the final results of all the parallel executions are joined together during a final join operation, but in case the resulting sets are big, the final join operation can be very expensive. For this reason, we need to reduce the size and dimensionality of the intermediate result sets. To overcome this issue, we ensure efficient execution of the query model by establishing data dependencies between the atoms.
+
+As an example, in case of the query model of Table I all the atoms share the same variable ?product; once the system has obtained the set of values of ?product by executing the query represented by one of the atoms, it is possible to replace the variable ?product in the other atoms with the results set obtained by the first atom executed. Subsequently, the other execution atoms operate progressively on smaller set of possible values for the variable ?product.
+
+It is clear that the first atom executed, will influence the initial size of the result set. To chose this initial atom we follow an optimization procedure by assigning to each atom an execution weight or cost. The weight of an atom reflects the number of triples the atom will match. In order to do this, we use the Predicates Frequency table maintained by the storage module.
+
+The weight for the query atom (j, k, l) is defined as:  W (j, k, l) = min{wgt(j, s), wgt(k, p), wgt(l, o)} (1) where: wgt(x, y) returns the estimate number of matching triples with value x in the subject (s), predicate (p) or object (o) position y. If the term x is a variable and not a fixed value, wgt(x, y) returns the total size of the Triples Table.
+
+Note that defining filters on a variable will reduce the number of results in the atom, so in case the variable x appears in an equal filter and bound to an element that is not in the predicates set, the resulting weight for the atom will be the size of the Triples Table divided by a constant value.
+
+Query atoms with bound subject have the highest selectivity and will return the smallest result set, followed by atoms with bound object. For atoms with only predicate bound, the algorithm uses the Predicates Frequency table to assign a weight. When an accurate, or at least a reasonable, prediction of the result set size is not possible, the algorithm assigns a pre-determined weight based on the combination of variables and terms bound in the atom.
+
+3) Creating Query Execution Paths: now when atoms are ordered according to their weight, the Query Answering mod- ule proceeds with the creation of a set of Query Execution Paths. These paths are created by selecting the lightest atom in the weight list and by maintaining a data dependency list, for the reasons introduced previously. Every atom inserted in the dependency list is removed from the weight list; the process is carried out recursively until the weight list is empty.
+
+For example, Figure 3 shows the dependency between atoms for the variable ?product in case of our sample query.
+
+Fig. 3. Data flow between query atoms for the ?product variable.
+
+A dependency map is created to describe the dependencies between the query atoms and the variables as in table II.
+
+?product Atom1, Atom2, Atom3, Atom4, Atom5, Atom6, Atom7 ?p1 Atom4 ?p3 Atom5 ?label Atom1 ?testVar Atom7  TABLE II VARIABLES/ATOMS DEPENDENCY MAP  In many cases more than one dependency list exists, and in some cases no dependencies can be defined. In these cases these execution paths can be considered independent and executed all in parallel. Once the execution paths are created, they can be converted into execution plans.
+
+4) Creating Query Execution Plan: each one of the query execution path created during the previous step is converted into a set of callable Java object representing the query atoms.
+
+Once executed, these objects convert their respective atom into a DHT specific filter that is executed on the Triples Table.
+
+In presence of optional paths these are executed last. There are two types of Execution Atoms: the Ready Execution Atom has all the information available to begin the execution immediately. Ready execution atoms are executed in the first- stage of query execution and typically feed data to dependent query atoms.
+
+In order to reduce network traffic between nodes and to further reduce the size of data flowing between atoms, the result set is implicitly divided by the first Ready Execution Atom, which will typically be the atom that returns the smallest result set. The Local Ready Execution atom is limited in scope by submitting the DHT specific filter to operate only with the data stored locally into each node. This way, the data flow is divided into as many separate flows as the number of the nodes in the grid.
+
+For each node, the atom will return only local results. These results are then fed to dependent atoms which execute on the entire grid, implying network traffic between nodes. As data is randomly assigned to storage nodes across the grid, this system will typically distribute the workload uniformly across the execution nodes.
+
+The second type of atom is the Future Execution Atom; its execution depends on the results provided by a ready execution atom. When the ready execution atom concludes its execution it passes the results to the future execution atom that will become a ready execution atom itself and it will be submitted to the grid for execution.
+
+The interplay between execution atoms and the data flow based on data dependencies, implicitly embodies the join operation: the dependent atoms will only return results for shared values. Performing the join in this implicit way is more efficient and makes the execution path smoother, with the need for fewer join operations in the path. Please note that when the size of the results fed into the future atom from one of the upstream atoms is larger than a pre-defined threshold, the execution atom will usually iterate over smaller subsets of the incoming results, executing each of these in turn and feeding the results downstream. This results in a more efficient     execution, as it essentially sets up a pipeline so that dependent atoms can begin execution as partial results flow downstream, without having to wait for the entire result set.
+
+5) Executing Query Paths and Atoms: the ready execution atoms and the future execution atoms described previously are now ready to be submitted for execution in the grid.
+
+The query atoms are executed on a single Java Virtual Machine using multi-threading, a well known technique in computer science that needs to be carefully scheduled in order to avoid deadlocks.
+
+The processor-level thread based parallel execution relies heavily on the framework chosen to implement the system; i.e.
+
+in case of Java Execution Framework there are Executors, Futures and Barriers, to help resolve dependencies and control data flow between query atoms. In our architecture, the query atoms are converted into callable objects converted into DHT native queries. We call these callable objects Execution Atoms as described previously.
+
+In the Java Execution Framework, all Execution Atoms are submitted for execution to the Executor Service, which returns a Future object for each atom, which provides the reference to the result object. When execution of the atom has completed the Future object will make the result of the execution available to dependent atoms, via the get() method.
+
+The Executor Service can be configured to contain any number of threads. This number should ideally be at least equal to the number of processor cores available on the ma- chine running the node, to enable the most efficient scheduling and utilisation of hardware resources, and increase node-level parallel execution.
+
+The intermediate results of Execution Atoms are stored either in-memory using HashMaps or in a temporary map defined as a DHT, this can be specified into a configuration file.
+
+6) Join Operation and Creating the Final Result Set: this step is performed once all the execution paths have terminated execution. The intermediate results, generated by the execution of each query path, need to be combined into a single result set; these intermediate results may share variables, in which case the results will be a join operation on the shared variable.
+
+The amount of work the join operation has to carry out is greatly reduced by the implicit joins defined as the data flow between atoms, as described earlier. The amount of data that typically has to be handled by the final join operation is then significantly smaller than systems performing traditional joins between query atoms. In case where such atoms were executed in parallel, i.e. there was no data dependency between them and hence no down streaming of intermediate results, the join operation will be carried out as a traditional join over two result sets.
+
+As already discussed, in case there exist some filters that could not be assigned to a query atom, these filters are evaluated during this step, together with all the other functions typical of SPARQL 1.1 [6] (aggregation, composition, . . . ).
+
+This is done by defining a TreeSet collection for storing the results, with a custom comparator that compares entries  Fig. 4. Implicit joins and final result join  using the sort variables. Alternatively, a simple list collection can also be used to store the results, with a final sort operation using the custom comparator.
+
+The final result of the global query is the union of the results of each query path. The node that parses the query and initiates the distributed execution receives all of the node- level results, performs the final join and the remaining sorting and aggregation operations as summarised by Figure 4 and finally returns the results.
+
+D. Continuous Query Answering  The flexible query execution mechanism, together with the high performance data storage approach of our system, al- lows straightforward implementation of an efficient continuous query module. This module allows to register SPARQL queries in the system that will be invoked once a relevant triple is inserted in the data layer, following a push mechanism.
+
+Figure 5 summarizes the overall continuous query function- ality. The Continuous Query Registry is a listener process, invoked every time an insert or update event occurs in the Triples table. The invocation mechanism used in our system is able to ignore the triples that are not going to generate any result. In order to do this, every time a query model is registered, the atoms composing the model are analysed and the corresponding set of matching triple patterns is created; whenever new triples are inserted into the grid, only the triples matching these patterns will result in an invocation on the continuous query registry.
+
+In case where a triple matches one or more of the patterns defined in the registry, the registry will return a set of matching query models. For every query model returned, the continuous     Fig. 5. Continuous Query Functionality  query module invokes a matching and binding process that generates a new query model by binding the new triple to its query atoms. The resulting query models are then executed across the grid as described in the previous section. Binding the original query model to the new triple inserted in the system will ensure that only the new results will be retrieved.
+
+This will allow to execute the query efficiently only on the relevant paths of the RDF graph.
+
+Every data insertion into the grid generates an event which triggers the continuous query service. The continuous query service begins first by checking the validity of the new data point (Check Data/Triple module). Then it checks the registry to see if the data point matches an atom of any of the regis- tered query modules (Check Registry module). The matching algorithm iterates through the query atoms and checks whether the incoming triple is a match, taking into account the constant values, the variables and the filters defined on the atom.
+
+In the binding phase, the variables in the matching atom are bound to the corresponding values in the triple, by adding a new filter on the matching variable.
+
+There may be cases where a triple matches more than one atom with separate variable, in a query model. In this case, each match will result in a query model with a set of disjunctive filters (one for each matching atom). As an example, let us imagine the following query registered as continuous query in our system:  SELECT ?pID ?tID ?fTaskID ?pTaskID WHERE { ?pID ebtic:hasTask ?tID.
+
+?pID rdf:type ebtic:Process.
+
+?tID rdf:type ?task.
+
+OPTIONAL {?tID ebtic:followedBy ?fTaskID.
+
+?fTaskID rdf:type ?fTask.}.
+
+OPTIONAL {?tID ebtic:precededBy ?pTaskID.
+
+?pTaskID rdf:type ?pTask.}.}  now, let us consider the case where the following triple is inserted in the data layer:  <ebtic:Proc29, rdf:type, ebtic:TaskA>  There are multiple query atoms in the registered query model that match the new triple.
+
+1. ?tID rdf:type ?task 2. ?fTaskID rdf:type ?fTask.
+
+3. ?pTaskID rdf:type ?pTask  The binding algorithm will typically generate an additional query model for each match. However, in many cases the final query model can be merged using disjunctive filtering, as it is possible to notice in the resulting query:  SELECT ?pID ?tID ?fTaskID ?pTaskID WHERE { ?pID ebtic:hasTask ?tID.
+
+?pID rdf:type ebtic:Process.
+
+?tID rdf:type ?task.
+
+OPTIONAL {?tID ebtic:followedBy ?fTaskID.
+
+?fTaskID rdf:type ?fTask.}.
+
+OPTIONAL {?tID ebtic:precededBy ?pTaskID.
+
+?pTaskID rdf:type ?pTask.}.
+
+FILTER( ((?tID=ebtic:Proc29)&&(?task=ebtic:TaskA))|| ((?fTaskID=ebtic:Proc29)&&(?fTask=ebtic:TaskA))|| ((?pTaskID=ebtic:Proc29)&&(?pTask=ebtic:TaskA)))}  Note that the final query contains three filters, one for each of the matching atoms above. In case a filter for every match- ing can not be defined, the query model will be branched into separate query paths, for every possible matching combination and the final set of query paths will be treated as a UNION query. In case the initial query model is composed by more than one query path, connected with the UNION clause, our algorithm in order to reduce the number of queries created by the binding step, removes the paths that do not have any atom matching the new triple from the query model.
+
+Once the binding process is over, the resulting query model is processed by the query engine. A special note is necessary in case the matching atom belongs to an optional path: in this case, the optional path needs to be converted to a normal path, because the matching atom guarantees to return a result when executed, otherwise also not relevant results will be returned.
+
+In most cases, the continuous queries will be registered for a certain time duration after which they will expire and will be removed from the registry. This can be specified using a timeout parameter. However, if the client decides that she wants to receive events for longer, she can renew the query lease and specify a new timeout value. Specifying a timeout ensures that continuous queries will eventually be unregistered, even if the client or the network fails.
+
+
+
+IV. EVALUATION  The system has been evaluated in the Business Process Monitoring domain. We deployed our application in an enterprise-scale environment to have a realistic configuration generating streams of RDF data, representing process execu- tion instances. In this deployment a monitoring application captures process activity and converts it into RDF triples that are forwarded to a Message queue (Apache ActiveMQ5  in this deployment). This Message queue is monitored by a listening application that captures every triple in the queue and  5http://activemq.apache.org/     insert them in our triple store. Each grid node used for this evaluation is a desktop workstation equipped with Intel Core Duo 2 processor, 8 Gb of RAM memory, Red Hat 5 Linux Operating System, Java 1.7 64-bit, Oracle Coherence 3.5.
+
+Oracle Coherence settings are the following: POF Serialization configured to use one backup, four reflection-based indexes, no data compression, off-heap backup storage, 10 Invocation Service Threads. Each node used in the evaluation is a JVM machine configured as described above. The RDF graph and the SPARQL queries used for this evaluation are described in detail in [7] andbecause of space constraints are not reported here.
+
+The first test we carried out is the analysis of the submission of a continuous stream of RDF triples in the system. We per- formed the test with five different configurations, by varying the number of nodes in our grid. We configured the process monitor in a way that there are always messages pending in the ActiveMQ message queue, so that the process that consumes the messages is never idle. The process monitor automatically slows the creation of messages in case the message queue exceeds a specified size.
+
+No. Nodes Messages/second Triples/second Duplicates/second 2 1500 948 552 4 2200 1390 810 6 2440 1605 835 8 2945 1924 1021 10 3310 2028 1282  TABLE III EVALUATION OF PROCESSING OF RDF TRIPLES STREAM  The results in Table III indicate that the number of messages that can be processed per second increases as the number of nodes is increased, since the processing is distributed across the grid. As expected, during the test, the machine that was running the ActiveMQ broker and the message listener agent was running at 100% cpu load, so the system should conceivably be able to handle more messages than indicated above.Some effort needs to go into finding the ideal configura- tion options for ActiveMQ, which for this test is running with the default configuration. Please note that duplicates/second indicates the number of triples that were already found in the data layer and hence were not inserted; identification of duplicate triples is however carried out by the Storage module itself.
+
+The second test measures the size of the RDF graph that can be stored with different number of nodes. The test was carried out to stop the triples generation process once the heap size of each node exceeded 65% occupation (to the upper n*100k triples). We carried out the test with two different configurations of coherence storage: data stored completely in memory and usage of Java NIO off-heap storage.
+
+Regarding this test, indexation (four indexes over subject, predicate and object lookup values and object Literal values) takes up the largest amount of in-memory storage. Even moving the data itself off the heap, onto NIO memory-mapped files, increased the storage capacity by only 30%. Indexation  No. Nodes Max Data size - In Memory Max Data size - NIO Disk 2 700000 1000000 4 1500000 2000000 6 2300000 3000000 8 3000000 4000000 10 3800000 5000000  TABLE IV DATA SIZE  is critical because it is required for the efficient execution of queries, as well as by the data model and it is kept in memory in both tests. In coherence 3.6 and later, the index itself can be moved off-heap onto file-based storage. However this results into significant degradation of the query performance.
+
+The following tests will focus on the analysis of query answering performances both in the traditional synchronous and continuous queries. The queries are taken from business process monitoring domain as explained in [7]. Query 1 retrieves the list of process instance in the RDF graph, Query 2 retrieves the list of task, process attributes, task attributes and workflow structure from a specific process instance. Query 3 retrieves the list of all the process tasks together with the related process instance. This is the most expensive query and it is used to build the overall process model; it returns almost all the data present in the triple store. The final query 4 retrieves for each task type a set of statistics defined using the aggregation features of SPARQL 1.1.
+
+Synchronous queries: the first test analyses query perfor- mance with different grid configurations, maintaining the size of the RDF graph constant (1 Million triples).
+
+Number of Nodes Query 1 Query 2 Query 3 Query 4 2 1150 440 10675 810 4 645 315 7300 660 6 500 280 6150 560 8 416 250 5400 540 10 381 241 5400 520  TABLE V QUERYING AGAINST NUMBER OF NODES (DATA SIZE = 1 MILLION  TRIPLES)  The Table V and Figure 6 show the effect of increasing the number of nodes as the size of the data is kept the same. Query 3 benefits the most as the number of nodes is increased, validating the fact that increasing the number of nodes will increase distributed processing particularly for complex queries.
+
+The second test is carried out maintaining the grid size constant (10 nodes) and varying the size of the RDF graph6.
+
+As shown by Table VI and in Figure 7, the time taken by query 3 increases linearly as the size of the data grows since the query works over the entire data set. The other queries are not affected by data size in any noticeable way since they only operate on a subset of the overall data.
+
+6Note: 4.5 Milion triples contain approx 14000 processes.
+
+2 4 6 8 10   2 000  4 000  6 000  8 000  10 000  Number of Nodes  Ti m  e (m  s)  Query1 Query2 Query3 Query4  Fig. 6. Querying against Number of Nodes (Data Size = 1 Million Triples)  Data Size Query 1 Query 2 Query 3l Query 4 1000000 381 241 5400 520 2000000 560 456 10400 850 3000000 740 740 13300 1160 4500000 862 1160 20500 1620  TABLE VI QUERYING AGAINST DATA SIZE (NUMBER OF NODES = 10)  A. Asynchronous queries  This test focuses on the performances of continuous query- ing. In this case we will focus only on query 1 and query 3 since their scope is the entire data grid so most of the triples inserted in the system will likely match the triple. The performance of continuous querying is heavily dependent on the query itself and the number of matches between incoming data and the query. In query 1, only specific triples match the query model, which results in few bindings, and hence the number of messages that can be processed per second is not heavily affected by registering the query as continuous.
+
+However, in the case of query 3, the number of possible  1 2 3 4   5 000  10 000  15 000  20 000  Data Size (Million Triples)  Ti m  e (m  s)  Query1 Query2 Query3 Query4  Fig. 7. Querying against Data Size (Number of Nodes = 10)  bindings exceeds the number of messages that have been received, even though a lot of the resulting queries yield no results. The complexity and the number of query models created by the binding module affects heavily the amount of triples that the system is able to process per second in this case.
+
+Query Messages per second Models/second Results/second Query 1 3150 56 37 Query 3 654 865 95  TABLE VII ASYNCHRONOUS QUERIES: SYNCHRONOUS QUERYING AGAINST  NUMBER OF NODES (DATA SIZE = 1 MILLION TRIPLES)
+
+V. RELATED WORK  The major contributions of this paper are to provide a high performance and extremely scalable triple store, with optimized query execution. In the following section, we de- scribe the related work in this field focusing on the difference between our system and the current state of the art.
+
+A large number of triple stores are available commercially, open source and in literature [4]. The set of triple stores cur- rently available can be divided into centralized and distributed approaches. The centralized approaches include Sesame [8] and Jena [9]. However, both have also been reused and extended in some distributed approaches. Other centralized approaches include a wide variety of commercial solutions such as Oracle Database 11g Semantic Technologies [10], BigOWLIM [11], AllegroGraph [12] which have been used in many applications.
+
+With centralized approaches, the main problem is the size of the data that can be handled, due to the limited processing power and space restrictions. Therefore centralized solutions are now getting progressively replaced by distributed appli- cations that are able to scale the RDF graph, albeit at the expense of more computational power. However, distributed approaches also introduce several new problems, the main one being the distributed execution of the join operations.
+
+Distributed solutions are, at the moment, limited to peer to peer (P2P) or overlay networks (Tsc++ [13], Atlas [14]), and DHTs or MapReduce [15] (4Store [16], LarKC [17], SHARD [18]). The main feature of these systems is that, since they are built on top of a distributed architecture, they can be extended in case more storage is required. Within the P2P approaches, the main players are Tsc++, which is based on the triples space computing paradigm, and Atlas which is based on decentralized indexing of the triples. The main problems that prevent the use of peer to peer solutions in our system include: Scalability: P2P systems do not scale well and data is replicated. Each triple that is inserted in the system is stored in multiple peers. This is a problem that is also shared by the Map/Reduce approach, where in cases of high frequency of a predicate, subject or object some nodes may be overloaded. Failover mechanisms: due to the peer to peer nature of the approach the triples are replicated in some     nodes. But in case of the failure of nodes, the triples are not recovered. Moreover in P2P networks nodes do not share data, all communication is via messages. This normally means that intermediate results are communicated to a common node that performs the join operation. There will typically be several join operations in a single query execution as intermediate results are merged together. In some cases, this means that network communication can be a problem.
+
+LarKC, SHARD and 4Store are approaches based on Dis- tributed Hash Tables. The standard distribution of LarKC is based on the Map/Reduce paradigm; this approach is also used by SHARD project. Map/Reduce is a two step approach that allows high scalability and parallelization of the query execution. Compared to Map/Reduce based approaches our solution has several advantages: (i) the primary distributed computing technology used by triple stores and query engines is Hadoop7, that demand run-once semantics. Real-time data streams typically require that the data is updated and written to file between rounds of execution, and then loaded back into memory. This makes handling real-time data very difficult, if not impossible. In contrast, our system allows the query to be activated as more data becomes available without re- quiring such expensive data update operations. (ii) Currently available distributed SPARQL engines run query patterns or atoms in several stages, normally combining results from each stage using a join operation. There is usually little or no communication between the nodes in a single stage. A query execution usually involves several stages and corresponding join operations. Our distributed algorithm uses pattern/atom dependencies and information flow between atoms to perform an implicit join operation. All atoms are submitted for ex- ecution in a single stage where dependencies are resolved during execution. The query completes with a single, final join operation which creates the result set. This leads to significant performance gains. (iii) Map/Reduce based solutions tend to use pre-defined data partitioning algorithms to distribute workloads and make their solutions scalable. Our algorithm makes no assumptions about the data locality and determines at runtime the optimal strategy. Lark, SHARD and 4Store rely heavily on this partitioning step. It is very hard to dynamically repartition data in case the initial partitioning assumption is not efficient any more. Moreover our solution ensures fail-safety: it is possible to define the level of replication and in case of a node failure the system automatically restores the missing data: our approach does not rely in any type of partitioning technique,and the data restore process, in case of node failure, is fast and reliable; while in case of a node failure in a Map- Reduce approach this may cause severe service disruption.
+
+Regarding continuous query capabilities, triple store sys- tems with such feature are limited at the moment to Atlas and LarKC. The two approaches are very different: LarKC uses C-SPARQL [19]: an extension of the SPARQL grammar designed specially for stream processing capabilities. This extension allows defining temporal intervals of execution of  7http://hadoop.apache.org/  the query where the results are pulled at the end of each interval by the query engine. This is, strictly speaking, not real-time processing, since the results are pulled by executing the query at pre-defined intervals specified in the query.
+
+Atlas uses a different approach [20]: queries are registered as continuous queries and the insertion of a new triple triggers the execution of these queries. This event-driven approach is more efficient in case of real-time performance requirements and optimization of the query executions. Due to the nature of the Atlas triple store, a high frequency of certain predicates will result in overloading certain nodes while the resources of some other nodes may be under allocated. In our system, besides the fact that data is distributed evenly across the nodes, we use a more efficient algorithm for the binding and execution of the query, resulting in a very scalable solution.
+
+Another relevant approach is the EP-SPARQL query lan- guage for Event Processing [21]. This work is an extension of the SPARQL language in a similar way to C-SPARQL, in order to perform complex event processing. The system is able to translate an ontological knowledge base, into a logic program (using Prolog). This initial knowledge base is continuously extended with an incoming flow of information, translated as well into Prolog. EP-SPARQL allows submitting queries that are then translated into Backward Chaining rules that are fired when new events are inserted in the knowledge base.
+
+The most relevant difference with C-SPARQL is that the EP- SPARQL follows a push approach to the notification of new results. EP-SPARQL defines as well an extension of SPARQL for stream processing. Unlike our approach, EP-SPARQL is not a solution used for continuously answering SPARQL queries once new information is entered in the system. Instead, it is a solution oriented towards complex event processing; moreover the EP-SPARQL language requires the triples to be annotated with timestamps. Another important limitation of the EP-SPARQL system is based on a Prolog translation of the ontological knowledge base, the resulting system does not allow distributed processing so it is not scalable and heavily depends on the underlying Prolog engine.
+
+
+
+VI. CONCLUSION  In this paper we proposed an approach for efficient and scalable query processing over RDF graphs distributed over a local data grid. We presented the system in detail, describing the distributed architecture and the query engine. The main idea is to provide a system where no single point of failure or specialised nodes exist. The system is also designed to be able to distribute the query workload evenly across the grid nodes. The query processing framework, presented in the paper includes also a sophisticated query planning and query execution algorithm, designed expressively for storage and query of a stream of incoming RDF triples; allowing the users to register queries that will be notified real time of new relevant data. The system is finally evaluated in a real deployment in the domain of business process monitoring.
+
+Future works will focus on optimisation of data storage, optimisation of the query processing and identification of du-     plicate queries registered as continuous queries in the system, in order to reduce workload and increase performance.
+

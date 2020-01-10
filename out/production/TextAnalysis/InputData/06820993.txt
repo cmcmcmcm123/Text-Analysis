@@ -1,0 +1,218 @@
+Migration Cost Aware Mitigating Hot Nodes in the Cloud
+
+Abstract?Cloud enables dynamic resource sharing among different applications. Live virtual machine (VM) migration is an important way to reconfigure workloads in the Cloud.
+
+However, reconfiguration cost using live VM migration is always ignored. In fact, migration cost may vary significantly for different workloads due to diverse characteristics. In this paper, we present a quick and efficient method to make migration decisions to mitigate hot nodes. The process of live VM migration is theoretically analysed. A quantitative model is figured out to estimate migration costs for applications.
+
+We implement system prototype based on Xen 3.2.0. The experimental results show that our approach can fast mitigate hot nodes in the Cloud and effectively reduce migration cost.
+
+
+
+I. INTRODUCTION  Virtual machine (VM) technology has recently emerged as an essential building-block for data centers and cluster systems, mainly due to its capabilities of isolating, consoli- dating [1][2] and migrating workload [3]. Cloud computing [4] enables dynamic resource sharing and provides flexibil- ity, easy and simple management. Virtualization technology can dynamically allocate resource among services. Resource can be allocated based on services? real dynamic demands, rather than their peak values.
+
+When resource demands of all the VMs resided on node i exceed the amount of resource that the node provides, the node i is regarded as heavy-load node or hot node. We formulate it to be the following formulae:  ??[?] < ?  ?[?][?]=1  ??[?], ? = 1, ? ? ? , ? ? = 1, ? ? ? ,?  ??[?] < ?  ?[?][?]=1  ??[?], ? = 1, ? ? ? , ? ? = 1, ? ? ? ,?  In the above formulae, the definitions of variables are described as the following:  ??[?]: the amount of processor that node ? provides.
+
+??[?]: the amount of memory that node ? provides.
+
+??[?]: the amount of processor that VM ? requests.
+
+??[?]: the amount of memory that VM ? requests.
+
+?[?][?] =  { 0 if VM j does NOT reside on node i  1 if VM j resides on node i  When some nodes become hot due to dynamic resource demands, live migration of VM [5] is an important method to reallocate resource. If not to be explained especially, VM migration means live migration by default in this paper. Pre- copy is employed to implement virtual machine migration in some mainstream virtualization software, such as Xen [3], VMware [6]. It first transfers all memory pages and then iteratively copies pages just modified during the last round. VM service downtime is expected to be minimal by iterative copy operations. However, live migration of VMs would bring additional resource consume, such as processor, memory and network bandwidth.
+
+As shown in Fig. 1, our tests on Xen show that the per- formance degradation would happen during VM migration in both modes of Xen: adaptive mode and non-adaptive mode. Apache server is deployed in a VM configured with 4 VCPUs and 1GB RAM. When VM migrates between two nodes, command ab is used to access a 512KB static web page. The number of concurrent access is set to 100 and the total number of requests is 50 million. The results in Fig.
+
+1 tell us that VMs with low cost should be choosed to be migrated.
+
+Fig. 2 gives the relationship between migration time and memory size of VMs. RUBiS [7], an open-source auction site benchmark, is run on LAMP server. tbench [8] is an open source benchmark testing disk I/O througput just like NetBench. mem is memory-intensive Apache application.
+
+There is a linear, ascending relationship between migration time and memory size. Diverse applications with the same memory size have different migration time.
+
+Using Web 2.0 applications, Voorsluys et al. [9] analyze the influences of migration process on application perfor- mance and give some advices how to deploy applications   DOI 10.1109/CLOUDCOM-ASIA.2013.72    DOI 10.1109/CLOUDCOM-ASIA.2013.72            0  10  20  30  40  50  60  70  80  90 100  T hr  ou gh  pu t (  M bi  t/s )  Elapsed Time (second)  adaptive mode non-adaptive mode  Fig. 1. The influence of pre-copy approach on web service during VM migration in Xen.
+
+256 1024 2048 3072  T ot  al M  ig ra  tio n  T im  e (s  )  Memory Size of Migrated VMs (MB)  tbench mem RUBiS  Fig. 2. VM migration time changes with the increase of memory size.
+
+on cloud computing. Entropy resource manager [10] builts a VM migration cost model based on the amount of memory allocated to the migrated VMs. It is observed that the duration of migration process mostly depends on the amount of memory used by the migrated VM. However, memory size is not the only factor which affects migration cost.
+
+Based on pre-copy approach of migration sub-system in Xen, Akoush et al. [11] present a VM migration model to predict total migration time and downtime of VM migration.
+
+Tarighi et al. [12] design a migration scheduling algorithm ? Technique for order preference by similarity to ideal solution (TOPSIS) based on fuzzy theory, which makes effective choices under some uncertain conditions. Liu et al. propose a performance and energy modeling for live migration of virtual machines according to virtual machine configura- tions and workload characteristics [13]. They quantitatively predict migration performance and energy cost based on previous migration behavior characteristics.
+
+In this paper, we propose a quick and efficient method to make migration decisions to mitigate hot nodes in the Cloud. The process of live VM migration is theoretically analysed. A quantitative model is figured out to estimate migration costs for a kind of VM applications. Based on Xen 3.2.0, we present the modified version of Xen to implement our system prototype. The prototype can track page dirtying inside virtual machines on real-time.
+
+The contributions of the paper are summarized as follows: 1) we theoretically analyse the process of live VM migration and give a quantitative model of migration costs for a kind of VM applications; 2) we design and implement a prototype  system to track page dirtying rate inside virtual machines based on Xen 3.2.0.
+
+The rest of the paper is organized as follows. Section II presents VM migration cost analysis in detail. We design and implement a dirty page tracing approach in section III.
+
+In section IV we describe our evaluation methodology and present the experimental results. Finally, we summarize our work in section V.
+
+
+
+II. VM MIGRATION COST ANALYSIS BASED ON PRE-COPY APPROACH  When some VMs on hot nodes are migrated to other nodes, the first problem to face is how to select migrated VMs on hot nodes. Different VMs would bring different migration overhead. Migrated VMs should have less migra- tion overhead which has less influence on the performance of VM service. In fact, the key point of live VM migration is to dynamically synchronize memory image data on source node and target node by iteratively copying dirty data. Total migration time and downtime is two important metrics to measure VM migration performance and cost.
+
+In this section, we first analyze the migration process based on pre-copy approach and the factors that affect the VM migration performance. Then, we quantify migration cost in stage pre-copy. Finally, we propose VM migration cost prediction model.
+
+A. Migration Process Based on Pre-copy Approach  The key point of VM migration based on pre-copy is to iteratively copy dirty pages from source node to target node to synchronize the maximum amount of memory data.
+
+Thus, VM migration would have the shortest downtime.
+
+VM migration based on pre-copy includes the following six stages:  1) pre-migration: in the stage, it is to select a target node which has enough free resource in advance. The time used by the stage is denoted as ????? .
+
+2) reservation: some resources on target node are reserved for VM to be newly migrated in the near future. The time that the stage spends is denoted as ???? .
+
+3) pre-copy: the stage is mainly to repeatedly copy dirty pages of migrated VM from source node to target node to synchronize the maximum amount of data. The duration that the stage consumes is denoted as ?????? .
+
+4) stop-and-copy: VM on the source node is suspended and the last synchronized data are transferred to the target node. The time that the stage consumes is denoted as ?????? .
+
+5) submission: memory data of VM on target node is completed synchronized with that on source node. The time that the stage spends is denoted as ????.
+
+6) activation: VM is resumed on target node. The time that the stage consumes is denoted as ????.
+
+There are two metrics to evaluate VM migration perfor- mance: total migration time and downtime. Total migration     time (????) is the sum of the above six stages from pre- migration on source node to activation on target node.
+
+Downtime (??????) is the sum of the last three stages from stop-and-copy to activation. We have the following equations:  ???? = ????? + ???? + ?????? + ?????? + ???? + ????  ?????? = ?????? + ???? + ????  Stage pre-migration and reservation are incorporated into stage initialization, which is denoted as ????. Apparently, ???? = ????? + ????. Stage resume includes stage sub- mission and activation. The duration is denoted as ???? (???? = ????+????). Then, we have the following equations:  ???? = ???? + ?????? + ?????? + ????  ?????? = ?????? + ????  In migration sub-system of Xen, stage pre-copy terminates if one of the following three conditions is met:  1) the number of dirty pages is less than 50.
+
+2) the number of iterations in stage pre-copy reaches 29.
+
+3) to synchronize memory pages on source node and  target node, the amount of transferred data has been larger than 3 times of memory size.
+
+The first condition is set for short downtime when appli- cations have converging writable work-sets. The last two conditions are set mainly for short total migration time when there are many dirty pages in each round of stage pre-copy for applications with diverging writable work-sets.
+
+They prohibit too many redundant data to be sent.
+
+Memory data are transferred once at least when VM migrates. According to termination condition (3) of stage pre-copy, the maximum amount of transferred data is less than 4 times of memory size. The amount of transferred data in stage stop-and-copy is not larger than memory size. So, we can get the following formulae:  ???? + ???? + ????/????? < ???? < ???? + ????+  (4 ? ????)/????? ???? < ?????? ? ????/????? + ????  ???? means memory size of transferred VM and ????? denotes to available network bandwidth for VM migration.
+
+B. Factors Affecting the Performance of VM migration  According to the analysis of VM migration process de- scribed in part II-A, the main cost of VM migration is to implement the synchronization of memory pages on source node and destination node. The performance of VM migra- tion relies on synchronization operations. It is to synchronize the maximum amount of memory data by repeatedly copying dirty data from source node to target node, which thus induces the shortest downtime. So, the factors that affect the performance of VM migration include memory size,  overhead used for initialization and resume, page dirtying rate and available network bandwidth for VM migration.
+
+We respectively discuss them in the following:  (1) memory size In the first round of stage pre-copy, all the memory pages  are sent to target node.
+
+(2) overhead used for initialization and resume Initialization and resume operations include initializing  virtual container, block device, free resource, connecting VM and drivers, and announing new IP address on desti- nation node. These operations consume relatively constant time. The length of duration is only related to hardware platform.
+
+In diverse network environments, the ratio of the time that the above operations consume to total migration time or downtime would change greatly. In slow network environ- ment, stage pre-copy takes long time to synchronize memory image data and the ratio is very low, even negligible. But in high-speed network environments, total migration time is shorten largely while the time spent on initialization and resume keeps unchanged. The ratio would increase sharply, even high to about 77% [11].
+
+(3) dirty page rate Dirty page rate directly determines the amount of trans-  ferred data in each round of stage pre-copy. The bigger dirty page rate, the larger the amount of transferred data in each round of stage pre-copy, the longer total migration time. The larger dirty page rate, the bigger the amount of transferred data in stage stop-and-copy, the longer downtime.
+
+(4) network bandwidth Available network bandwidth is used for copying memory  image data from source node to target node. It directly affects the performance of VM migration and is one of the main factors that affect migration performance. The larger available network bandwidth, the shorter the time to transfer memory data, the shorter total migration time and downtime.
+
+Because applications and VM migration share network bandwidth, the more network resource that VM migration consumes, the less resources applications can use. It is important to balance the relationship between application and VM migration.
+
+C. Quantitative Analysis of Stage Pre-copy  To mitigate hot nodes in virtualized environments, some VM workloads on hot nodes should be migrated to other nodes. Because VMs are resided on a same physical node, they have the same overhead for initialization and resume.
+
+The main difference of their migration cost is the overhead in stage pre-copy and stop-and-resume, which depends on the amount of transferred data for memory image synchro- nization.
+
+This part quantitatively analyzes the amount of transferred data for memory synchronization between source node and     Table I. Symbol and Definition Symbol Definition  ???? memory size of migrated VM ???? the threshold of the amount of dirty data  when stage pre-copy terminates ????? the average dirtying page rate during stage  pre-copy ????? the average rate to transfer pages during  stage pre-copy ? available network band- width for VM migration  destination node. First, some symbols are defined in the following Table I.
+
+In stage pre-copy of VM migration, the time and the amount of transferred data in each round are respectively expressed as Vector ? =< ?0, ?1, ? ? ? , ???1, ?? > and Vector ? =< ?0, ?1, ? ? ? , ???1, ?? >. Then, we can get the following formulae:  ?0 = ????, ?0 = ???? ?????  ?1 = ??????0, ?1 = ??????0 ?????  ? ? ? ? ? ? ?? = ????????1, ?? =  ????????1 ?????  Let ? = ?????????? , we can get the following equations:  ?? = ???? ??  ????? , ? = 0, 1, 2, ? ? ?  ?? = ????? ?, ? = 0, 1, 2, ? ? ?  So, the amount of transferred data during VM migration (total transferred data,TDT) is  ???? =  ?? ?=0  ????? ?  According to the value of ?, there are two cases to discuss: (1) ? < 1. In this case, dirty page rate is less than available  network bandwidth. Writable work-sets would converge to smaller number of pages with the change of time. When the amount of dirty data in certain round of stage pre-copy is less than or equals to the threshold ????, or when the number of iterations reaches to the threshold ???_????, stage pre-copy terminates. The number of iterations ? is  ? = min(?log????/????? ?,???_????) If writable work-sets of applications converge to smaller  pages rapidly, the number of dirty pages would be less than or equals to the threshold ???? when the iterations is less than ???_????. When stage pre-copy terminates, the number of iterations is ?log????/????? ?. If converging rate of dirty pages is slow, the number of dirty pages is still larger than the threshold ???? when the number of iterations  reaches the maximum threshold ???_????. Then, the number of iterations is ???_????.
+
+If the number of iterations in stage pre-copy is ?, the amount of transferred data is  ???? = ????(1? ??+1)  1? ? (1)  (2) ? ? 1. In this case, dirty page rate is larger than or equals to available network bandwidth for migration.
+
+Writable work-sets of this kind of application VMs would not converge when the time changes. Once the available network bandwidth reaches the maximum value, stage pre- copy would terminate, which ensures that total migration time or downtime is not prolonged. The formula (1) is not suitable to the applications with ? ? 1. This kind of applications ordinarily have long downtime ? the duration during which service is completely unavailable. They are not the best candidates to be migrated.
+
+D. The Prediction Model of Transferred Data during VM Migration  For VMs resided on a same physical node, the difference of migration cost is the amount of transferred data during migration. The larger the amount of transferred data, the bigger migration cost.
+
+According to quantitative analysis of migration process in Section II-C, we can use formula (1) to predict the amount of transferred data during migration when the ratio of dirty page rate to network bandwidth is less than 1. But when the ratio is larger than or equals to 1, formula (1) is not suitable.
+
+We design a VM migration prediction model to predict the amount of transferred data, as shown in Algorithm 1.
+
+Algorithm 1 predicts migration cost by simulating stage pre-copy during VM migration. Before VM migration oc- curs, we monitor memory behaviour characteristics of ap- plications and collect samples of dirty page rate, available network bandwidth for migration. Combining the collected information with configuration information, migration cost prediction model simulates migration process and computes the amount of transferred data. The algorithm has three parameters: available network bandwidth for migration, dirty page rate and memory size. The output of the algorithm is the amount of transferred data between source node and target node.
+
+In the first round of stage pre-copy, all the memory data are copied to target node. The duration of the first round is the time spent on transferring the whole memory data on the fly. Dirty pages in the first round are computed using memory characteristics functions of applications. The second round transfers dirty page data in the first round. The duration and the number of dirty pages in each round are computed in turn until stage pre-copy terminates. So, the total amount of transferred data ???? during the whole mi- gration is figured out. In Algorithm 1, variable ?????????     Algorithm 1 The VM Migration Prediction Model  Require: ????, ?????, ?????(?) Ensure: ???? , ?????????  ???? = 50 ???_???? = 29 ???_?????? = 3 ????????? = 0 ???? = ????????? = 0 ???? = 0 for ????????? < ???_???? and not ???? do  if ????????? == 0 then ?[?????????] = (???? ? 1MB ? 8)/????? ???? = ???? + ???? ? 1MB ? 8  else if ????????? == 1 then  ?????_????? = ?[??????????1]?  ??=0 ?? ??????(??)  ?[?????????] = (?????_????? ? 4kB ? 8)/????? ???? = ???? + ?????_????? ? 4kB ? 8  else  ?????_????? = ?[??????????1]?  ??=?[??????????2] ?? ??????(??)  ?[?????????] = (?????_????? ? 4kB ? 8)/????? ???? = ???? + ?????_????? ? 4kB ? 8  end if ????????? = ?????????+ 1 if ???? > ???_?????? ? ???? or ?????_????? <= ???? then  ???? = 1 end if  end for  ?????_????? = ?[??????????1]?  ??=?[??????????2] ?? ??????(??)  ???? = ???? + ?????_????? ? 4kB ? 8 ????????? = ?????_????? ? 4kB ? 8 return ???? ,?????????  determines the length of time that stage stop-and-copy takes.
+
+It also determines the length of downtime. For some real- time applications, such as game web-site, video server, which are very sensitive to downtime, VMs with the shortest downtime are the best choice to be migrated. But for other applications, VMs with shortest total migration time are the best choice, which descreases performance degradation of applications induced by VM migration.
+
+
+
+III. SYSTEM IMPLEMENTATION  First, a new status of running VM ? pseudo-migration is introduced to capture memory behaviour characteristics.
+
+Before VM is into real migration status, it is first into status pseudo-migration to determine if it is suitable to be migrated to other nodes and if its migration would bring too much cost. In this new status, virtual machine monitor  collecting resource usage,  Control Thread Migration Execution Thread  VM set to be migrated out  executing VM migration  choosing target nodes for each migrated VMs  terminating the thread  starting a new thread  status pseudo?migration making hot nodes into  predicting migration cost  selecting VMs to be migrated  identifying hot nodes  Fig. 3. The workflow of system controller.
+
+observes memory behaviour, especially dirtying pages and then predicts migration cost.
+
+A running VM is ordinarily in one of three kind of status.
+
+The possible kinds of status are described as the follows:  ? pseudo-migration: The status is set for tracing memory behaviour characteristics. When VM is in this status, all the operations related to dirtying pages are recorded in bitmap and dirty page rates are periodically computed.
+
+The mapping of dirty page rate and time is used for predicting VM migration cost.
+
+? migration: The status shows that VM is migrating from source node to destination node.
+
+? non-migration: This status means that active VM is not in pseudo-migration or migration.
+
+To demonstrate the utility of our approach, we design and implement a prototype based on Xen 3.2.0. System controller lists the workflow of the whole system. The core of system is the work in status pseudo-migration. Its main task is to detect memory behaviour characteristics of applications for migration overhead prediction. Based on the work in status pseudo-migration, a VM set to be migrated is generated according to the prediction value of migration cost.
+
+A. System Controller  Fig. 3 describes the workflow of system controller. The controller mainly includes two threads: control thread and migration execution thread. Control thread is responsible for identifying hot nodes and selecting VMs to be migrated out.
+
+Based on migrated VM list generated by control thread, migration execution thread then chooses a target node for each migrated VM and executes VM migration.
+
+According to resource usage status of each node that sensors collect, control thread determines if there is resource contention on the nodes. Then, control thread makes hot     mode pre?migration  App  page  rate dirtying  Dom0 VM  VMM  (privileged)  page table  modified OS  bitmap  Timer reset  (a) para-virtualized VM  mode pre?migration  App  shadow page table  bitmap  Timer  reset  page  rate dirtying  Dom0 VM  VMM  (privileged)  unmodified OS  page table  (b) HVM  Fig. 4. Status pseudo-migration respectively in para- virtualizd VM and hardware virtual machine (HVM).
+
+nodes into status pseudo-migration. Virtual machine monitor observes memory pages of each VM resided on hot nodes.
+
+They then predict migration cost for VMs. Based on these prediction information, control thread determines VM set to be migrated out for each hot node. Then, VM migration execution thread chooses target nodes for these migrated VMs and executes VM migration.
+
+The migration cost aware selection approach to generate VM set to be migrated out includes the following steps:  1) migration cost prediction model predicts migration overhead (???? , ?????????) of each VM resided on hot node.
+
+2) VMs on hot node are sorted to an ordered queue by ???? or ????????? increasingly.
+
+3) VMs on head of queues are chosed to be migrated out in turn until resource contention disappears.
+
+B. Tracing Dirty Pages  In Xen 3.2.0, parameters of hypercall domctl are modified to express three kind of running status: pseudo-migration, migration and non-migration. Two new Macros are defined to start and terminate status pseudo-migration.
+
+#define Xen_DOMCTL_pseudoMigration_start 60 #define Xen_DOMCTL_pseudoMigration_end 61  The work of status pseudo-migration respectively in para- virtualization and full-virtualization is depicted in Fig. 4.
+
+Using bitmap, Xen enables hypervisor in the layer of virtual machine monitor (VMM) to trace page modification  in memory. For para-virtualized VMs, all pages are trans- parently marked as read only. Thus, they are protected to trap any modification to their page tables. The updates are then recorded in bitmap. But for hardware virtual machine (HVM), because guest OS is unmodified, hypervisor tracks updates and propagates them to shadow page tables. Shadow page tables record the mapping of logical address and real machine address. They are implemented to emulate virtual page tables of virtual machine. Register CR3 points to shadow page tables rather than page tables of guest OS.
+
+Furthermore, we design a timer to periodically compute dirty page rate, and to reset bitmap marking modified pages. In the modified version of Xen 3.2.0, we provide two new instructions: enable_logdirty and disable_logdirty to respectively make VMs into and out of status pseudo- migration.
+
+
+
+IV. PERFORMANCE EVALUATION  In this part, we use several typical applications to conduct experiments on our prototype system. We test the correctness of migration cost prediction model and the effectiveness of migration cost aware selection approach. The experimental results show that, the prediction model can correctly and quickly sort VMs on a same node by migration cost.
+
+Compared with other algorithms, our VM selection approach can effectively reduce migration cost.
+
+A. Experimental Setup  We conduct our experiments on several identical server- class machines, each with 2-way quad-core Xeon E5405 2GHz CPUs and 8GB DDR RAM. The machines have Intel Corporation 80003ES2LAN gigabit network interface card (NIC) and are connected via switched gigabit Ethernet. VMs access their image files through NFS. We use Redhat Enter- prose Linux 5.0 as the guest OS and the privileged domain OS (domain 0). The host kernel is the modified version of Xen 3.2.0. The guest OS is configured to use 4 VCPUs and 1024MB of RAM except where noted otherwise.
+
+Each experiment is repeated ten times and every reported test result comes from the arithmatic average of ten values.
+
+The experiments used the following workloads, represen- tative of typical server applications:  1) idle: an idle Linux OS for daily use.
+
+2) Dynamic Web Workload: a Tomcat 5-5.5.23 web  server acts as the workload of migrated virtual machine.
+
+Several client machines are used to generate the load for the server and each machine simulates a collection of users concurrently accessing the web site using httperf [14].
+
+3) MUMmer: MUMmer 3.21 [15] is a scientific appli- cation to rapidly align genomes that has a very intensive memory usage.
+
+4) dbench: dbench 4.0 [8] is an open source bench- mark producing the filesystem load. The benchmark can     Table II. The Configuration of VMs VM Configuration  VM1 512MB RAM; idle VM2 256MB RAM; MUMmer VM3 384MB RAM; Tomcat VM4 512MB RAM; C program with rapid dirtying pages rate VM5 512MB RAM; dbench  Table III. The Prediction Value of Transferred Data during VM Migration.
+
+VM The Prediction Value (MB)  VM1 512.0 VM2 287.0 VM3 711.8 VM4 2117.3 VM5 664.5  simulate a variety of real file servers by executing cre- ate/write/read/delete operations on a large number of direc- tories and files with different sizes.
+
+B. The Correctness of Migration Cost Prediction Model  The configuration details of five VMs are listed in Table II.
+
+VMs are into status pseudo-migration. Samples are taken.
+
+The prediction values of transferred data are depicted in Table III. VM VM1, VM2, VM3, and VM5 are in con- verging queue. The number of dirty pages would become smaller with the change of time. VM VM4 belongs to non- converging queue. Its dirty pages would not get smaller during VM migration due to rapid dirty page rate.
+
+At the same time, five VMs are respectively migrated to other nodes. Their migration time is described in Fig. 5. VM VM4 has the longest migration time due to its rapid dirty page rate. There are a great deal of redundant data to be transferred. VM VM2 has the shortest migration time. There are two reasons: one is that VM2 has small memory size ? small amount of data to be transferred in the first round of stage pre-copy; the other is relatively low dirty pages.
+
+From Table III and Fig. 5, we can observe that their results are the same, which proves that migration cost prediction        VM1 VM2 VM3 VM4 VM5  T ot  al M  ig ra  tio n  T im  e (s  )  Virtual Machine  Fig. 5. Total migration time of different VMs.
+
+0.2 0.4 0.6 0.8 1.0 1.2 1.4 1.6  idle Tomcat  MUMmer  dbench  mixAppsN or  m al  iz ed  V al  ue o  f M ig  ra tio  n T  im e  VM Applications  MOA MIA RA  Fig. 6. The comparison of three algorithms to remove hot nodes.
+
+model can correctly predict migration cost of different VMs on a same physical node.
+
+C. The Effectiveness of Migration Cost Aware Selection Algorithm  We compare migration cost of three VM selection al- gorithms using diverse applications: one is migration cost aware selection algorithm (MOA), one is random selection algorithm (RA), and the third one is memory-size-based algorithm (MIA).
+
+Three VMs run on a same node. They are configured with different memory size, providing the same service, such as Tomcat, MUMmer and dbench. idle means that there is not any application running in VM. In the last group of tests, mixApps means the hybird of diverse applications configured with different memory size. Three algorithms are respectively used in the same application scenes and total migration time is tested. All the measurement values are standardized to the value using memory-size-based al- gorithm. The experimental results are listed in Fig. 6.
+
+From Fig. 6, we can conclude that migration cost using random selection algorithm is 0.264 times larger than that using memory-size-based algorithm. That means memory size of migrated VM is one of the factors affecting migration cost. At the same time, the cost using migration cost aware selection algorithm is 0.226 times less than that using memory-size-based algorithm, which shows that it is not enough to estimate migration cost only considering memory size of migrated VM. There are still other factors to affect migration cost. Compared with random selection algorithm, migration cost aware selection algorithm reduces the cost by 38.8% on average.
+
+
+
+V. CONCLUSION  In this paper, a quick and efficient method is presented to make migration decisions to mitigate hot nodes. We theoretically analyse the process of live VM migration and give a quantitative model of migration costs for a kind of VM applications. We implement system prototype based on Xen 3.2.0. The experimental results show that our approach can fast mitigate hot nodes in the Cloud and effectively reduce migration cost.
+
+
+
+VI. ACKNOWLEDGMENT  This work is supported by the National Natural Science Foundation of China under Grant 61073024 and 61232008.
+
+It is also supported by the Outstanding Youth Foundation of Hubei Province under Grant 2011CDA086, National 863 Hi-Tech Research and Development Program under Grant 2013AA01A213, and EU FP7 MONICA Project under Grant 295222.
+

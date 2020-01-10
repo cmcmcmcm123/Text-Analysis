@@ -1,0 +1,108 @@
+Adding network bandwidth resource management  to Hadoop YARN
+
+Abstract-YARN (Yet Another Resource Negotiator) is an emerging resource management system in Hadoop platform which can process big data in the scale of petabytes/day. YARN, as a resource managerment system, needs manage all kinds of resources in the clusters, such as cpu, memory, disk io, network io and so on. At present, YARN mainly focuses on computing resource and storage resource (CPU and memroy), while ignoring network management. But research shows that efficient network bandwidth resource management is crucial to optimize performance. In this paper we present a network bandwidth resource management mechanism based on YARN that takes into account the allocation and isolation of applications' network bandwidth. Experiments show that the proposed solution makes YARN run applications in a more predictable manner.
+
+Keywords-YARN; resource management; network bandwidth;
+
+I. INTRODUCTION Hadoop is a platform that has been developed to  satisfy the need of processing big data in the scale of petabytes/day. The first version of Hadoop [1, 2, 3] (Hadoop vi) consist of a distributed file system (HDFS) and a MapReduce processing framework. Later on, the need of supporting different processing paradigms was recognized and YARN [3, 4] was introduced.
+
+YARN, as a resource management system including resource scheduling and resource isolating, needs manage all kinds of resources in cluster (memory, CPU, disk I/O, network I/O etc). However,YARN supports only CPU and memory reservations from applications at present, other computing resources are not considered in scheduling and isolating, There is a study on the security and performance impacts of unconstrained shared resources in Hadoop YARN, this paper [5] addresses that the existance of unconstrained resources in Hadoop YARN cluster with multi-tenancy poses a vulnerability : this vulnerability not only can lead to unfair use of shared resources , but also can be exploited with denial-of-service (DOS) attacks.
+
+Other popular resource management systems such as Mesos [6, 7] and so on, don't support the management of the network bandwidth resource and are committed to the work.
+
+At present, YARN is continually improving in the aspect of resource managerment [3]. In memory, YARN manages memory resource from the start. Taking into  Yuan Zhou, Tianning Zang Ministry of science and technology  CNCERT BeiJing, China  zangtianning@iie.ac.cn  account the special nature of memory resources -- memory resource is a limiting resource, the amount of which directly determine the lives of applications, YARN adopts the method of thread monitoring on memory isolation so as to avoid producing memory thrashing and the task is not killed gracefully. There is a possibility that we will run some special tasks or services on YARN that need strictly limit the amount of memory, so YARN will support memory cgroups enforcing in the future. Cgroups will explicitly set OOM control so that containers are killed as soon as they go over their usage. About CPU resource, CPU resource scheduling in YARN has been well supported, but CPU resource isolation is very bad. The works about CPU resource management that have been completed or are currently doing are as follows: Using and isolating CPU resource According to the percentage; Limiting the CPU resource upper limit of each container; Limiting the CPU upper limit of YARN. I/O resources includes Disk I/O and network I/O, the two areas will be involved in the future ofY ARN.
+
+Extending YARN's ability to support network resource has been imminent. Firsly, As part of allowing multiple workloads on YARN, we need to add support for network bandwidth as a resource to allow more diverse applications such as Storm to run on YARN. Storm [8], for example, tends to be very network I/O bound. For Storm to run more predictably on YARN, we need to be able to specify and enforce bandwidth limits. In addtion, adding network as a resource will also help applications such as MapReduce [9] and Tez run in a more predictable manner. Secondly, Some customers may require a data rate guarantee because their jobs should be finished by a certaion deadline. Therefore the provision of the quality of service regarding a data rate guarantee may play a key factor to attract customers, However YARN (up to newest version) only supports the reservation of memory and CPU in compute cluster at present. Finally, in the Hadoop cluster, network I/O bottlenecks may happen when a container transferres a certain data block and encounters the I/O competition of another application (either inside the Hadoop framework or outside) for the network hosting the specific data block. The network I/O contention results in the degradation of quality of service such as the decrease of throughput, the increase in the job completition time.
+
+In this paper, we exploit the cause of adding the support for network resource and YARN's current    situation. Then we propose a solution to extend YARN to support for network bandwidth as a resource -- bandwidth scheduling and isolation. we use Domain Resource Fairness (DRF) [10] to schedule network bandwidth and OS isolation mechanism to isolate it.
+
+The contents of this paper are organized as follows.
+
+Section 2 is a brief description of background, section 3 presents our solutions. Experiments and results are presented in section 4. Finally, section 5 concludes this paper.
+
+
+
+II. BACKGROUND In this section, we provide a short introduction about  components we use in our proposed solution.
+
+A. YARN architecture YARN [4], between the hardware infrastructure  (machines / servers with CPUs, memory and disk, and a network that connects the machines) and computing frameworks, provides an abstraction layer and its core functions are resource abstraction and resource management. YARN architecture (see figure 1) consists of three components: a global ResourceManager (RM), per-machine NodeManager (NM) and per-application ApplicationMaster (AM), If the following parts involves these YARN components, we all use these components' abbreviation. YARN processes the resource requirements of applications and decides to where a special application should run based on the cluster resources and the locations of data blocks in a HDFS. There is a special term "container" that is the collection of resources (CPU and Memory) assigned based on the requirement of applications by RM and ran in NM. A container can run a or more tasks.
+
+Fig. l.Main components in Hadoop Platform  B. Network as a resource When network comes as a resource, there are two  aspects that applications tend to care about -- bandwidth and network ops per second. There are two aspects to network bandwidth -- sustained rate and burst rate. The "sustained" rate is the rate at which a container will be able to send traffic without being throttled due to enforcement rules applied by the NM. However, depending on overall network utilization, the container maybe allowed to send data at higher ''burst'' rate. This  ''burst'' rate is not guaranteed in any way. Container allocation requests can only include a request for "sustained rate".
+
+C. Control Groups Linux provides a new kernel feature : control groups  [11, 12] (CGroups). CGroups provides a mechanism that can limit resources of a single process or multiple processes. CGroups defines a subsystem for each resource.
+
+There are many subsystems (controllers) in the CGroups, such as blkio, cpu, memory, net_cls and so on.
+
+The Block 110 (blkio) subsystem controls and monitors access to 110 on block devices by tasks in CGroups. The cpu subsystem schedules CPU access to CGroups. The memory subsystem generates automatic reports on memory resources used by the tasks in a group. The net_ cls subsystem tags network packets with a class identifier (classid).
+
+D. Linux Traffic Control Linux offers a flexible traffic control architecture  (Linux Traffic Control module, LTC [13, 14, 15]) based on packet scheduling at network interface. Different queuing disciplines can be adopted for different purposes, varying from the simple classless queuing disciplines: FIFO, TBF, SFQ, RED to some complicated classful queuing disciplines like CBQ (class-based queuing) and HTB (hierarchical token bucket) [16, 17].
+
+The traffic control in Linux kernel consists of the following components: queuing disciplines, class and filters. A queuing discipline is an algorithm that manages the queues of a device, either incoming (ingress) or outgoing (egress), it can be either classless queuing discipline which has no configurable internal subdivisions, or classified queuing discipline which contains multiple classes. Each of these classes contains a further queuing discipline, which may again be classified, but not necessarily. Filters fulfill the function of classification. A filter contains a number of conditions which if matched, make the filter match.
+
+
+
+III. A PROPOSED SOLUTION To the management of the network bandwidth in  YARN, we need to consider two aspects: scheduling and isolation.
+
+A. Network Bandwidth Scheduling Adding network bandwidth resource to YARN, all  NMs will report available bandwidth to the RM and the submission of a job also contains the resource requirements about network bandwidth. Therefore, to support a new resource type, Resource class that converys supported resource types of YARN will be extended to accept network bandwidth.
+
+The total amount of bandwidth that Yam can use is a configurable value. About scheduling for network bandwidth, There are some scheduling semantics supported by scheduling of network bandwidth resource: the requests for a specific amount of resources on a particular node, requests for a specific amount of resources on a rack, requests for adding some nodes to the blacklist, requests for some resources.
+
+Upon the arrival of requests for containers, RM scheduler will peform resource allocation based on the information about the current available capacity of the cluster and the amount of the resource requirements.
+
+Resource requirements of containers contain multiple resources (CPU, memory, network bandwidth, etc.) and are heterogeneous, we adopt Domain Resource Fairness (DRF) [10] which perform fair sharing between users and applications using a definition of fairness for multiple resources to make scheduling decision. The central idea of DRF attempts to equalize each application's fractional share of its dominant resource, which is the resource that it has the largest fractional share of.
+
+Algorithm 1 DRF pseudo-code  R = <rl, ... ,rm> Iitotal resource capacities C = <cl, ... ,cn> Ilconsumed resources, initially 0 Si (i=l..n) Iluser i's dominant shares, initially 0 Ui = <ui,I, ... ,ui,m> (i= l..n) pick user i with lowest dominant share Si Di +- demand of user i's next task ifC + Di::;R then  C=C+Di Ui = Ui + Di  vector  Ilupdate consumed vector Ilupdate i's allocation  Si = maxmj = 1 {ui ,j 1 rj} else return end if  lithe cluster is full  DRF computes the share of each resource allocated to that user. The maximum among all shares of a user is called that user's dominant share, and the resource corresponding to the dominant share is called the dominant resource. Different users may have different dominant resources. DRF simply applies maxmin fairness across users' dominant shares. That is, DRF seeks to maximize the smallest dominant share in the system, then the second-smallest, and so on. Algorithm 1 shows pseudo-code for DRF scheduling.
+
+For example, a cluster contains 9 CPUs and 18GB of RAM, and user A needs 1 CPU and 4GB RAM per task while user B needs 3 CPUs and 1 GB RAM per task. In the scenario, each task from user A consumes 119 of the total CPUs and 2/9 of the total memory, so user A's dominant resource is memory. Each task from user B consumes 113 of the total CPUs and 1118 of the total memory, so user B's dominant resource is cpu. DRF will equalize users' dominant shares,giving A 3 tasks (3CPUs and 12GB) and B 2 tasks (6CPUs and 2GB). With this allocation, each user ends up with the same dominant resource share.
+
+B. Network Bandwidth Isolation In this section, we propose a solution to control  container network bandwidth by leveraging existing OS isolation mechanisms. There are many methods about resource control: Thread monitoring, VM (Virtual Machine) and so on. Compared to the thread monitoring, our method is more strict and effective; Compared to VM, our method more Lightweight.
+
+Network traffic contains ingress traffic and outbound traffic. Unlike outbound traffic, ingress traffic is not  partitioned or tagged int the same manner that oubound traffic can be (for details on outbound traffic shapping,see below). Ingress traffic is not classful and we cannot apply fine-grained filters and rules int the same manner as we can egress traffic.In addition,by the time traffic reaches the ingress qdisc, network bandwidth has already been consumed. For the reason, ingress traffic support is not in scope for the time being.
+
+In our solution, network bandwidth control is achieved through a combination of the two things: the net_ cls cgroup subsystem and the linux traffic utility LTC (short for Linux Traffic Control). The net_ cls system allows us to "tag" outgoing packages from containers. LTC can be used to specify traffic shaping rules corresponding to the "tag" in use to ontrol bandwidth of application containers, the whole architecture is shown in figure 2. Linux control rules consists of three parts: queue discipline, class and filter. Our traffic control rules are shown in figure 3.
+
+1) Queue discipline We use HTB [16, 17] (Hierarchical Token Buffer)  classful qdisc that can easily guarantee the bandwidth of each category, also allows that specific classes can break through the bandwidth limit and occupy the bandwidth of the other classes.
+
+2) Class In addition to the applications users submit take up the  bandwidth, there are certain shared services which are provided by the NM which could potentially consume large amounts of network bandwidth, such as resource localization, logaggregation, and shuffie. The applications are different from shared services that applications run in the way of container, so we create two classes -- one for YARN containers and one for everyone else. A sub class is created under the YARN containers class for each new container. we need allocate a certain bandwidth for each class and each container class's bandwidth is the same as the container's bandwidth.
+
+3) Filter The filter is mainly used for classifying data packets.
+
+Each packet should be into the corresponding class by the container that the packet belongs to, so we need tag packets of different containers and the class to filter each container's packets into corresponding container class.
+
+CGroups net_ cls controller allows us to tag packages with a 32-bit class identifier called 'classid', this classid is specified in the file net_ cls.classid (located under the mounted cgroup directory). The value of this classid identifies a traffic 'handle' which can be used subsequently for traffic shaping. For each YARN container that is spun up with network throttling required, a classid is generated and written to the classid file for the corresponding cgroup.
+
+Specific steps, are as follows:  ? When NodeManager starts up, we need mount net_ cls subsystem and perform tc actions to initialize traffic control rules.
+
+? A cgroup need be created (for the net cIs subsystem) for each new container that is spun up by YARN and each container is assigned a unique(unused) classid (the classid is written to    net_cls.classid file) that is used to tag packages originating from this cgroup.
+
+? Once cgroup related changes are made for the container, a class with the required rate need to be created and applied in the tc traffic control rules by performing tc actions. The classid in the class needs to be the same as the classid written to the net_ cls.classid file. Two parameter need to be configured for the class, one is "rate" that shows sustained rate same as the assigned bandwidth of the container, the other "ceil" representing the biggest bandwidth network that can use to in network spare time.
+
+Implementation involves two main modules. Creating cgroups and assigning classid for containers originating  from YARN is implemented by the CGroupsLCEResourceHandler module that the relevant Cgroups operations are achieved (such as mounting Cgroups subsystem, creating cgroups for subsystems, assigning classid for the net_ cls subsystem and so on).
+
+Adding support for using the 'tc' tool via container-executor module, we need the following functionality in the module:  ? modify network interface traffic shaping rules -- to be able to attach a qdisc, create child classes etc.
+
+? read existing rules in place.
+
+? read stats for the various classes.
+
+Fig. 2. The architecture of the bandwidth control  Fig. 3. Traffic shaping rules in YARN
+
+IV. EXPERIMENTS Our proposal has been implemented within the YARN  framework. Using machines with Intel Core i5-2400 CPU, 4GB RAM, we have created a small Hadoop cluster to demonstrate our approaches. The total bandwidth of each node is 200 Mbps. The minimum and the maximum bandwidths of the scheduler are 1 Mbps and 200 Mbps.
+
+The value needs to be normalized if the user application request about bandwidth is not an integer.
+
+In our testbed, we run TestDFSIO MapReduce applications to provide an illustration to control network bandwidth.
+
+Figure 4 depicts the TCP throughput of the container that is no limit on the network bandwidth. It is observed that the container greedily seize the whole bandwidth.
+
+Because of the greedy nature related to network bandwidth, cotainer tends to capture all available bandwidth during the uncontrolled period if there is a room to increase its bandwidth. Node that network bottlenecks may happen due to certain conditions. E.g., one cause of network 110 bottlenecks is the consequence of the large amount of blocks sequentially transferred by applications.
+
+When considering network bandwidth as a resource in YARN, we set the container 1 80Mbps (note that the rates can be set to other values as well). From the picture 5, we can conclude that the container tends to capture all available bandwidth that is in accord with our expectation, our goal is that when network is idle, application can occupy free bandwidth and its bandwidth can be more than predetermined value; while when network is busy, we guarantee that bandwidth of the applications can reach    the set value. As show in figure 6, we run two applications that each container's bandwidth is 10 Mbps, it is observed  that two application's containers proportionally occupy bandwidth.
+
+Fig. 4. Throughput of container without considering network bandwidth  Fig. 5. Throughput of container with controlled network bandwidth  Fig. 6. Throughput ofTestDFSIO' container with controlled network bandwidth  Table 1 shows the TestDFSIO applications makespans with/without bandwidth conrol when network is busy, we conclude that in the presence of bandwidth controller, the performance of application is better and the applications run in a more predictable manner.
+
+In summary. We achieve the effect: when network is idle, application can occupy free bandwidth and its bandwidth can be more than predetermined value; while when network is busy, we guarantee that bandwidth of the applications can reach the set value.
+
+TABLE I. TESTDFSIO APPUCATIONS MAKESPANS  Scenario Runtime(s)  With bandwidth-stree influence 160  Under bandwidth controls 128  v. CONCLUSION Network bandwidth contentions may happen in a shared  cluster environment, which has an impact on the performance of applications. At present, YARN only supports memory and CPU. We have presented an approach    that extend YARN resource dimension, namly adding scheduling and isolation of network bandwidth in the YARN framework. It has been shown through measurement results that the throughput of applications Gobs, containers) can be controlled within YARN.
+
+There remain a number of issues to be investigated in future work. Future work should add more resource within YARN such as disk 110. YARN resource management model should be improved so that it is easier to extend YARN resource dimensions.
+

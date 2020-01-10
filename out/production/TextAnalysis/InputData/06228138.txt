@@ -1,0 +1,300 @@
+Parameter-Free Determination of Distance
+
+Abstract?The importance of introducing distance constraints to data dependencies, such as differential dependencies (DDs) [28], has recently been recognized. The metric distance constraints are tolerant to small variations, which enable them apply to wide data quality checking applications, such as detecting data violations.
+
+However, the determination of distance thresholds for the metric distance constraints is non-trivial. It often relies on a truth data instance which embeds the distance constraints. To find useful distance threshold patterns from data, there are several guidelines of statistical measures to specify, e.g., support, confidence and dependent quality. Unfortunately, given a data instance, users might not have any knowledge about the data distribution, thus it is very challenging to set the right parameters. In this paper, we study the determination of distance thresholds for metric distance constraints, in a parameter-free style. Specifically, we compute an expected utility based on the statistical measures from the data.
+
+According to our analysis as well as experimental verification, distance threshold patterns with higher expected utility could offer better usage in real applications, such as violation detection.
+
+We then develop efficient algorithms to determine the distance thresholds having the maximum expected utility. Finally, our extensive experimental evaluation demonstrates the effectiveness and efficiency of the proposed methods.
+
+
+
+I. INTRODUCTION  The data collected from different sources are often dirty,  including inconsistencies, conflicts and violations, due to  various errors introduced by humans and machines (see [3]  for a survey). Recently, functional dependencies (FDs) have  been revisited and revised with extensions [5] to capture the  inconsistency in the dirty data [10]. For example, the following  functional dependency fd1 over the Hotel relation specifies a  constraint that for any two tuples in Hotel, if they have the  same Address, then their Region values must be equal.
+
+fd1 : [Address]? [Region]  The constraints are useful in detecting data violations, a very  important task for data cleaning [9]. For instance, we can use  the above fd1 to detect violations in an instance of Hotel in  Table I. For the tuples t5 and t6 with the equal value on Address, they have different values of Region, which are then  treated as a violation of the above fd1.
+
+Unfortunately, real-world information often has various  representation formats. The strict equality function limits the  TABLE I EXAMPLE OF Hotel  ID Name Address Region  01 West Wood Hotel Fifth Avenue, 61st Street Chicago t1 01 West Wood Fifth Avenue, 61st Street Chicago, IL t2 01 West Wood (61) 5th Avenue, 61st St. Chicago, IL t3 22 St. Regis Hotel No.3, West Lake Road. Boston, MA t4 22 St. Regis Hotel #3, West Lake Rd. Boston t5 22 St. Regis #3, West Lake Rd. Chicago, MA t6  usage of FDs (as well as the extensions that are still based  on the equality). For example, according to fd1, the tuples t1 and t2 in Table I will be detected as a ?violation?, since they have ?different? Region values but agree on Address. However,  ?Chicago? and ?Chicago, IL? denote the same region in the  real-world with different representation formats, which are not  violations. Moreover, t4 and t6, which have similar Address but different Regions, are true violations. Unfortunately, they  cannot be detected by fd1, since their address values are not  exactly equal.
+
+To address small variations in data formats, functional  dependencies have recently been extended by incorporating  distance constraints, namely differential dependencies (DDs)  [28]. Informally, DDs declare the dependencies between the  determinant attributes X and the dependent attributes Y , X ? Y , with respect to metric distances, such as edit distance (see [4] for a survey of distance/similarity metrics). In contrast  to the equality function on each attribute as FDs, a DD can  specify a pattern ? of distance thresholds on attributes of X and Y . For example, in Hotel, we may have a DD as  dd1 : ([Address]? [Region], < 8, 3 >)  where < 8, 3 > is a pattern ? of distance thresholds on Address and Region respectively. It states a constraint on  metric distance: for any two tuples from Hotel, if they have  distance on Address less than a threshold (? 8), then their Region values should be similar as well, i.e., the edit distance  on Region is less than the corresponding threshold (? 3).
+
+This study focuses on DDs as a general type of metric  distance constraints, which employ distance metrics on both   DOI 10.1109/ICDE.2012.46    DOI 10.1109/ICDE.2012.46     sides of attributes. There are some other notations that specify  distance metrics only in one side [19], [12] and could be  regarded as special cases. Indeed, when all the thresholds  are set to 0, i.e., equality, DDs have the same semantics as FDs. For instance, the above fd1 can be represented by a  DD ([Address] ? [Region], < 0, 0 >). Thereby, FDs are also special cases of DDs.
+
+Motivation: Unlike FDs, which already imply the equality  function, it is rather difficult to manually determine the proper  settings of distance thresholds for metric distance constraints.
+
+For instance, a DD with a very tight threshold (e.g., close  to 0 as FDs) will be too strict to be tolerant to various information formats, while a loose threshold (e.g., close to  dmax the maximum distance value) is meaningless since any  data can satisfy it. In light of the dependency discovery from  data [17], we can also rely on a truth data instance to determine  the distance thresholds. The truth data instance is clean without  violations and embeds the distance constraints.
+
+The problem studied in this paper is then to determine the  distance thresholds ? for metric distance constraints from the truth data. Given the attributes X,Y on a data instance, there are numerous different distance thresholds to choose for the  attributes in DDs. Clearly, not all the settings of thresholds  are useful. Following the evaluation of FDs [18], we may also  study the measures for DDs, in order to indicate how reliable  and useful a metric distance constraint is. As opposed to the  equality function in the previous work, the major difference of  measures for metric distance constraints is about the tolerance  via distance metrics.
+
+Specifically, the utility of metric distance constraints could  be investigated by certain statistical measures including sup-  port, confidence [6] and the unique dependent quality. Let  ?[X] and ?[Y ] be the projections of thresholds on attributes X and Y of a distance threshold pattern ?.
+
+i) The support of ? is the proportion of tuple pairs in the truth data whose distances satisfy the thresholds in ?[XY ] on both attributes of X and Y . When applying the metric distance constraints to detect violations in the dirty data, a ? with high support is preferred in order to detect more violations.
+
+ii) The confidence of ? is the ratio of tuple pairs satisfying ?[XY ] to the pairs satisfying ?[X]. Note that the confidence measure is analogous to the precision of violation detection.
+
+Thereby, a ? with high confidence is preferred.
+
+iii) The dependent quality of ? denotes the quality of  tolerance on the dependent attributes Y . It indicates how close the distance threshold ?[Y ] to the equality is. As shown in the following example, if the dependent quality is low (i.e., ?[Y ] is far away from equality), the constraint is meaningless and  useless.1  First, if the dependent quality is set too high, e.g., ?[Y ] = 0, which is exactly the equality function in FDs, then the con-  straint could be too strict and may identify violations by  mistake as illustrated in the previous example. Consequently,  the confidence measure will be low. On the other hand,  1A large ?[X] could be meaningful. See Section III-A for a discussion.
+
+consider a ? with the lowest dependent quality, i.e., with threshold ?[Y ] = dmax the maximum distance value. It has the highest confidence 1.0, since any tuple pairs can always  have distances ? dmax on Y . Unfortunately, such a ? would miss all the violations and is useless. For example, we consider  ([Address]? [Region], < 8, dmax >), whose threshold on the dependent attribute Region is dmax. Since any pair of tuples  always has distance on Region ? dmax, the confidence of this DD is the highest 1.0. However, t4 and t6 in Table I cannot be detected by such a DD, while these two tuples are true  violations and can be detected by dd1.
+
+Recognize that real applications such as violation detection  need metric distance constraints with high statistical measures,  i.e., high support, high confidence and high dependent quality  at the same time. A straight-forward idea is to specify the  minimum requirements of these three statistical measures by  users, in the determination of distance thresholds. Unfortu-  nately, given a data instance, users may have no idea about  the data distribution. Without any prior knowledge, it might be  difficult to set the parameters of minimum support, confidence  and dependent quality, respectively. As illustrated in the above  examples, setting the requirements of some measures too high  will make the others low.
+
+In this work, we propose methods to determine distance  thresholds in a parameter-free style. Intuitively, our approach  targets on automatically returning those ?best? ?, i.e., not existing any other settings that can be found having higher  support, confidence, and dependent quality than the returned  results at the same time. Most important of all, we verified that  these automatically found ?best? distance threshold patterns  are indeed more effective than other randomly selected settings  (including FDs) in the application of violation detection.
+
+We further notice that automatically determining the ?best?  settings of distance thresholds is non-trivial in terms of compu-  tation cost. Indeed, the determination process has to consider  the combination of distance thresholds in the attributes. There-  fore, we explore several pruning opportunities to speed up the  determination process.
+
+Contributions: To sum up, we make the following contri-  butions in this work.
+
+i) We propose the expected utility of distance threshold  patterns, such that higher support, confidence and dependent  quality will yield a higher expected utility.
+
+ii) We develop efficient pruning algorithms for the distance  threshold determination, together with several advanced prun-  ing bounds with respect to the expected utility.
+
+iii) We conduct an extensive experimental evaluation over  three real data sets. In particular, we evaluate the effectiveness  of returned results in the violation detection application. The  experiments also demonstrate that our pruning strategies can  significantly improve the efficiency of determination.
+
+The remainder of this paper is organized as follows. First,  we introduce some related work in Section II and the pre-  liminary of this study in Section III. Section IV develops the  computation of expected utility, together with analysis on its  properties. In Section V, we present pruning algorithms. Our     extensive experimental evaluation is reported in Section VI.
+
+Finally, Section VII concludes this paper.
+
+
+
+II. RELATED WORK  The notation of differential dependencies (DDs) is first  proposed in [28], together with the corresponding fundamental  issues such as reasoning. The discovery in [28] targets on a  minimal cover of all DDs that exactly hold in a data instance,  while the statistical measures for DDs with respect to the  utility are not studied. Such statistical measures are essential  to tell the importance of a DD. Therefore, in this paper,  we first introduce three statistical measures, i.e., support,  confidence and dependent quality, for DDs. Then, we study  the distance threshold determination problem regarding the  statistical measures, in particular in a parameter-free style.
+
+Besides the differential dependencies considered in this  paper, other notations of metric distance constraints are also  studied. Koudas et al. [19] propose the metric functional  dependencies (MFDs), which employ distance metrics in the  dependent attributes Y but have the equality function in the determinant side X . Therefore, MFDs can be regarded as spe- cial cases of DDs, and the threshold determination techniques  proposed in this study can be directly applied to MFDs. Fan et  al. [12] introduce the matching dependencies (MDs) for record  matching, another important aspect of data cleaning. Instead  of detecting data violations as DDs and MFDs do, MDs aim  to identify the duplicates based on the similarity on certain  attributes X . In addition, comparable dependencies (CDs) over heterogeneous data are also studied in [29], which need the  more complicated schema mapping support. We believe that  the proposed threshold determination techniques could be use-  ful and possibly extended for determining MDs or CDs in the  future work. Indeed, the discovery of data dependencies from  a data instance has been widely studied [21], [26], [20]. Un-  fortunately, since the equality function is usually considered,  these previous works can hardly address the determination of  distance thresholds for metric distance constraints. The most  related work is [27] about MDs discovery. It differs from this  work in two aspects: (1) the determination on metric distance  only needs to be considered in the determinant side X for MDs; (2) there is no issue about tolerance to address for dependent  attributes in MDs. Most importantly, the previous work needs  to specify the parameters for the measures manually, while the  problem introduced in this study is to determine the distance  thresholds in a parameter-free style.
+
+A dependency rule can be measured in various ways. In the  measures of FDs [17], g3 measure [18] is widely used, that is, the minimum number of tuples that have to be removed from  the relation instance for the FD to hold. The computation of  g3 measure relies on grouping tuples by equal values, which cannot be applied to distance metrics on tuple pairs. The  confidence and support measures are also used in evaluating  FDs [6] and conditional FDs [14], [7], [11]. The confidence  can be interpreted as an estimate of the probability that a  randomly drawn pair of tuples agreeing on X also agrees on Y [6]. In our study, we also utilize support and confidence for  TABLE II NOTATIONS  Symbol Description  ? Pattern of distance thresholds  dmax Maximum distance value  R Original data relation  M Matching relation with matching tuples  C Candidate set of distance threshold patterns DDs  D(?) LHS support of ?[X]  S(?) Support of ?  C(?) Confidence of ?  Q(?) Dependent quality of ?  U?(?) Expected utility of ?  metric distance constraints, which are defined based on tuple  pairs. The major difference of measures for metric distance  constraints to the previous work is about dependent quality.
+
+As introduced in the introduction, metric distance constraints  need an additional measure to evaluate the quality of tolerance  in the dependent attributes.
+
+Instead of setting minimum requirements of several mea-  sures, in association rule mining [1], it is also studied to return  the most interesting rules according to the specified measures.
+
+For example, Han et al. [16] indicate that setting minimum  support requirement is quite subtle: a too small threshold may  lead to the generation of thousands of patterns, whereas a too  big one may often generate no answers. Webb and Zhang [31]  study the k-optimal rule discovery, where the leverage is used  as a single value measure instead of support and confidence  separately. Scheffer [25] studies the trade-off between support  and confidence for finding association rules, by computing  an expected prediction accuracy. Compared with the previous  work on mining association rules, our problem for metric  distance constraints is different and more challenging in two  aspects: (1) the support and confidence measures are defined  with respect to the distance in tuple pairs, instead of the group  (set) of identical items in association rules; (2) besides support  and confidence, we have to balance the additional measure of  dependent quality on distance, which is a concept that does not  exist in association rules. Consequently, our expected utility  needs to consider more measures, i.e., support, confidence and  dependent quality, which has more complicated computation  and properties as illustrated in Section IV.
+
+
+
+III. PROBLEM STATEMENT  In this section, we first introduce the formal definition  and statistical measures for metric distance constraints, which  raises the problem of determining thresholds with high utility.
+
+Table II lists the frequently used notations in this paper.
+
+A. Preliminary  Consider a relation R. Let X ? R denote a set of determinant attributes, and Y ? R be a set of dependent attributes. For each attribute A ? X ? Y , we associate a     distance metric dA, e.g., edit distance [24] or cosine similarity  [8] on text, or the metric on numeric data [2]. The selection of  distance metric is out of the scope of this study. Please refer to  [4] for a survey. Let dA(a1, a2) denote the distance between two values a1 and a2 on attribute A.
+
+A differential dependency (DD) [28], (X ? Y, ?), specifies a pattern ? of distance thresholds on attributes X and Y , also denoted by ?[XY ]. The projection ?[A] on attribute A ? X ? Y denotes the distance threshold of A.
+
+A DD states the constraint that, for any two tuples t1 and t2 in a relation instance r of R, if dAi(t1[Ai], t2[Ai]) ? ?[Ai], ?Ai ? X , then it must have dAj (t1[Aj ], t2[Aj ]) ? ?[Aj ], ?Aj ? Y, where ?[Ai] and ?[Aj ] are distance thresh- olds on the attributes of Ai and Aj respectively.
+
+For example, a DD ([Address] ? [Region], < 8, 3 >) in the Hotel relation specifies the constraint that if two tuples  have similar Address (with edit distance no greater than  ?[Address] = 8) then their Region values are also similar (with edit distance ? ?[Region] = 3).
+
+Note that the distance thresholds on the determinant at-  tributes X could be large. If ?[X] is close to dmax the max- imum distance value, it states that no matter whether the X values are similar or not, the constraints on Y can be achieved anyway. The larger the ?[X] is, the weaker the Y side depends on the similarity of X . When ?[X] = dmax, the constraint on X is unlimited, i.e., any tuple pair can always have distance ? dmax. In fact, for any attribute A ? R \ (X ? Y ) that does not appear in a DD (X ? Y, ?), it already implies an unlimited constraint ?[A] = dmax on A. We say that ?[Y ] is independent of A.
+
+B. Statistical Measures  In order to compute the measures of support, confidence and  dependent quality, we define the following statistics. Following  the support and confidence measures defined on tuple pairs [6],  we study the statistics of tuple pairs with respect to metric  distance. Given an instance of relation R with N data tuples, we conduct a pair-wise matching of all N tuples. The metric distance of each tuple pair is denoted by a matching tuple b, where b[A] is the distance of the data tuple pair on attribute A ? R. As illustrated below, for the evaluation of each ?, we have to visit all the tuple pairs once. To avoid the re-  computation among the evaluation of different ?, we can pre- compute the matching tuples from all tuple pairs and store  them for reuse.
+
+Let M be a matching relation with total M = |M| = N(N?1)  2 matching tuples obtained from the pair-wise match-  ing. If the distance values on X of a matching tuple b can satisfy the corresponding thresholds ?[X], we say that b satisfies ?[X], denoted by b ? ?[X]. Let count(b ? ?[X]) denote the total number of matching tuples b ? M that can satisfy ?[X]. We introduce the following statistics.
+
+D(?) = count(b ? ?[X])  M (1)  Indeed, D(?) can be regarded as the support of ?[X] in the left-hand-side of ?. To illustrate the computation of statistical measures, we consider the previously used running example  in Table I in the introduction. Since there are 15 tuple pairs  in Table I and 6 of them have distance ? 8 on Address, we have D(dd1) = 6/15 = 0.4.
+
+C(?) = count(b ? ?[XY ])  count(b ? ?[X]) (2)  Moreover, C(?) is exactly the confidence definition of ?, i.e., the ratio of tuple pairs satisfying ?[XY ] to the pairs satisfying ?[X]. For example, in Table I, among 6 pairs of tuples satisfying ?[X] of dd1, there are 4 tuple pairs also having Region distances ? 3. Thereby, the confidence of dd1 is 4/6.
+
+Consequently, the overall support of ? is S(?) = C(?)D(?), i.e., the proportion of tuple pairs whose distances satisfy the  thresholds in ?[XY ] on both attributes of X and Y , e.g., S(dd1) = 4/15.
+
+Q(?) =  ? A?Y dmax ? ?[A]  |Y |dmax (3)  Finally, the dependent quality Q(?) denotes the quality of tolerance in the dependent side, i.e., how the distance thresh-  olds ?[Y ] on dependent attributes Y is close to the equality.
+
+Intuitively, as presented in formula 3, the smaller the distance  thresholds on Y are, the higher the dependent quality Q(?) is. When the distance thresholds are set to the smallest 0, the dependent quality will be the highest 1.0, i.e., the equality case. On the other hand, the largest threshold dmax will have  the lowest dependent quality 0.0.
+
+C. Threshold Determination Problem  There are various distance threshold settings that can be  associated to the DDs on X ? Y , while only some of them with high utility are interesting to users, i.e., those  ones with high support, confidence and dependent quality.
+
+The determination process often needs users to specify the  minimum requirements of these three statistical measures.
+
+As mentioned in the introduction, it is difficult to set param-  eters of minimum support, confidence and dependent quality  respectively. Setting some requirements high may lead other  measures to be low. To avoid tuning parameters manually, we  are interested in an overall evaluation of utility.
+
+Let b be any matching tuple. We study the following prediction probability  U(?) = Pr(b ? ?[Y ],Q(?) is high | b ? ?[X]), (4)  i.e., the conditional probability of b satisfying ?[Y ] with high dependent quality given b satisfies ?[X]. Intuitively, to accurately detect the violations with small distance, we expect  the above probability of a ? to be high. This U(?) can roughly denote the utility of confidence and dependent quality, while  support is not investigated.
+
+Therefore, we aim to compute an expected utility to refine  U(?) w.r.t. confidence and dependent quality by using support,  U?(?) = E(U(?) | C(?),D(?),Q(?)),     where C(?),D(?) and Q(?) are the statistics observed from the matching relation M. The computation and properties of the expected utility are discussed in the following Section IV.
+
+In short, we can find that the expected utility of a ? is high if it has high support, confidence and dependent quality.
+
+Finally, we formulate the determination problem without  manually specifying the individual requirements.
+
+Definition 1. The distance threshold determination problem is  to find a distance threshold pattern ? for the DD on X ? Y with the maximum expected utility U?(?).
+
+
+
+IV. COMPUTING EXPECTED UTILITY  In this section, we present the detailed computation steps  of the expected utility, and then analyze the corresponding  properties.
+
+Computation: Given a data instance, we can compute the  statistics C(?),D(?),Q(?) denoted by C,D,Q. According to the Bayesian rule, we have the expected utility as follows,  U?(?) = E(U | C,D,Q)  =  ? uP (U = u | C,D,Q)du  =  ? u P (U = u,C,D,Q)  P (C,D,Q) du  =  ? u P (C,Q | U = u,D)P (U = u | D)  P (C,Q | D) du  =  ? uP (C,Q | U = u,D)P (U = u | D)du  P (C,Q | D) .
+
+Consider all possible u values,? P (U = u | C,D,Q)du = 1  ?  ? P (U = u,C,D,Q)  P (C,D,Q) du = 1  ?  ? P (C,Q | U = u,D)P (U = u | D)  P (C,Q | D) du = 1  ? P (C,Q | D) =  ? P (C,Q | U = u,D)P (U = u | D)du.
+
+Based on the above two derivations, we have  E(U | C,D,Q) =  ? uP (C,Q | U = u,D)P (U = u | D)du? P (C,Q | U = u,D)P (U = u | D)du  .
+
+P (C,Q | U = u,D) can be modeled exactly as a Binomial distribution [23], denoted by DCQ ? B(D, u). Recall the definition of Binomial distribution: Consider a set of n objects, each of which yields success with probability p, then the probability of k successes in n objects is given by the probability mass function of Binomial distribution:  f(k;n, p) =  ( n k  ) pk(1? p)n?k.
+
+In our scenario, we find D instances from the matching relation M satisfying ?[X] (i.e., n = D). Among them, we observed DCQ instances satisfying ?[Y ] with high dependent quality  (i.e., k = DCQ successes). Moreover, according to formula 4, u is the probability of predicting Y with high dependent quality given X (i.e., p = u). Finally, the probability of observing C,Q is given by f(DCQ;D, u). Thereby, we can rewrite the computation formula,  E(U | C,D,Q) =  ? uf(DCQ;D, u)P (U = u | D)du? f(DCQ;D, u)P (U = u | D)du  .
+
+P (U = u | D) is exactly P (U = u), since the utility U is independent of D which concerns X only. The prior P (U = u) denotes the distribution of ?, i.e., the fraction of ? with U = u.
+
+Note that the observed CQ can be interpreted as an estimation of the prediction probability of utility u, i.e., the probability of matching tuples that satisfy ?[X] also satisfying ?[Y ] with a high dependent quality. Thus, we use the histogram P (CQ) to estimate P (U = u), which can also be modeled by the Binomial distribution,  P (U = u) = ?(u) = f(u; 1,CQ),  where CQ is the mean of CQ.
+
+Finally, we can compute the expected utility U?(?) by  U?(?) = E(U | C,D,Q) =  ? uf(DCQ;D, u)?(u)du? f(DCQ;D, u)?(u)du  . (5)  Property: We discuss the properties of the expected utility,  that is, how the support, confidence and dependent quality  measures of ? contribute to the expected utility U?(?). (All the proofs of the following lemma, theorem and proposition  can be found in the full version [13].)  Theorem 1. For any ?1, ?2, if ?1 has higher support than ?2, denoted by  S(?1) S(?2)  = ?, ? ? 1, and the confidence and dependent quality of ?1 are higher than those of ?2 as follows C(?1) C(?2)  ? ?, Q(?1)Q(?2) ? ? , then we have U?(?1) ? U?(?2).
+
+This conclusion verifies our intuition that higher support,  confidence and dependent quality will contribute to a larger ex-  pected utility. Indeed, to clarify the contributions of measures  clearly, we can fix one of them, and derive the contributions  of the other two measures. For instance, as we will see in  Theorem 2 below, if any ?1, ?2 have the same D measure, then the higher confidence and dependent quality of ?1 will yield a higher expected utility U?(?1) than that of ?2.
+
+So far, we have presented the computation of expected  utility with clarification on the corresponding properties. We  are now ready to find the distance threshold patterns for DDs  with the maximum expected utility in a parameter-free style,  instead of studying how to specify the minimum requirements  of several statistical measures.
+
+
+
+V. DETERMINATION ALGORITHM  In this section, we study the finding of one (or several)  setting of distance thresholds for the DDs on X ? Y with the maximum expected utility, i.e., ?max = argmax? U?(?). The determination process has mainly two steps: (i) to find the best  ?[Y ] when given a fixed ?[X]; (ii) to find the desired ?[X] together with its best ?[Y ] which has the maximum U?(?).
+
+The previous FDs discovery considers the combination of at-  tributes [17] and targets on minimizing a single measure, such  as g3 [18]. In contrast, we study the determination of distance thresholds on certain attributes X,Y and aim to maximize the expected utility with respect to three measures. Recognizing  the major difference and challenges, in the following, we  investigate several pruning methods and bounds, by exploring  the unique features of the expected utility.
+
+A. Determination for Dependent Attributes  First, we consider the determination for the dependent  attributes: given a fixed ?[X], to find the corresponding best ?[Y ] on the dependent attributes Y with the maximum U?(?).
+
+For an attribute A ? Y , we can consider the search space of distance threshold ?[A] from 0 to dmax. For example, supposing that the maximum distance value is 9, we denote all the distance thresholds as dis = {0, 1, 2, . . . , 9}.
+
+Let CY denote the set of distance threshold patterns ?[Y ] by enumerating all the distance thresholds ?[A] ? dis for all the dependent attributes A ? Y . For instance, as shown in Figure 1 (a), each node, such as < 1, 1 >, corresponds to a ?[Y ] ? CY . Suppose that two attributes in Y have the same dis = {0, 1, 2, . . . , 9}. Figure 1 (a) illustrates all the distance threshold patterns in CY , from < 0, 0 > to < 9, 9 >.
+
+Since ?[X] on the determinant attributes X is fixed in the current step, according to formula 1, the D(?) value is the same for any ? such that ?[Y ] ? CY . Therefore, we mainly study the other two measures C(?) and Q(?) in terms of contributions to the expected utility U?(?).
+
+Theorem 2. Consider any two ?1, ?2, having the same D(?1) = D(?2) = D. If their confidence and dependent quality satisfy C(?1)Q(?1) ? C(?2)Q(?2), then we have U?(?1) ? U?(?2).
+
+According to Theorem 2, for a fixed ?[X], to find a ? with the maximum U?(?) is equivalent to find the one with the maximum C(?)Q(?). For each ?[Y ] ? CY , we can directly calculate the dependent quality Q(?) by formula 3. Moreover, together with the given ?[X] on the determinant attributes X , we can also compute the measure C(?) from M using formula 2. The result ? with the maximum U?(?) can be found by one pass through all the ?[Y ] ? CY .
+
+Algorithm 1 presents the approach of finding the best ?[Y ] for a given ?[X] such that the expected utility U?(?) is maximized. As mentioned, to find the result, we only need to  compute C(?i)Q(?i) for each ?i such that ?i[Y ] ? CY and ?i[X] = ?[X]. Line 3 in Algorithm 1 computes the C(?i) from M by using formula 2. Let Vmax denote the maximum value of C(?)Q(?) in the first i? 1 candidates, i.e.,  Vmax = i?1 max j=1  C(?j)Q(?j).
+
+Initially, we can set Vmax = 0. The ?max in Line 5 records the distance threshold pattern with the maximum C(?)Q(?) value, and will be returned as the result.
+
+Suppose that we consider d values of distance thresholds in each attribute, i.e., |dis| = d. In this PA approach, we need  Algorithm 1 for Dependent Attributes  PA(M, ?[X], Vmax)  1: for each ?i[Y ] ? CY do 2: let ?i[X] = ?[X] 3: compute C(?i) from M 4: if C(?i)Q(?i) > Vmax then 5: ?max = ?i, Vmax = C(?i)Q(?i) 6: return ?max  (a) (b)  Fig. 1. Pruning on dependent attributes  to consider the combination of d distance thresholds in all Y attributes as the candidate patterns in CY , i.e., |CY | = d  |Y | in  size. For each candidate ?, there is a costly step to compute C(?). According to formula 2, for each ?, we have to count the number of matching tuples inM which can satisfy ?[XY ].
+
+With the increase of data sizes, the matching relation size  M = |M| will be large as well. The cost O(Md|Y |) of PA is high. Therefore, we propose the following pruning techniques  to reduce the number of candidates during the computation.
+
+Pruning approach: To study the pruning of pattern candi-  dates, let?s first introduce the relationships between distance  threshold patterns. Consider any attribute set Z of R.
+
+Definition 2. For any ?1, ?2, if ?1[A] ? ?2[A] holds for all the attributes, ?A ? Z, then we say that ?1[Z] dominates ?2[Z], denoted by ?1[Z]? ?2[Z].
+
+Figure 1 (a) shows the dominant relationships of candidates  in CY . An arrow from a node ?2[Y ] to ?1[Y ] denotes that ?1[Y ] dominates ?2[Y ], i.e., ?1[Y ] ? ?2[Y ]. We present the dominant relationships between two neighbor levels. For the  domination between other levels, we can derive them by the  transitivity property, i.e., if ?1[Y ]??2[Y ] and ?2[Y ]??3[Y ], we have ?1[Y ]??3[Y ] as well. For example, in Figure 1 (a), < 1, 1 > also dominates < 0, 0 >, which is not shown.
+
+Lemma 1. For any two ?1, ?2, having ?1[X] = ?2[X] and ?1[Y ]? ?2[Y ], then C(?1) ? C(?2) and Q(?1) ? Q(?2).
+
+According to Lemma 1, by a downward traversal of candi-  dates in the dominant graph, the dependent quality increases  from 0 to 1. On the other hand, as shown in Figure 1 (b), the  confidence increases from 0 to 1 in an upward traversal.
+
+Consider the current ?i in traversal of CY . Let ?max denote     the candidate with the maximum C(?max)Q(?max) = Vmax in the previously processed i? 1 candidates in CY ,  ?max = argmax?j ,j?[1,i?1]C(?j)Q(?j).
+
+We have the opportunity of pruning the following two sets of  remaining ?k without conducting the costly computation of C(?k):  i) Pruning by ?max. The first pruning opportunity is intro- duced by ?max of the previously processed i? 1 candidates.
+
+Proposition 1. For any ?k[Y ] ? CY with Q(?k) ? Vmax, we have U?(?max) ? U?(?k).
+
+We identify the candidates that can be pruned according to  Proposition 1. Let  S0 = {?k | Q(?k) ? Vmax, ?k[Y ] ? CY }.
+
+Since confidence is always less than or equal to 1, we have  C(?k)Q(?k) ? Q(?k) ? Vmax. As illustrated in Figure 1 (b), all the ?k in S0 can be safely pruned without computing C(?k) from M.
+
+ii) Pruning by ?i. The second pruning opportunity is developed according to the current ?i in i-th step.
+
+Proposition 2. For any ?k[Y ] ? CY with ?i[Y ]??k[Y ] and Q(?k) ?  Vmax C(?i)  , we have U?(?max) ? U?(?k).
+
+Similarly, the candidates that can be pruned according to  Proposition 2 are represented by  S1 = {?k | ?i ? ?k,Q(?k) ? Vmax C(?i)  , ?k[Y ] ? CY },  as shown in Figure 1 (b). According to ?i[Y ]??k[Y ], we have C(?k) ? C(?i). It implies C(?k)Q(?k) ? C(?i)Q(?k) ? Vmax. Therefore, all the ?k in S1 can be safely pruned as well, without computing C(?k).
+
+Based on the above two propositions, we develop Algorithm  2, namely PAP, which prunes the candidates of S0 and S1 when passing through each ?i ? CY . The operation prune(?, q) removes all the patterns dominated by ? from the candidate set CY , whose dependent quality Q(?k) is less than or equal to q.
+
+For example, in Line 7, prune(?i,  Vmax C(?i)  ) removes patterns ? in S1 from CY , according to Proposition 2. Note that any ?k is dominated by ?0, ?0[Y ]??k[Y ], where ?0 has ?0[A] = dmax for each attribute A ? Y . Therefore, in Line 6, we can also use the same function prune(?0, Vmax) to prune the set S0, according to Proposition 1.
+
+Finally, we discuss the processing orders of candidates in  CY . Heuristically, in order to maximize the pruning power, we would like to find the largest Vmax as early as possible. As illustrated in Figure 1, if we first process patterns in the top, the  corresponding dependent quality is small (? 0), which leads to a small Vmax, indicating weak pruning power. On the other hand, when the patterns in the bottom are processed first, the  corresponding Vmax is also small due to the low confidence (? 0). Therefore, during the processing, we heuristically choose the patterns in the middle to be processed first, namely mid-  first order in CY .
+
+Algorithm 2 for Dependent Attributes with Pruning  PAP(M, ?[X], Vmax)  1: for each ?i[Y ] ? CY do 2: let ?i[X] = ?[X] 3: compute C(?i) from M 4: if C(?i)Q(?i) > Vmax then 5: ?max = ?i, Vmax = C(?i)Q(?i) 6: prune(?0, Vmax) {remove patterns in S0 from CY } 7: prune(?i,  Vmax C(?i)  ) {remove patterns in S1 from CY } 8: return ?max  B. Determination for Determinant Attributes  Next, we consider all possible distance threshold patterns  of the determinant attributes X , say CX , and find a ? with the maximum U?(?). The straight-forward approach is to compute the best ?[Y ] for each ?[X] ? CX respectively by using PA, and then return the one with the maximum U?(?).
+
+Algorithm 3 presents the straight-forward computation of a  distance threshold ?max with the maximum expected utility.
+
+For each ?i[X] ? CX , Line 3 computes D(?i) from M by using formula 1. By calling the PA or PAP algorithm, we can  compute the best ?i[Y ] with respect to the current ?i[X].
+
+For the initial bound Vmax, as mentioned before, we can set Vmax = 0 as illustrated in Line 4. Finally, the expected utility U?(?i) of each ?i in Line 5 is computed by using formula 5 as presented in Section IV. Here, Umax records the maximum expected utility in the first i? 1 candidates,  Umax = i?1 max j=1  U?(?j).
+
+Initially, we set Umax = 0. The returned ?max is the distance threshold pattern with the maximum expected utility Umax.
+
+Algorithm 3 for Determinant Attributes  DA(M)  1: Umax = 0 2: for each ?i[X] ? CX do 3: compute D(?i) from M 4: compute ?i[Y ] by PA(M, ?i[X], 0) 5: U?(?i) = E(U(?i) | C(?i),D(?i),Q(?i)) 6: if Umax < U?(?i) then 7: ?max = ?i, Umax = U?(?i) 8: return ?max  Again, considering all d distance threshold values in each attribute, there are d|X| and d|Y | candidates in set CX and CY respectively. Let c = |X|+|Y | be the total number of attributes in X and Y . The total number of candidates evaluated in the algorithm is |CX?CY | = d  c. Note that for each candidate, we  have to traverse the matching relation M in order to compute corresponding measures such as confidence. Therefore, the  entire complexity of the approaches, e.g., DA+PA, is O(Mdc), where M is the total number of matching tuples in M. Note that pruning version PAP can be applied to replace the basic  approach PA, namely DA+PAP.
+
+Advanced pruning bound using ?max: The most costly part of the above DA algorithm is still the computation of  ?i[Y ] by using PA or PAP, which traverses M frequently. As mentioned, in order to improve the pruning power of PAP, we  expect to find a larger pruning bound Vmax. Let?s first study the following properties in terms of the expected utility.
+
+Theorem 3. Consider any two ?1, ?2, having D(?1) ? D(?2). If their confidence and dependent quality satisfy  C(?2)Q(?2) ? 1? D(?1)  D(?2)  ( 1? C(?1)Q(?1)  )  then we have U?(?1) ? U?(?2).
+
+Intuitively, we can prune those ?2 whose C(?2)Q(?2) is  no higher than 1 ? D(?1)D(?2)  ( 1 ? C(?1)Q(?1)  ) , i.e., the new  pruning bound Vmax. To apply this pruning bound, we require a precondition D(?1) ? D(?2).
+
+Therefore, we can adopt an ordering of candidates in CX having D(?i1) ? D(?i2) for any i1 < i2. The ordering can be done in linear time by amortizing the D(?) values into a constant domain. In the following algorithms, we assume that  the candidates in CX have already been listed in descending order of D(?) values.
+
+Let ?max be the current result with the maximum expected utility by evaluating the first i?1 candidates in CX . Since we process CX in descending order of D(?) values, for the next ?i, we have D(?max) ? D(?i). According to Theorem 3, we can compute an advanced pruning bound  Vmax = 1? D(?max)  D(?i)  ( 1? C(?max)Q(?max)  ) (6)  for the computation of ?i[Y ] by using PAP, in the current ?i.
+
+Algorithm 4 extends Algorithm 3 by introducing the ad-  vanced pruning bound Vmax instead of simply assigning Vmax = 0 in the original DA. We compute the advanced pruning bound in Line 4 by using formula 6, and use this  Vmax for pruning in the determination on dependent attributes Y (Line 5). Note that all candidates in CY might be pruned in PAP by the advanced Vmax, i.e., no ?i[Y ] returned (Line 6). Then, the current ?i[X] can be discarded safely without computing the corresponding U?(?i).
+
+Algorithm 4 for Determinant Attributes with Pruning  DAP(M)  1: Umax = 0 2: for each ?i[X] ? CX do 3: compute D(?i) from M  4: Vmax = 1? D(?max) D(?i)  ( 1? C(?max)Q(?max)  ) 5: compute ?i[Y ] by PAP(M, ?i[X], Vmax) 6: if ?i[Y ] exists then 7: U?(?i) = E(U(?i) | C(?i),D(?i),Q(?i)) 8: if Umax < U?(?i) then 9: ?max = ?i, Umax = U?(?i)  10: return ?max  Recall that when the advanced pruning bound is not avail-  able, i.e., Vmax = 0 initially in DA+PAP, we use a mid-first order to process candidates in CY in order to find a large Vmax as early as possible. However, we now already calculate an  advanced pruning bound Vmax > 0 in DAP. Heuristically, in order to prune more candidates, we would like to process those  ones in CY which can dominate more candidates, according to the prune operator in PAP. For example, we can use a top-first  order, which first processes candidates in the top, since the top  candidates (e.g., < 9, 9 > in Figure 1 (a)) always dominate the bottom ones. Therefore, in the DAP+PAP approach with  advanced pruning bounds, the top-first processing order of can-  didates in CY is preferred to achieve better time performance, which is also verified by our experiment results in Table V.
+
+If the calculated bound Vmax is less than 0, we can simply assign 0 to it. Once the bound is Vmax > 0, it can achieve a tighter pruning bound. Therefore, practically, the worst case  of DAP is exactly the basic DA algorithm. In fact, as we  can find, Theorem 2 is a special case of Theorem 3 when  D(?1) = D(?2). In other words, theoretically, the advanced pruning (e.g., DAP+PAP) developed based on Theorem 3  is a generalization of the basic pruning DA+PAP based on  Theorem 2. Our experiments in Section VI also verify that  DAP+PAP is at least no worse than DA+PAP.
+
+Algorithm Extensions: When users require more than one  answer for specific applications, the proposed algorithms can  be easily extended to find the distance threshold patterns with  second or third or l-th largest expected utilities. Specifically, instead of the maximum C(?)Q(?), we use Vmax to denote the l-th maximum C(?)Q(?) in Algorithms 1, 2 and so on. Then, the return results are a set of l patterns of distance thresholds with the largest expected utilities. Since we relax Vmax from the 1st maximum to l-th maximum, the pruning power will be weaker with the increase of l. We report the time performance on different answer sizes l in the experiments.
+
+
+
+VI. EXPERIMENTAL EVALUATION  We now report the experimental evaluation of the proposed  methods. All the algorithms are implemented by Java. The  experiment evaluates on a machine with Intel Core 2 CPU  (2.13 GHz) and 2 GB of memory. We use three real data sets.
+
+The Cora2 data set, prepared by McCallum et al. [22], consists  of records of research papers, such as author, title, year,  publisher, etc. The Restaurant3 data set consists of restaurant  records including attributes name, address, city and type. The  CiteSeer4 data set is selected with attributes including address,  affiliation, subject, description, etc. During the preprocessing,  we use edit distance with q-grams [15] to evaluate the distance  of tuples in the original data. After pair-wised computation,  we have up to 1,000,000 matching tuples in the matching  relation M for each data set. The proposed techniques are then evaluated on the prepared matching relation M.
+
+2http://www.cs.umass.edu/~mccallum/code-data.html 3http://www.cs.utexas.edu/users/ml/riddle/data.html 4http://citeseer.ist.psu.edu/     TABLE III EFFECTIVENESS OF EXAMPLE RESULTS FROM RULE 1  ?[X] ?[Y ] Measures Violation Detection  author title venue year S(?) C(?) Q(?) U?(?) Precision Recall F-measure  ?1 4 1 3 1 0.1529 0.3760 0.80 0.2325 0.3725 0.5425 0.4418  ?2 5 2 3 1 0.1764 0.3667 0.80 0.2296 0.3718 0.6266 0.4667  ?3 5 1 3 2 0.1632 0.3774 0.75 0.2232 0.3179 0.4492 0.3723  ?4 4 2 3 2 0.1657 0.3657 0.75 0.2188 0.3073 0.4457 0.3638  ?5 4 1 4 2 0.1529 0.3852 0.70 0.2108 0.2654 0.3267 0.2928  ?6 5 2 5 2 0.1764 0.3985 0.65 0.2106 0.2459 0.3337 0.2831  fd 0 0 0 0 0.0064 0.3595 1.00 0.1064 0.4315 0.0735 0.1256  TABLE IV EFFECTIVENESS OF EXAMPLE RESULTS FROM RULE 3  ?[X] ?[Y ] Measures Violation Detection  name address city type S(?) C(?) Q(?) U?(?) Precision Recall F-measure  ?1 10 7 5 10 0.2396 0.7967 0.25 0.1666 0.4889 0.3267 0.3917  ?2 10 8 5 10 0.3467 0.7040 0.25 0.1577 0.3650 0.4137 0.3879  ?3 10 7 1 10 0.2396 0.4106 0.45 0.1454 0.3305 0.3274 0.3289  ?4 10 9 5 10 0.4709 0.6001 0.25 0.1344 0.2663 0.4782 0.3421  ?5 10 8 2 10 0.3467 0.3640 0.40 0.1267 0.2675 0.4137 0.3249  ?6 10 6 3 10 0.1333 0.4711 0.35 0.1182 0.4212 0.2082 0.2787  fd 0 0 0 0 0.0002 0.1219 1.00 0.0611 0.4062 0.0091 0.0178  In the experiments, suppose that users want to determine  the distance thresholds for the metric distance constraints on  the following X ? Y attributes,  Rule1 : cora(author, title? venue, year)  Rule2 : cora(venue? address, publisher, editor)  Rule3 : restaurant(name, address? city, type)  Rule4 : citeseer(address, affiliation, description? subject)  where Rule 2 has a larger Y while Rule 4 has a larger X .
+
+A. Result Study  The first experiment illustrates some example results of  distance threshold patterns, and evaluates the effectiveness of  applying them in the application of violation detection. To  evaluate the detection accuracy, we use the measures of pre-  cision, recall and f-measure [30]. Let truth be the set of tuple  pairs with violations that are manually inserted in random. Let  found be the set of tuple pairs detected by applying the DDs.
+
+We have precision = |truth?found||found| , recall = |truth?found| |truth| , and f-  measure= 2 ? precision?recall precision+recall . The precision measure denotes  the soundness and the recall means the completeness, while  the f-measure is the overall accuracy. It is natural that higher  precision, recall and f-measure are preferred.
+
+Tables III and IV illustrate the example results on Rules  1 and 3, respectively. Each row denotes a ? with distance thresholds ?[X], ?[Y ] on attributes of X and Y respectively.
+
+We present the corresponding measures of support S(?), con- fidence C(?), dependent quality Q(?), as well as the expected utility U?(?). The results ?i are listed in the descending order  of U?(?). In the last row, we also report the corresponding FDs, where the distance threshold is 0 for each attribute.
+
+Note that the results in Table IV show the interesting case  of independence. The distance thresholds of attributes name  and type are 10 in all the results, which is considered as the maximum distance value. It implies that there is no clear  dependency relationship with respect to the name and type of  Restaurants, while the similarity of city could be dependent on  the similarity of address. By applying these DDs, we cannot  detect the violations on type. Moreover, the similarity of name  could not help in detecting the violations in city. Nevertheless,  Table IV presents the best results in terms of the expected  utility over the address and city attributes, since no dependency  could be found on name and type.
+
+The results also verify our property analysis of expected  utility. According to Theorem 1, if a ? (e.g., with ?2 in Table III) has higher support, confidence and dependent quality  than another (e.g., ?4 in Table III) at the same time, then the expected utility of ?2 must be higher than that of ?4.
+
+As observed in Table III, we have U?(?2) ? U?(?4), which verifies our analysis of expected utility properties in Section
+
+IV. Consequently, it is ensured that there does not exist any ? which has higher support, confidence and dependent quality  at the same time than the returned ?1 with the maximum expected utility.
+
+The application of violation detection demonstrates the ef-  fectiveness of expected utility. As shown in Tables III and IV,  the overall accuracy of detection (f-measure) approximately  decreases with the decrease of the expected utility U?(?). It indicates that the expected utility can reflect the usefulness of            100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 1  DA+PA DA+PAP  DAP+PAP         100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 2  DA+PA DA+PAP  DAP+PAP         100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 3  DA+PA DA+PAP  DAP+PAP         100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 4  DA+PA DA+PAP  DAP+PAP  Fig. 2. Time performance on various data sizes (return largest U?)        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 1  PA PAP        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 2  PA PAP        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 3  PA PAP        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 4  PA PAP  Fig. 3. Generation for dependent attributes  metric distance constraints in the application. Although some  of the measures of a ? are higher, e.g., ?6 in Table III with support 0.1764 and confidence 0.3985, the detection accuracy  (f-measure) is still low due to the poor dependent quality of ?6.
+
+This result also confirms that manually setting requirements of  three measures could miss better results.
+
+Finally, as shown in Tables III and IV, although the depen-  dent quality is high in FD, due to the low support, the expected  utility of FD is lower than DDs. Consequently, the detection  effectiveness (f-measure) of FD is poor.
+
+B. An Overview of Time Performance  Next, we evaluate the time performance of the proposed  determination and pruning techniques. Since our proposed  pruning techniques are proved (in fact also observed in the  experiments) to be safe without missing answers or introduc-  ing errors, the returned results by different approaches are  exactly the same. Therefore, in the following, we focus on  the efficiency evaluation of the proposed techniques on various  data sizes, up to 1,000,000 matching tuples. The compared ap-  proaches include the basic DA+PA, the basic pruning DA+PAP,  the advanced pruning DAP+PAP. Note that advanced pruning  bounds have no contribution to the algorithm PA without  pruning techniques. Thus, approaches such as DAP+PA are  equivalent to DA+PA, and omitted in this evaluation. Please  refer to Section VI-C below for the additional results on  evaluating the individual methods, such as PA vs. PAP.
+
+Figure 2 reports the time cost of returning answers with  the largest U?. First, the time cost of approaches increases linearly with the data size, which shows the scalability of our  determination methods. Although some specific tests may vary  slightly in time cost due to the different data distribution and  pruning power, the linear trend can still be clearly observed.
+
+This linear result with respect to the number of matching  tuples M is not surprising, according to the complexity of determination algorithms O(Mdc) as illustrated in Section V.
+
+Moreover, our pruning techniques work well for different  rules and can reduce the time cost significantly in all data sizes.
+
+i) The pruning approach PAP of determination for dependent  attributes shows lower time costs than the basic one PA. For  example, in Rule 1, with the same DA method, the DA+PAP  shows significantly lower time cost than the original DA+PA.
+
+ii) The DAP+PAP approach can provide a pruning bound that  is at least no worse than the DA+PAP one. For instance, under  the same PAP, the results in Rule 1 show better performance  of DAP than DA, while Rule 3 verifies that the DAP is at least  no worse than the DA. These results demonstrate the efficiency  of the proposed pruning techniques, especially the superiority  of the advanced DAP+PAP approach.
+
+C. Evaluation on Specific Steps  In this experiment, we demonstrate the detailed results by  applying different methods in specific steps. As mentioned in  Section V, our algorithms can be easily extended to find the  l-largest expected utility answers, which offer more options to users. Therefore, the following additional experiments also  evaluate the performance on various l-th largest results, in- cluding the 1st largest.
+
+Determination for Dependent Attributes: We first study  the PA and PAP algorithms for determination in dependent  attributes Y in Figure 3. The basic PA algorithm has to traverse all the candidates on Y without any pruning. Therefore, as shown in Figure 3, no matter how many l answers are requested, the PA approach has the same time cost. Meanwhile,  the PAP approach can significantly reduce time cost by pruning  candidates based on Propositions 1 and 2.
+
+On the other hand, however, with the increase of the answer  size l, the corresponding l-th largest expected utility value decreases, that is, the pruning bound is relaxed and the pruning  power is weaker. Therefore, as presented in Figure 3, time cost  of PAP increases with a larger answer size l.
+
+0.2  0.4  0.6  0.8   1 2 3 4 5 6 7  P ru  n in  g r  a te  l-th largest  Rule 1  DA DAP   0.2  0.4  0.6  0.8   1 2 3 4 5 6 7  P ru  n in  g r  a te  l-th largest  Rule 2  DA DAP   0.2  0.4  0.6  0.8   1 2 3 4 5 6 7  P ru  n in  g r  a te  l-th largest  Rule 3  DA DAP   0.2  0.4  0.6  0.8   1 2 3 4 5 6 7  P ru  n in  g r  a te  l-th largest  Rule 4  DA DAP  Fig. 4. Pruning power evaluation        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 1  DA DAP        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 2  DA DAP        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 3  DA DAP        1 2 3 4 5 6 7  T im  e c  o s t  (s )  l-th largest  Rule 4  DA DAP  Fig. 5. Generation for determinant attributes  Moreover, the pruning power of the PAP algorithm is af-  fected by the confidence and dependent quality measures, i.e.,  affected by data distribution. Therefore, PAP shows different  improvement of time cost in four rules tests. In particular, Rule  2, which has more attributes in the dependent side, may have  more opportunities of pruning by PAP. Consequently, as shown  in Figure 3, the PAP can achieve a significant improvement in  Rule 2. In fact, as discussed in the following experiments, the  pruning bounds calculated by different techniques may show  different performance as well.
+
+Determination for Determinant Attributes: Recall that  algorithms for determinant attributes, DA and DAP, contribute  different pruning bounds. In order to evaluate the pruning  power of these approaches, Figure 4 observes the pruning rate,  i.e., the proportion of candidates that can avoid computation.
+
+For example, a pruning rate 0.9 denotes that 90% candidates can be safely pruned without computation. Obviously, the  higher the pruning rate is, the lower time cost will be. We  illustrate the time performance of DA and DAP algorithms for  determinant attributes X in Figure 5.
+
+First, the basic DA algorithm initially assigns Vmax = 0 as  the pruning bound, while the advanced DAP uses the current  ?max to calculate a larger pruning bound (? 0). Therefore, the pruning power of DAP is stronger than the basic DA as  illustrated in Figure 4, and consequently shows better time  performance in Figure 5.
+
+Note that the pruning rates of Rule 2 are already very  high (greater than 0.9). Therefore, even by applying advanced techniques, we cannot achieve much better pruning bounds  anymore. The corresponding time cost is then similar as well.
+
+Moreover, although the DAP approach shows quite similar  pruning power to the basic DA in Rules 3 and 4, as we  discussed in Section V, the DAP algorithm is at least no worse  than DA.
+
+Processing Order in CY : Now, we discuss the processing orders of candidates in CY , i.e., the mid-first order and the  TABLE V TIME COST (S) OF VARIOUS PROCESSING ORDER IN CY  l-th largest Mid-first in PAP Top-first in PAP DA DAP DA DAP  1 34.20 23.21 34.40 18.50 2 37.60 24.92 39.00 20.40 3 39.93 25.90 41.36 21.15 4 41.26 26.75 42.96 21.93 5 42.23 28.73 44.11 23.90 6 44.14 28.95 46.18 24.53 7 44.93 29.70 47.79 25.06  top-first order. Table V presents the time cost of different  approaches with these two orders, in the Rule 1 test. Similar  conclusions can also be observed in other rules.
+
+As discussed in Section V, when the pruning bound is  initially set to Vmax = 0 in the DA+PAP approach, the mid- first order is preferred in order to find a large Vmax as early as possible. Therefore, as presented in Table V, DA with mid-first  order in PAP (column 2) has lower time cost than the top-first  one (column 4), under all answer size l. On the other hand, if advanced pruning bound Vmax > 0 is calculated by DAP, then we can use the top-first order to prune more candidates  in CY . Consequently, the top-first order of PAP shows better performance than the mid-first one, in approaches together  with DAP. Nevertheless, the DAP+PAP with top-first order can  always achieve the lowest time cost, and the improvement of  mid-first order in DA+PAP is not as significant as the DAP+PAP  approaches as well. Thereby, we could use top-first order in  most cases.
+
+Scalability on l-th Largest: Finally, we also study the efficiency of determining l-largest expected utility answers over various data sizes. Here, we only report the result of  5-th largest U? answers in Figure 6. Similar conclusions are observed in other l sizes. Again, since there is no pruning of the DA+PA approach, the time cost of DA+PA in Figure 6 is            100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 1  DA+PA DA+PAP  DAP+PAP         100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 2  DA+PA DA+PAP  DAP+PAP         100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 3  DA+PA DA+PAP  DAP+PAP         100k 300k 500k 700k 900k1m  T im  e c  o s t  (s )  data size  Rule 4  DA+PA DA+PAP  DAP+PAP  Fig. 6. Scalability on data sizes (return 5-th largest U?)  the same as Figure 2 of the 1st largest. The improvement of  pruning like DA+PAP in Figure 6 is not as significant as that of  1st largest answers. For example, in Rule 1 with 1m data size,  DA+PAP has an improvement about 2200 (from 5500 to 3300)  in Figure 2, while the corresponding improvement is only  about 1500 (from 5500 to 4000) in Figure 6. Nevertheless,  DAP+PAP can still keep the lowest time cost in all the test in  Figure 6.
+
+
+
+VII. CONCLUSIONS  Motivated by the utility of differential dependencies (DDs)  in real applications like violation detection, in this paper, we  study the problem of determining the distance thresholds for  metric distance constraints from data. Instead of manually  specifying requirements of various statistical measures, we  conduct the determination in a parameter-free style, i.e., to  compute an expected utility of the distance threshold pattern  and return the results with the maximum expected utility. Sev-  eral advanced pruning algorithms are then developed in order  to efficiently find the desired distance thresholds. Finally, the  experimental evaluation on three real data sets demonstrates  the performance of our proposed methods. In particular, we  evaluate the effectiveness of returned results in the violation  detection application, and show that the pruning techniques  can achieve lower time cost.
+

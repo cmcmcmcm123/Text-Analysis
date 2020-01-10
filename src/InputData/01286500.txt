@@ -1,0 +1,138 @@
+Mining Association Rules from Relations on a Parallel NCR Teradata  Database System
+
+Abstract Data mining from relations is becoming increasingly important with the advent of parallel database systems. In this paper, we propose a new algorithm for mining association rules from relations.  The new algorithm is an enhanced version of the SETM algorithm [3], and it reduces the number of candidate itemsets considerably.  We implemented and evaluated the new algorithm on a parallel NCR Teradata database system. The new algorithm is much faster than the SETM algorithm, and its performance is quite scalable.
+
+Key words: data mining, association rules, parallel database system, performance analysis.
+
+1. Introduction Data mining, also known as knowledge discovery from databases, is the process of finding useful patterns from databases.  One of the useful patterns is the association rule, and it is formally described in [1] as follows: Let I = {i1, i2, . . . , im} be a set of items. Let D represent a set of transactions, where each transaction T contains a set of items, such that T ? I. Each transaction is associated with a unique identifier, called transaction identifier (TID). A set of items X is said to be in transaction T if X ? T. An association rule is an implication of the form X => Y, where X ? I, Y ? I and X ??????. The rule X => Y holds in the database D with confidence c if c% of the transactions in D that contain X also contain Y. The rule X => Y has a support s if s% of the transactions in D contain X U Y.
+
+For example, beer and disposable diapers are items such that beer => diapers is an association rule mined from the database if the co-occurrence rate of beer and disposable diapers (in the same transaction) is not less than the minimum support and the occurrence rate of diapers in the transactions containing beer is not less than the minimum confidence.
+
+The problem of mining association rules is to find all the association rules that have support and confidence greater than or equal to the user specified minimum support and minimum confidence, respectively. This problem can be decomposed into the following two steps:  1. Find all sets of items (called itemsets) that have support above the user specified minimum support.
+
+These itemsets are called frequent itemsets or large itemsets.
+
+2. For each frequent itemset, all the association rules that have minimum confidence are generated as follows: for every frequent itemset f, find all non- empty subsets of f. For every such subset a, generate a rule of the form a => (f - a) if the ratio of support(f) to support(a) is at least the minimum confidence.
+
+Finding all the frequent itemsets is a really resource consuming task, but generating all the valid association rules from the frequent itemsets is quite straightforward.
+
+There are many association rule mining algorithms proposed [1, 2, 3, 4, 5, 6, 7]. However, most of these algorithms are designed for data stored in file systems. Considering that relational databases are widely used to manage the corporation data, integrating the data mining with the relational database system is important. A methodology for tightly coupling a mining algorithm with relational database using user-defined functions is proposed in [8], and a detailed study of various architectural alternatives for coupling mining with database systems is presented in [9].
+
+The SETM algorithm proposed in [3] was expressed in the form of SQL queries. Thus, it can be easily applied to relations in the relational databases, and can take advantage of the functionalities provided by the SQL engine, such as the query optimization, efficient execution of relational algebra operations, and indexing. SETM can be also easily implemented on a parallel database system which can execute the SQL queries in parallel on different processing nodes. By processing the relations directly, we can easily relate the mined association rules to other information in the same database, such as the customer information.
+
+In this paper, we propose a new algorithm named Enhanced SETM (ESETM), which is an enhanced version of the SETM algorithm.  We implemented both ESETM and SETM on a parallel NCR Teradata database system, and evaluated and compared their performance for various cases.  It has been shown that ESETM is considerably faster than SETM. Our NCR Teradata database system is described in Section 2, and the SETM and ESETM algorithms are presented in Sections 3 and 4, respectively. The results of performance analysis are given in Section 5.
+
+2. NCR Teradata Database System The algorithms are implemented on a NCR Teradata database system. It has two nodes, where each node consists of 4 Intel 700 MHz Xeon processors, 2 GB shared memory, and 36 GB disk space. The nodes are interconnected by a dual BYNET interconnection network supporting 960 Mbps of data bandwidth for each node. Moreover, nodes are connected to an external disk storage subsystem configured as a level-5 RAID (Redundant Array of Inexpensive Disks) with 288 GB disk space.
+
+Figure 1. Teradata system architecture  The Relational DBMS used here is Teradata RDBMS (version 2.4.1) which is designed specifically to function in the parallel environment. The hardware that supports Teradata RDBMS software is based on off-the-shelf Symmetric Multiprocessing (SMP) technology. The hardware is combined with a communication network (BYNET) that connects the SMP systems to form Massively Parallel Processing (MPP) systems, as shown in Figure 1 [10].
+
+The versatility of the Teradata RDBMS is based on virtual processors (vprocs) that eliminate the dependency on specialized physical processors. Vprocs are a set of software processes that run on a node within the multitasking environment of the operating system. Each vproc is a separate, independent copy of the processor software, isolated from other vprocs, but sharing some of the physical resources of the node, such as memory and CPUs [10].
+
+Vprocs and the tasks running under them communicate using the unique-address messaging as if they were physically isolated from one another. The Parsing Engine (PE) and the Access Module Processor (AMP) are two types of vprocs. Each PE executes the database software that manages sessions, decomposes SQL statements into steps, possibly parallel, and returns the answer rows to the requesting client. The AMP is the heart of the Teradata RDBMS. The AMP is a vproc that performs many database and file management tasks. The AMPs control the management of the Teradata RDBMS and the disk subsystem. Each AMP manages a portion of the physical disk space, and stores its portion of each database table within that disk space. The AMPs are responsible for obtaining the rows required to process the requests (assuming that the AMPs are processing a SELECT statement). If a file is accessed through  the primary index and the request is for a single row, the PE transmits the operation steps to a single AMP, as shown at PE1 in Figure 2. If the request is for many rows (an all-AMP request), the PE broadcasts the operation steps to all AMPs, as shown at PE2 in Figure 2.  The Teradata RDBMS uses hashing to distribute data to disks [10].
+
+Figure 2. Query processing in the Teradata system  3. SETM Algorithm The SETM algorithm proposed in [3] for finding frequent itemsets and the corresponding SQL queries used are as follows:  // SALES = <trans_id, item>  k := 1; sort SALES on item; F1 := set of frequent 1-itemsets and their counts; R1 := filter SALES to retain supported items; repeat k := k + 1; sort Rk-1 on trans_id, item1,  . . . , itemk-1; R?k := merge-scan Rk-1, R1; sort R?k on item1, . . . , itemk ; Fk := generate frequent k-itemsets from the sorted R?k; Rk := filter R?k to retain supported k-itemsets; until Rk = {}  In this algorithm, initially all frequent 1-itemsets and their respective counts (F1=<item, count>) are generated by a simple sequential scan over the SALES table. After creating F1, R1 is created by filtering SALES using F1. A merge-scan is performed for creating R?k table using Rk-1 and R1 tables. R?k table can be viewed as the set of candidate k-itemsets coupled with their transaction identifiers.
+
+SQL query for generating R?k: INSERT INTO R?k SELECT p.trans_id, p.item1, . . . , p.itemk-1, q.item FROM Rk-1 p, R1 q WHERE q.trans_id = p.trans_id AND q.item > p.itemk-1  Frequent k-itemsets are generated by a sequential scan over R?k and selecting only those itemsets that meet the minimum support constraint.
+
+SQL query for generating Fk: INSERT INTO Fk SELECT p.item1, . . . , p.itemk, COUNT(*) FROM R?k p GROUP BY p.item1, . . . , p.itemk HAVING COUNT(*) >=  :minimum_support  Rk table is created by filtering R?k table using Fk. Rk table can be viewed as a set of frequent k-itemsets coupled with their transaction identifiers. This step is performed to ensure that only the candidate k-itemsets (R?k) relative to frequent k- itemsets are used to generate  the candidate (k+1)-itemsets.
+
+SQL query for generating Rk: INSERT INTO Rk SELECT p.trans_id, p.item1, . . . , p.itemk FROM R?k p, Fk q WHERE p.item1 = q.item1 AND .
+
+.
+
+p.itemk-1 = q.itemk-1 AND p.itemk = q.itemk ORDER BY p.trans_id, p.item1, . . . , p.itemk  A loop is used to implement the procedure described above and the number of iterations depends on the size of the largest frequent itemset, as the procedure is repeated until Fk is empty.
+
+4. Enhanced SETM (ESETM) The Enhanced SETM (ESETM) algorithm has three modifications to the original SETM algorithm:  1. Create frequent 2-itemsets without materializing R1 and R?2.
+
+2. Create candidate (k+1)-itemsets in R?k+1 by joining Rk with itself.
+
+3. Use a subquery to generate Rk rather than materializing it, thereby generating R?k+1 directly from R?k.
+
+The number of candidate 2-itemsets can be very large, so it is inefficient to materialize R?2 table. Instead of creating R?2 table, ESETM creates a view or a subquery to generate candidate 2- itemsets and directly generates frequent 2-itemsets. This view or subquery is also used to create candidate 3-itemsets.
+
+CREATE VIEW R?2 (trans_id, item1, item2) AS SELECT P1.trans_id, P1.item, P2.item FROM (SELECT p.trans_id, p.item FROM SALES p, F1 q WHERE p.item = q.item) AS P1, (SELECT p.trans_id, p.item FROM SALES p, F1 q WHERE p.item = q.item) AS P2 WHERE P1.trans_id = P2.trans_id AND P1.item < P2.item  Note that R1 is not created since it will not be used for the generation of R?k.  The set of frequent 2-itemsets, F2, can be directly generated by using this R?2 view.
+
+INSERT INTO F2 SELECT item1, item2, COUNT(*) FROM R?2 GROUP BY item1, item2 HAVING COUNT(*) >= :minimum_support  The second modification is to generate R?k+1 using the join of Rk with itself, instead of the merge-scan of Rk with R1.
+
+SQL query for generating R?k+1: INSERT INTO R?k+1 SELECT p.trans_id, p.item1, . . . , p.itemk, q.itemk FROM Rk p, Rk q WHERE p.trans_id = q.trans_id AND p.item1 = q.item1 AND .
+
+.
+
+p.itemk-1 = q.itemk-1 AND p.itemk < q.itemk  This modification reduces the number of candidates (k+1)- itemsets generated compared to the original SETM algorithm.
+
+For example, if {1, 2, 3} is a frequent 3-itemset and {1, 2, 3, 5, 8} are the items in a transaction. The candidate 4-itemsets produced with frequent itemset {1, 2, 3} for this transaction are {1, 2, 3, 5} and {1, 2, 3, 8} in SETM if items 5 and 8 have the minimum support. In ESETM, {1, 2, 3, 5} is included into R?4 only if {1, 2, 5} is also frequent. Similarly, {1, 2, 3, 8} is included only if {1, 2, 8} is also frequent.   This step will also improve the performance in the later iterations where the number of tuples in Rk is less than that of R1.
+
+The performance of the algorithm can be improved further if candidate (k+1)-itemsets are directly generated from candidate k-itemsets using a subquery as follows:  SQL query for R?k+1 using R?k: INSERT INTO R?k+1 SELECT P1.trans_id, P1.item1, . . . , P1.itemk, P2.itemk FROM (SELECT p.* FROM R?k p, Fk q WHERE p.item1 = q.item1 AND  . . .   AND p.itemk = q.itemk) AS P1, (SELECT p.* FROM R?k p, Fk q WHERE p.item1 = q.item1 AND . . .  AND p.itemk = q.itemk) AS P2 WHERE     P1.trans_id = P2.trans_id AND P1.item1 = P2.item1 AND .
+
+.
+
+P1.itemk-1 = P2.itemk-1   AND P1.itemk  < P2.itemk  Rk is generated as a derived table using a subquery, thereby the cost of materializing Rk table is saved.
+
+ESETM with Pruning (PSETM): In the ESETM algorithm, candidate (k+1)-itemsets in R?k+1 are generated by joining Rk with itself on the first k-1 items, as described above. For example, a 4-itemset {1, 2, 3, 9} becomes a candidate 4-itemset only if {1, 2, 3} and {1, 2, 9} are frequent 3-itemsets. It is different from the subset-infrequency based pruning of the candidates used in the Apriori algorithm, where a (k+1)-itemset becomes a candidate (k+1)-itemset only if all of its k-subsets are frequent.  So, {2, 3, 9} and {1, 3, 9} should be also frequent for {1, 2, 3, 9} to be a candidate 4-itemset. The above SQL-query for generating R?k+1 can be modified, such that all the k-subsets of each candidate (k+1)-itemset can be checked. To simplify the presentation, we divided the query into subqueries. Candidate (k+1)-itemsets are generated by the Subquery Q1 using Fk.
+
+Subquery Q0: SELECT item1,item2, . . . , itemk FROM Fk  Subquery Q1: SELECT p.item1, p.item2,  . . . , p.itemk, q.itemk FROM Fk p, Fk q WHERE p.item1 = q.item1   AND .
+
+.
+
+p.itemk-1 = q.itemk-1  AND p.itemk  < q.itemk       AND (p.item2,  . . . , p.itemk, q.itemk) IN (Subquery Q0) AND .
+
+.
+
+(p.item1,  . . . , p.itemj-1, p.itemj+1, . . . , p.itemk, q.itemk)  IN (Subquery Q0 ) AND .
+
+.
+
+(p.item1,  . . . , p.itemk-2, p.itemk, q.itemk)  IN  (Subquery Q0)  Subquery Q2: SELECT p.* FROM R?k p, Fk q WHERE  p.item1 = q.item1 AND  . . . .  AND p.itemk = q.itemk  INSERT INTO R?k+1 SELECT p.trans_id, p.item1, . . . , p.itemk, q.itemk FROM (Subquery Q2) p, (Subquery Q2) q WHERE p.trans_id = q.trans_id AND p.item1 = q.item1 AND .
+
+.
+
+p.itemk-1 = q.itemk-1 AND p.itemk  < q.itemk    AND (p.item1, . . . , p.itemk, q.itemk) IN (Subquery Q1)  The Subquery Q1 joins Fk with itself to generate the candidate (k+1)-itemsets, and all candidate (k+1)-itemsets having any infrequent k-subset are pruned.   The Subquery Q2 derives Rk, and R?k+1  is generated as: R?k+1 =  (Rk JOIN Rk) JOIN (Subquery Q1).
+
+However, it?s not efficient to prune all the candidates in all the passes, since the cost of pruning the candidates in the Subquery  Q1 is too high when there are not many candidates to be pruned.
+
+In our implementation, the pruning is performed until the number of rows in Fk becomes less than 1000, or up to 5 passes.
+
+The difference between the total execution times with and without pruning was very small for most of the databases we tested.
+
+Using the Identifiers of Candidate Itemsets: The performance of PSETM can be improved further by generating the candidate k-itemsets and storing their ids in R?k table, instead of storing the actual candidate k-itemsets in R?k table. In this case, R'k contains only two columns: transaction id and the id of the candidate k-itemset. As a result, the size of  R?k table is reduced, and the processing time decreases when the data set is large and the minimum support level is low. Candidate (k+1)- itemsets are generated by joining two frequent k-itemsets on the first k-1 items, and each candidate (k+1)-itemset is assigned a unique id.  For example, frequent 3-itemsets {A, B, C} and {A, B, D} are joined to form a candidate 4-itemset {A, B, C, D} if {B, C, D} and {A, C, D} are also frequent. To generate R?k+1 efficiently from R?k, we can use a mapping table that maps the id of the generated candidate (k+1)-itemset to the ids of the two joined frequent k-itemsets.  For example, suppose that F3 contains the following frequent 3-itemsets:  3-itemset_id    i1 i2 i3 1         A  B  C 2         A  B  D 3         A  C  D 4         B  C  D 5         D  E  F 6         D  E  G 7         D  F  G 8         E  F  G .
+
+.
+
+In this case, the generated candidate 4-itemsets are as follows:  4-itemset_id     i1  i2  i3  i4 1          A   B   C  D 2          D   E   F  G .
+
+.
+
+Then, the mapping table MP4 which maps each candidate 4- itemset to the two joined frequent 3-itemsets is as follows:  4-itemset_id    3-itemset_id1   3-itemset_id2 1                     1                      2 2                     5                      6 .
+
+.
+
+Using this mapping table, R'k+1 can be generated directly from R?k by using the following query.  The resulting R'k+1 table also has two columns: transaction id and (k+1)-itemset_id.
+
+INSERT INTO R?k+1 SELECT P1.trans_id, q.(k+1)-itemset_id FROM (SELECT p.trans_id, p.k-itemset_id FROM R?k p, (SELECT DISTINCT k-itemset_id1 FROM MPk+1) AS q WHERE p.k-itemset_id = q.k-itemset_id1) AS P1, (SELECT p.trans_id, p.k-itemset_id FROM R?k p, (SELECT DISTINCT k-itemset_id2 FROM MPk+1) AS q WHERE p.k-itemset_id = q.k-itemset_id2) AS P2, MPk+1 q WHERE q.k-itemset_id1 = P1.k-itemset_id AND q.k-itemset_id2 = P2.k-itemset_id AND P1.trans_id = P2.trans_id  The overhead associated with the generation of the candidate k- itemsets and the mapping table is very small compared to the performance gain due to the space reduction in R?k table.
+
+5. Performance Analysis In this section, the performance of the Enhanced SETM  (ESETM), ESETM with pruning (PSETM), and SETM are evaluated and compared.  However, we didn?t use the method of storing the identifiers of the candidate k-itemsets in R?k table.
+
+We used synthetic transaction databases generated according to the procedure described in [2].
+
+1.00% 0.50% 0.25% 0.10%  Minimum Support  T im  e (s  ec )  SETM ESETM PSETM  The total execution times of ESETM, PSETM and SETM are shown in Figure 3 for the database T10.I4.D100K, where Txx.Iyy.DzzzK indicates that the average number of items in a transaction is xx, the average size of maximal potential frequent itemset is yy, and the number of transactions in the database is zzz in thousands.
+
+ESETM is more than 3 times faster than SETM for all minimum support levels, and the performance gain increases as the minimum support level decreases. ESETM and PSETM have almost the same total execution time, because the effect of the reduced number of candidates in PESTM is offset by the extra time required for the pruning.
+
+The time taken for each pass by the algorithms for the T10.I4.D100K database with the minimum support of 0.25% is shown in Figure 4. The second pass execution time of ESTM is much smaller than that of SETM because R?2 table (containing candidate 2-itemsets together with the transaction identifiers) and R2 table (containing frequent 2-itemsets together with the transaction identifiers) are not materialized. In the later passes, the performance of ESETM is much better than that of SETM because ESTM has much less candidate itemsets generated and does not materialize Rk tables, for k > 2.
+
+1 2 3 4 5 6 7 8 9  Number of Passes  T im  e (s  ec )  SETM ESETM PSETM  In Figure 5, the size of R?k table containing candidate k-itemsets is shown for each pass when the T10.I4.D100K database is used with the minimum support of 0.25%. From the third pass, the size of R?k table for ESETM is much smaller than that of SETM because of the reduced number of candidate itemsets. PSETM performs additional pruning of candidate itemsets, but the difference in the number of candidates is very small in this case.
+
+R?3 R?4 R?5 R?6 R?7 R?8 R?9  N o.
+
+o f  T up  le s  (in  0s  )  SETM ESETM  PSETM  The scalability of the algorithms is evaluated by increasing the number of transactions and the average size of transactions.
+
+Figure 6 shows how the three algorithms scale-up as the number of transactions increases. The database used here is T10.I4 and the minimum support is 0.5%. The number of transactions ranges from 100,000 to 400,000. SETM performs poorly as the  Figure 3. Total execution times (for T10.I4.D100K)  Figure 4. Per pass execution times (for T10.I4.D100K)  Figure 5. Size of R?k (for T10.I4.D100K)     number of transactions increases because it generates much more candidate itemsets than others.
+
+The effect of the transaction size on the performance is shown in Figure 7. In this case, the size of the database wasn?t changed by keeping the product of the average transaction size and the number of transactions constant. The number of transactions was 20,000 for the average transaction size of 50, and 100,000 for the average transaction size of 10. We used the fixed minimum support count of 250 transactions, regardless of the number of transactions.  The performance of SETM deteriorates as the transaction size increases because the number of candidate itemsets generated is very large compared to other algorithms in the later passes (i.e., after the second pass) on the databases.  On the other hand, the total execution times of ESETM and PSETM are stable because the number of candidate itemsets generated in the later passes is small. When the transaction size is large, PSETM is slightly better than ESETM since its additional pruning of candidates takes effect on the performance.
+
+100 200 300 400  Number of Transactions (in 1000s)  T im  e (s  ec )  SETM ESETM PSETM        10 20 30 40 50  Average Transaction Size  T im  e (s  ec )  SETM ESETM PSETM  6. Conclusion In this paper, we proposed a new algorithm, named Enhanced SETM (ESETM), for mining association rules from relations.
+
+ESETM is an enhanced version of the SETM algorithm [3], and its performance is much better than SETM because it generates much less candidate itemsets to count.  ESTM and SETM are implemented on a parallel NCR database system, and we evaluated their performance in various cases.  ESTM is at least three times faster than SETM in most of our test cases, and its performance is quite scalable.  Currently, we are developing an algorithm for mining association rules across multiple tables on the NCR Teradata database system.
+
+7.  Acknowledgements This research has been supported in part by NCR, LexisNexis, Ohio Board of Regents (OBR), and Wright Brothers Institute (WBI).
+

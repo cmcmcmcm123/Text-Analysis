@@ -1,0 +1,168 @@
+A Measurement Study of Data-intensive Network Traffic Patterns in a Private Cloud
+
+Abstract?In this work we investigate the impact of virtu- alization on the raw network performance attainable by ?data- intensive? applications deployed in a private cloud. To this end we developed a new software tool, called OSMeF, to take repeatable measurements on our OpenStack-based platform. We also discuss the implications of our measurement results toward informed deployments of distributed applications such as Hadoop.
+
+
+
+I. INTRODUCTION  Nowadays, cloud computing represents a key enabler for the rapid provisioning of resources from public or private data- centers to deploy a wide range of applications. To provide flexible and cost-effective resource sharing among users, most cloud service providers rely on machine virtualization, that support multiple instances of virtual machines (VMs) on the same physical server. VM instances share physical processors and I/O interfaces with other instances: as such, it is important to understand the impact of virtualization on computation and communication performance of cloud services.
+
+In this work, we study the performance ? from the network- ing perspective ? that private cloud deployments expose to a specific class of applications, namely data-intensive scalable computing frameworks such as Hadoop [1]. In this context, vir- tualization brings many benefits, including ease of operation, high availability, elasticity and multi-tenancy [2]. However, only few studies attempted to measure rigorously the raw performance achievable by I/O intensive applications running on virtual compute clusters (section II). Thus, our goal is to cast light on the bulk transfer capacity attainable by a range of traffic patterns derived from a typical Hadoop operation.
+
+By using our OpenStack-based [3] private cloud deploy- ment, detailed in section III, and by leveraging a software tool we built (the OpenStack Measurement Framework, or OSMeF), described in section IV, we studied the behaviour of virtual and physical networks, along with the loopback mechanism that is heavily used by distributed applications like Hadoop. Our measurement results can be used to inform the proper configuration and tuning of OpenStack and Hadoop deployments, including: i) the selection of appropriate VM ?flavors? to run Hadoop components, ii) the importance of VM placement across available physical servers, which largely determines the attainable network throughput of data transfers and iii) the need for novel mechanisms to support fast cross- tenant communications.
+
+
+
+II. RELATED WORK  Understanding the impact of virtualization on network performance has attracted several studies [4], [5] in the past,  albeit oriented toward public cloud providers. These works use a black-box approach in their study, as it is difficult (if not impossible in some cases) to determine the measurement conditions (e.g. interference from other users) in their experi- ments, not to mention knowledge of the physical servers and networks the cloud operator uses for the service. Instead, in our approach, the platform used for the experiments is completely under our control and hardware and software configurations are known and measurable.
+
+Other works focus especially on studying network perfor- mance from the hypervisor point of view: for example, studies [6] and [7] examine TCP and HTTP throughput, respectively, in Xen virtual machines. In our work, instead, we use KVM, the most commonly used hypervisor in conjunction with Open- Stack. Moreover we also study end-to-end throughput across the whole virtual network setup by OpenStack.
+
+From the application perspective, some recent works ana- lyze the behavior of Hadoop when deployed in virtual ma- chines. In [8], Han et al. present a model of Hadoop to examine how performance could be affected by VM char- acteristics and placement in a cluster. However, that work focuses on application-level performance metrics only, neglect- ing network-level ones. Similarly, the work in [9] studies the performance of Hadoop deployed in an Amazon EC2 cluster, albeit the focus is on the design of a more efficient scheduling mechanism to optimize application-level metrics.
+
+Finally, recent works [10], [11] recognize the challenge of designing efficient virtual networks, and propose software approaches to increase virtual network performance.
+
+
+
+III. EXPERIMENTAL SET-UP  We conduct our measurement study on a cluster of ded- icated machines, configured as a private cloud, using the OpenStack cloud operating system [3]. In this section we briefly outline the design of OpenStack, concentrating on its networking component, quantum,1 and provide details on our platform, both from the hardware and software point of view.
+
+OpenStack. OpenStack provides a range of management func- tionalities needed by a cloud provider, from user and tenant management (keystone) to interfacing with hypervisors (nova-compute), virtual networking (quantum), block (cinder) and object storage (swift). All these software components are implemented in a distributed and fault-tolerant way, with each service storing a minimal amount of state and communicating through a message queueing service.
+
+1This component is called neutron in the current development branch.
+
+DOI 10.1109/UCC.2013.93    DOI 10.1109/UCC.2013.93    DOI 10.1109/UCC.2013.93     Configuring and tuning OpenStack is complex: the large number of parameters that govern system behavior, the variety of hypervisor technologies, the different flavors of storage systems (various filesystem and logical volume management combinations), the number of alternatives to implement net- work switching (GRE tunnels, dynamic VLANs) all play a crucial role in determining the overall system performance.
+
+Our Platform. Our cluster uses a heterogeneous set of phys- ical machines: we have two master nodes running on a dual quad-core Xeon L5320 server clocked at 1.86GHz, with 16GB of RAM, two 1TB hardware RAID5 volumes, and two 1Gbps network interfaces; worker nodes execute on six dual exa-core Xeon E5-2650L (with hyperthreading enabled) servers clocked at 1.8GHz, with 128GB of RAM, ten 1TB disks (configured as JBOD) and four 1Gb/s network cards. In this work we use a single network interface per host, as splitting traffic or using bonding would have added complexity to the system that, instead, we strive to keep as simple as possible, since in this work we are interested only in baseline performance.
+
+The hardware and network configuration closely resembles the one suggested by commercial private cloud providers, such as Rackspace [12]. In particular storage is distributed on the master and compute hosts and is not concentrated on a separate storage network.
+
+Each machine in the cluster runs the same Linux distri- bution, a Ubuntu 12.04.2 LTS, updated with the most recent patches. All energy saving settings in the BIOS are disabled, since they cause severe performance penalties. We use the KVM hypervisor, with virtio and vhost_net acceleration modules enabled. Virtualization support in the CPUs is enabled (VMX) and KVM uses it automatically. The hypervisor is configured by Nova to use LVM for VM storage. VMs use the unmodified Ubuntu 13.10 image from the Ubuntu Cloud archives.
+
+We use the Grizzly release of OpenStack, which is in- stalled via the Ubuntu cloud repository. One of the master nodes runs the OpenStack management services: the web- based dashboard console, cinder, glance, keystone, and quantum (including the server, layer 2/3 services and DHCP agents). Worker nodes are configured as compute-only nodes, and they host all the VMs created by our tenants and users.
+
+Currently, we configure quantum to use GRE tunnels over a physical network that interconnects all nodes of our cluster.
+
+We implemented the most common setup, where quantum is configured to use the OpenVSwitch [13] (OVS) plugin to provide connectivity between VMs. OVS is a software switch implementation that materializes as a virtual switch spanning across multiple physical hosts. In our configuration, quantum creates a single OVS switch for all VMs, using VLAN tagging to separate traffic from different tenants.
+
+To provide connectivity between tenants and the external network, our virtual network is configured according to the provider router with private networks use-case described in the OpenStack documentation [14]. Thus, each tenant has its own IP subnet, and exchange traffic between each other and the Internet using a single virtual router connected to the subnets of each tenant from one side and to the external network on the other side. The quantum virtual router is implemented as network namespace on the master node, where a number of  NAT and routing rules provide interconnection, external access and floating IPs allocated to the VMs.
+
+These settings are the result of a tedious trial and error process that lasted several months. The OpenStack installation manuals only cover the basics to setup a system that is (mostly) operational, but far from being optimized for performance.
+
+
+
+IV. MEASUREMENT METHODOLOGY  We now describe and motivate the methodology used for our measurements, the tools we used, and the performance metrics we considered for our results.
+
+A. Motivation and background  We consider data-intensive scalable computing applica- tions, and in particular we focus on the Hadoop framework [1].
+
+Hence, we are interested in studying the network performance of traffic patterns that mimic2 those generated by a typical data analysis task. In addition, we consider several ?flavors? of Hadoop deployments, that exploit the characteristics of virtualization in the context of multi-tenant, shared clouds.
+
+Next, we briefly describe the basic principles of Hadoop MapReduce.
+
+MapReduce, popularized by Google [15] and by Hadoop [1], is both a programming model and an execution framework. In MapReduce, a data analysis job consists of three phases and accepts as input a dataset, appropriately partitioned and stored in a distributed file system. In the first phase, called MAP, a user-defined function is applied in parallel to input partitions to produce intermediate data stored on the local file system of each machine of the cluster; intermediate data is sorted and partitioned when written to disk. Then, a REDUCE phase begins. It comprises a SHUFFLE phase, where intermediate data is pulled by the reducers: data from multiple mappers is sorted and aggregated to produce output data.
+
+When a single job is submitted to an Hadoop cluster, the Hadoop scheduler assigns a number of MAP tasks equal to the number of partitions of the input data. The scheduler tries to assign MAP tasks to ?slots? available on machines in which the underlying storage layer holds the input intended to be pro- cessed, an important concept called data locality. Essentially, when reading and writing data, local communications are to be preferred over remote ones, since the network is generally assumed to be the bottleneck. REDUCE tasks are scheduled once intermediate data, output from mappers, is available.
+
+Overall, the performance of an individual job is determined by the slowest task: asymmetries due to an uneven amount of data to process or to network bottlenecks may create ?stragglers? that should be carefully handled by the application.
+
+As a concluding remark, it is important to notice that Hadoop is made of a number of components that run as daemons: master nodes execute daemons (e.g. the scheduler) that orchestrate several workers, each in charge of data and compute operations. For the principle of data locality outlined above, data and compute components are collocated on the  2Note that, in this work, we do not execute Hadoop in our cluster, hence we do not measure communication performance at the application level. Rather, we generate traffic with system-level tools, according to the communication patterns of Hadoop.
+
+same cluster machine. All components communicate through a simple REST-ful API: in particular, co-located components exchange messages through the loopback interface, whereas components on different hosts, use network interfaces.
+
+B. Traffic patterns  Application-level characteristics. The nature of the commu- nications between Hadoop components discussed above leads us to focus on the performance achieved by both ?regular? network and loopback interfaces, the former being used mainly during the SHUFFLE phase of MapReduce and the latter used mainly for data I/O operations. As such, in section V we measure the performance of the localhost ? both at the hypervisor and VM level ? and of the cluster network ? between hypervisors and VMs.
+
+Recall the data-intensive nature of the applications we consider: therefore, we study the behavior of long-lived con- nections (in all our experiments we consider 6 minutes long data transfers) that are typical in Hadoop. For example, in the SHUFFLE phase, it is common to transfer several GBytes of data among cluster machines. Moreover, from a measurement point of view, long-lived connections have the advantage of reducing the variance [16] caused by load spikes in network and CPU usage in the cluster.
+
+Finally, we consider the effects of a number of parallel communications taking place concurrently: this is another typical traffic pattern of Hadoop, whereby each component could establish a large number of connections to exchange data.3 Note that it is also important to study whether bandwidth allocation among competing parallel connections is fair, as uneven performance may contribute to the creation of ?strag- glers? and impact the overall application-level performance of a data analysis job.
+
+Virtualization effects. Deploying data-intensive applications in a cluster of virtual machines involves a wide range of possible architectural choices. As we alluded above, in a typical ?bare-metal? Hadoop architecture, compute and data components are co-located, in light of the data locality princi- ple. Similarly, with respect to the traffic patterns, we consider a virtual Hadoop cluster in which individual VMs host both components.
+
+In addition, we also study more elaborate setups that stem from recent efforts [2] to define reference Hadoop architectures for multi-tenant, shared clusters of virtualized resources. Essentially, we consider traffic patterns that arise when compute and data components live in different VMs and possibly in different tenants. In our experiments, we therefore study network performance under a variety of VM- to-VM communication patterns: in doing so, we revisit the notion of data locality and define a new distance metric that accounts for VM placement choices. For example, we consider communications to be local even when they involve distinct VMs, as long as they are instantiated on the same physical host.
+
+Finally, we also study the effects on network performance of a variety of VM ?flavors?: namely, we focus on the number  3For example, during the SHUFFLE phase, a TASKTRACKER serves up to 40 connections, and establishes up to 5 connections to pull intermediate data.
+
+of virtual CPUs available to a VM. Indeed, the CPU plays a crucial role in determining the performance of some software network components we use in our platform (including the loopback interface and the virtual switches). As such, we use VMs with 1 up to 16 virtual CPUs.
+
+C. OSMeF  The OpenStack Measurement Framework (OSMeF) pro- vides a way to perform a large number of measurements in an automatic and reproducible way. It is implemented in Python and uses a JSON output format. We released it as an open- source project [17] and we plan to extend it to cover more scenarios and measurements.
+
+OSMeF implements the OpenStack and Quantum APIs, which are used to instantiate and delete VMs and virtual interfaces as required by the specific measurement scenario being performed. Essentially, OSMeF reads a measurement configuration file, performs VM placement according to the specification (including a proper selection of VM flavor), instruments all VMs with additional software components required to perform a specific measurement and finally runs the necessary tools, parsing and aggregating their outputs to create a compact JSON summary for each experiment.
+
+In addition, before any experiment is executed, OSMeF gathers a number of statistics from each end point operating system, which are required to verify that measurements are performed under known system conditions. These statistics include a time-stamp, the current load on each machine (both physical and virtual), network utilization, kernel versions and many others. Such experiment ?meta-data? is appended to the JSON output of each measurement campaign.
+
+Currently, OSMeF uses nuttcp [18] to perform the actual network measurements.4 Nuttcp is a well-known tool (origi- nated from ttcp [19]) that produces a number of useful statistics (in addition to raw throughput figures) gathered during a TCP transfer of a specified length. For each experiment, OSMeF configures nuttcp according to the measurement configuration file, including the number of parallel connections and their duration.
+
+D. Performance metrics  The main performance metric we measure in our experi- ments is related to network throughput: indeed, the very nature of the data-intensive applications we consider in this work is geared toward moving and ingesting large volumes of data, rather than guaranteeing low-latency access to small records.
+
+In addition to throughput, we also consider a metric related to the fairness of bandwidth allocation across competing, parallel connections. Next, we describe our metrics in detail:  Bulk Transfer Capacity (BTC). BTC is defined as the rate that a transmitting entity implementing a standard congestion control mechanism can attain over a given network path [20]. Throughout this paper, we measure BTC as the average throughput generated during 6-minute TCP transfers between two physical or virtual network interfaces.
+
+4We also used IPerf as an alternative to nuttcp, and preferred the latter for its verbosity.
+
+???????	? ????  ???????  ??????	? ??????	?  ??? ??? ??? ???  ???? ???? ????  Fig. 1: The distance between two VMs is equal to the number of edges data must traverse in this tree. Distance between VM1 and VM2 is 2 and distance between VM2 and VM3 is 4, even if they reside on the same physical host. Processes on the same VM, not shown, communicate with distance 0.
+
+Jain?s fairness index (J). Jain?s index [21] is a well-known fairness metric used to establish how equally a network re- source is being shared. When J is equal to or approximately 1, then all connections are treated equally, in that they re- ceive roughly the same amount of bandwidth. Instead, if J is less than 1, some connections are mistreated with respect to others, which creates an asymmetry that may severely impact application-level performance (see section IV-B).
+
+These metrics are enriched by two important elements:  Distance. We borrow the definition of distance between com- municating entities from that used in Hadoop [22] to take informed decisions on data and compute tasks placement.
+
+Logically, the network is represented as a tree and the distance between two nodes is the sum of the distances to their closest common ancestor. As can be seen in figure 1, this definition takes into account OpenStack?s virtual topology.
+
+CPU load. Our definition of CPU load refers to the percentage of time spent running by a receiving or sending UNIX process.
+
+Indeed, CPU speed and memory bus bandwidth are important factors that limit the throughput achieved by a local (i.e., distance equals zero) communication. This metric is measured by nuttcp and reported by OSMeF on a per-connection basis.
+
+
+
+V. RESULTS  We now present our results in terms of the metrics defined in section IV-D, that we obtained with more than 250 OSMeF runs, using various combinations of the traffic patterns dis- cussed in section IV-B. We consider the following scenarios:  ? Physical / Virtual loopback performance of an indi- vidual host or VM, with flavors in the range from 1 to 16 virtual CPUs;  ? Host-to-Host performance, which provides a ?physi- cal? baseline for the network performance;  ? VM-to-VM performance,5 and the following VM placements across physical servers (the same conven- tion is used in the remainder of the paper):  1) Same host and same tenant;  5In this work we present results for a 1 virtual CPU VM, since results for different VM flavors are qualitatively similar.
+
+0 10 20 30 40 50 Loopback concurrent connections        B T C in  M B /s  Loopback BTC  16 CPUs  16 VCPUs  8 VCPUs  4 VCPUs  1 VCPU  Fig. 2: Loopback BTC comparison between a physical host with 16 cores (32 with hyperthreading), and VMs with 1 to 16 virtual cores.
+
+2) Different host and same tenant; 3) Same host and different tenant; 4) Different host and different tenant.
+
+In addition to the scenarios presented above, we also focus on specific characteristics of our cluster configuration, and on the OpenStack/KVM implementation of virtual networking: our goal is to characterize, in a fine-grained way, the ?path? taken by a packet from its source to the destination, and pinpoint potential bottlenecks in the system. Precisely, we perform the following additional set of measurements:  VM-to-Host and Host-to-VM: these traffic patterns allow to measure the capacity available through the virtualization layer, that is between a network interface inside the VM and the corresponding TAP interface managed by the hypervisor; Host-to-Host through a GRE tunnel. GRE is a IP-over-IP tunneling technique used by OVS to instantiate a single switch spanning multiple physical hosts.
+
+All results are produced by averaging three to five OSMeF runs of the same scenario, varying the number of parallel connections between end-points from 1 to 50, with each connection having a fixed duration of 6 minutes. Note that, in our experiments, OSMeF is the only active user in the cluster: we thus eliminate interference due to multiple applications and background traffic in the system, a necessary condition in obtaining baseline results.
+
+A. Loopback Performance  Armed with the motivations discussed in section IV-B, we now focus on the behavior of the loopback interface.
+
+We use OSMeF to establish a variable number of parallel, concurrent connections with both end processes (client and server) running in the same host or VM, using the loopback interface to exchange data.
+
+Figure 2 illustrates the aggregate BTC we measure for both the physical and virtual interfaces, computed as the sum of the individual BTC each connection achieves in our measurements.
+
+In particular, for each individual connection, we compute the average across 5 distinct measurement runs. Figure 2 reports     the aggregate BTC as a function of the number of parallel connections, and each line in the figure corresponds to a different VM flavor.
+
+We observe that both the physical and virtual loopback interfaces share similar characteristics: the aggregate BTC increases as more connections are established, up to a plateau, at which BTC saturates. Clearly, the loopback behavior is dom- inated by the (complex) interplay between several components: the (physical or virtual) CPU and the number of cores, the speed at which data can be copied in RAM and the operating system scheduler.
+
+While loopback performance is quite obviously dominated by the CPU load, it is important to note that BTC has a point of maximum, where the number of connections maximises the amount of resources available. After this point available bandwidth flattens or even starts to decrease.
+
+Another important observation is about the virtual loop- back performance: the number of parallel connections that ?saturate? BTC is proportional to the number of virtual cores, with the exception of the 1 VCPU slope, which does not cope well with parallel connections. In particular BTC doubles by doubling the number of VCPUs available, but, comparing the 16 virtual CPUs throughput with the 16 physical CPUs one, we see a 40% penalty due to virtualization. With additional measurements, we observe that, despite the negligible VCPU load, under 1%, the hypervisor CPU is saturated, with VM processes occupying more than 90% of CPU time.
+
+For each case discussed above, we computed the Jain?s fairness index as a function of the number of parallel connec- tions established by OSMeF, for different VM flavors. Our data indicates that, for long-lived communications, each connection receives a fair share of the available bandwidth to transfer data, with values very close to 1, independently of the number of connections and across different VM flavors.
+
+In summary, the analysis of the loopback behavior allows to draw a number of conclusions:  ? It is important to properly chose a VM flavor that supports and scales well with the number of parallel connections required by the application;  ? Configuring and tuning data-intensive applications, such as Hadoop, requires an in-depth knowledge of virtualization impact to avoid saturation (by limiting the number of parallel tasks that establish connections through the loopback interface) and to ensure that available capacity is not left unused;  ? For specific traffic patterns, such as the SHUFFLE phase of Hadoop, it is important to understand and quantify asymmetries due to the use of the loopback interface ? whose behavior is heavily influenced by CPU load ? with respect to other network interfaces.
+
+B. VM-to-VM performance  We now study the behavior of VM-to-VM traffic patterns: for this, OSMeF establishes a variable number of connections between different VMs, varying their placement, each hosting one end (client or server) of the connection. In addition to VM measurements, we use OSMeF to perform a series of  0 2 4 Distance       B T C in M B /s  VM to VM BTC  p = 1  p = 10  p = 30  p = 50  Fig. 3: BTC behaviour of VM to VM communication with increasing distances and number of parallel connections (p).
+
+For distance 4 we chose to plot scenario 3 (same host, different tenant). Please note the log scale on the y axis.
+
+measurements that involve the physical host to upper-bound the BTC for VM-to-VM communications. This is a summary of our results (refer to the beginning of this section for placement descriptions):  ? VM-to-VM 1: in this case, the BTC is upper-bounded by the minimum of the available capacity between the VM and the underlying hypervisor, corresponding to VM-to-Host and Host-to-VM traffic patterns;  ? VM-to-VM 2: the capacity of the physical network is the bottleneck in this case, with BTC upper-bounded by the Host-to-Host traffic patterns;  ? VM-to-VM 3 and 4: given the platform configuration we use (suggested in [14]), the BTC for both traffic patterns we study is upper bounded by the physical network, even when VMs run in the same physical host.
+
+Complete results, with CPU usage statistics and standard deviations for all scenarios are available in a technical report [23].
+
+Next, we study the behavior of VM-to-VM communica- tions as a function of the distance we define in section IV-D.
+
+Figure 3 illustrates the per-connection BTC, computed as the average BTC each connections achieves in 5 consecutive runs of our measurements, where each line is representative of a measurement campaign with a different number of parallel connections. In summary, we observe that:  ? Distance 0: the physical network is not involved in this case, since all communications are established within the same physical host. As anticipated above, the bottleneck that determines the overall performance of this traffic pattern is related to VM-to-Host and Host- to-VM communications, which suffer from overheads due to network virtualization;  ? Distance 2: in this case, the physical network is the bottleneck. Virtualization overheads are low, as the loss in BTC for this traffic pattern is roughly 4% with     respect to the physical upper-bound. Additionally, we remark that VM-to-VM communications at distance 2 achieve a BTC that is one order of magnitude lower than what can be obtained at distance 0;  ? Distance 4: also in this case the physical network constitutes the bottleneck for the attainable BTC, even for connections between VMs in the same physical host. We note a further drop in performance, as compared to distance 2, due to routing overheads to move data between different tenants.
+
+Overall, the results we show in Figure 3 indicate that the total network capacity is shared consistently among competing connections: a single connections uses virtually all of the available network capacity, whereas on average, for example, 10 connections receive roughly 1/10-th of the total capacity.
+
+We computed the Jain?s fairness index for VM-to-VM traffic patterns, as a function of the number of connections.
+
+Our results indicate that, each (long-lived) connection receives a fair share of the available capacity. Interestingly, we notice that this is not the case for Host-to-Host communications: in this case, the hypervisor operating system does not distribute evenly the network capacity among competing flows, a result that is corroborated also by some recent works [24]. In addition, our results indicate a 2% performance loss of Host- to-Host communication through a GRE tunnel, which imposes a 15% overhead in CPU utilization.
+
+In summary, our results cast light on the impact of network and system virtualization for the applications we consider in our work. VM placement plays a crucial role in determin- ing application-level performance. For SHUFFLE-like traffic patterns, sub-optimal VM placement might contribute to the creation of ?stragglers? due to the inherent asymmetry of the BTC attainable between VMs, depending on their distance.
+
+Our results can thus be used to inform VM placement strategies to cope with application requirements. Moreover, we observe that the architecture suggested in [2], whereby data-intensive applications are deployed by separating across different tenants data and compute layers, may suffer from a severe performance degradation. The cluster configuration we used in our experiments ? which follows OpenStack guidelines ? is inappropriate for inter-tenant communications that occur on the same physical host. It is thus necessary to devise new mechanisms that exploit host-locality to improve network performance and avoid unnecessary traffic routing.
+
+
+
+VI. CONCLUSIONS AND FUTURE WORK  Understanding the consequences of machine and, more generally, cluster virtualization on communication perfor- mance of cloud applications is fundamental for their correct operation. This is particularly true for data-intensive comput- ing, where I/O performance plays a crucial role in determining the overall rate at which data analysis tasks can proceed.
+
+In this work, we described our measurement results and their implications in light of an appropriate approach to deploy and tune data-intensive applications. Essentially, this work helps to inform the design of mechanisms to perform VM placement on physical servers, and to appropriately tune communication parameters of Hadoop-like applications.
+
+Currently, we are extending the traffic patterns supported by our measurement tool (for example to account for n- way communications), and we plan to run a range of new measurement campaigns to understand and quantify the impact of interference caused by background traffic and multiple, coexisting applications running in our platform. In addition, we will complement our study by considering the impact of virtualization on disk I/O performance.
+

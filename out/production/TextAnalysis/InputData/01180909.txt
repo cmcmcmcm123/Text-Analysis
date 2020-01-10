@@ -1,0 +1,264 @@
+A Novel Datacube Model Supporting Interactive Web-log Mining
+
+Abstract  Web-log mining is a technique to find "useful" in? formation from access-log data. Typically, association rule mining is used to find frequent patterns (or se? quence patterns) of visited pages from access logs and to build users' behavior models from those patterns [1,2,4/.
+
+In this direction, there exists a difficulty that a human decision-maker must do such data mining process many times under different constraining conditions, differ? ent groups of pages, and different levels of abstraction [1,2j. In order to support this process, this paper pro? poses a novel datacube model called itemset cube. This cube manages frequent itemsets under various condi? tions which are modeled by a n-dimensional space. An itemset cube is materialized, sliced, and rolled-up re? peatedly in the same way as a traditional scalar dat? acube is done for interactive scalar-value analysis. Al? though this looks simple, fast execution of these opera? tions on an itemset cube is difficult. It is because differ? ent cells in an itemset cube contain different numbers of records, but these cells must use the same threshold ratios in order to detect frequent itemsets of equal qual? ity. In this paper, a datacube model for storing frequent itemsets is described, and then an efficient algorithm of associated operations is proposed. Its application to a real-life dataset is also demonstrated.
+
+1 Introduction Currently, web-log mining has been considered to be a key issue for successful cyberspace communities. Typ? ically, web-log mining means a study to accumulate access- log data of Web servers in a database and to dis? cover "useful" information from them in order that a designer of the Webs can specify different personalized behaviors of the Webs for different categories of users [1,2,4,5,9J. Such a personalization scheme is signifi? cant because a tremendous number of users are invisible from Web designers and also because Web servers main? tain very many pages. Without good personalization,   such servers would become useless.
+
+The above trend motivates many database and AI  studies to discuss what information to be extracted from Web logs. Among them, a representative direction is to find frequent patterns (or sequence patterns) of vis? ited pages from access logs and to build users' behavior models from those patterns. In this direction, associa? tion rule mining methods are generally used. Typical behavior models in this direction can be found in an IBM study, etc [1,4,5,8J.
+
+When exploring this direction, many preceding stud? ies [1,2] did also report technical difficulties accom? panied with it. One point is that an Apriori-style association-rule mining engine outputs too many fre? quent itemsets [6,7,8], and so a designer cannot under? stand them easily. For example, suppose that we are given an access-log dataset and we run Apriori only once on the dataset; then it would be very difficult to find a good piece of information only from this result.
+
+It is because almost all frequent itemsets look trivial.
+
+In practice, in order to find "useful" information, we must execute Apriori on the dataset under differ? ent kinds of constraining conditions and groupings and must compare those results. For example, a user (log? analyst) may want to divide access-logs into two classes (that is, logs during night and those during daytime) , and want to compare behavior models of the classes.
+
+Another example is to classify logs into two categories (namely, those visiting travel-related pages and those visiting hotel-related pages) and to find differences of behavior models between them.
+
+Further, in order to find useful knowledge for a web designer, he must repeat the above process by giving various constraints and various groupings [2J. Namely, he must do the above analysis interactively. Also, dur? ing the interactive analysis, he may change units of analysis in some attributes of the dataset (e.g., one analysis uses "month" as a unit in the "time" attribute, and the next analysis uses "week" as a unit of time.) In? teractive web-log analysis needs all of these complicated operations to be supported by a data mining engine.
+
+The objective of this paper is to propose a database system support for the above process of interactive Web log analysis. As a solution, we modify a datacube model in such a way to contain frequent itemset-detection functions.
+
+Originally, a datacube model is developed for on? line analytical processing in relational databases [3]. A datacube is a n-dimensional cube [AI, A2, '" An] where each Ai is an attribute. A tuple corresponds to a given range of values in the schema [AI, "., An], and is called a cell (or, cuboicl). A cell contains a scalar value v, where v is an aggregation value (sum, average, max) of a specified scalar field of all tuples to be contained in the range [AI, "., An] of the cell. Typically, a dat? acube is materialized by a SQL CUBE-BY operator on a given dataset, and is manipulated by slice, roll-up, etc. These operations transform a given datacube. Us? ing these operations, we can add/delete dimensions of a cube, and can change the level of abstraction unit of a specified dimension of a cube.
+
+The same idea can be applied to the scheme for inter? active Web-log analysis. A technical difference is to deal with frequent itemsets under a n-dimensional space.
+
+In the following, we firstly propose a datacube-style management of frequent itemsets under a n-dimensional space of Web-log analysis. The n-dimensions con? tain users' domain, time of access, other relational at? tributes, and a set of accessed pages. Our datacube, named an itemset cube, stores frequent itemsets as a cell value under this n-dimension space, and is manip? ulated by materialization, slice, and rollup operations.
+
+This works in the similar way as it is in a datacube storing scalar values.
+
+Although this looks easy, we will show later that a datacube storing itemsets under the n-dimension attribute-space has different properties because of con? taining frequent itemsets. These properties cause unique and difficult matters from a viewpoint of effi? cient operations. Among them, a major matter is that in an itemset cube, the lowest threshold of support? ratios determining frequent itemsets in all cells must be the same (and constant) ratio. (For example, in an itemset cube, every cell must compute all of the fre? quent itemsets that occur with a frequency more than 2% in the cell.) This is due to keeping a uniform quality of analysis, which is necessary for comparing different cells. As a result, simultaneous computation of frequent itemsets in different cells is neither trivial nor inexpen? sive.
+
+We, in the following, propose a datacube model for storing itemsets in the above situation, and describe that the interactive web-log analysis is manipulated by repetition of materialize, slice, and rollup on this dat-   sequence afraw web-logs G1If!::n;o?!? - Time_i dPaddress_I,Time_I,Page_l> then connect weblogs into  dPaddress_l,Time_2,Page_2> an access record.
+
+dPaddress_I,Time_3,Page_3>  an Access-log record (corresponding to a session) < Domain_I,Time_l.Month_l,Etc, [Page_l.Pagc2,Page3] >  Figure 1: Creating access-log records from raw web-logs  acube. Thereafter, we propose an efficient algorithm for materialize and slice operations associated with our datacube model. These points are a major contribution of this paper.
+
+In the following, Section 2 describes technical terms and defines an interactive Web-log analysis problem.
+
+Section 3 describes i) a datacube model storing frequent itemsets, ii) basic operations (materialization, slice, and roll-up), and iii) how these operations are used for web? log mining. Algorithms of these operations are also described there. Section 4 describes an experimental usage of our system in a real web-log dataset. Section 5 summarizes contents of this paper and discusses them in comparison with related works.
+
+2 Problem description Before describing a datacube storing itemsets, this sec? tion defines the input and output of our interactive  Web-log mining process. This is to clarify our prob? lem to be solved.
+
+Input: access-log record format To do Web-log analysis, raw web-log records are  transformed into access-log records [1,4]. Each of these access-log records represents a session, during which a certain user accessed a set (or sequence) of pages con? tinuously. Its format is [IPaddress, time of access, a set of accessed pages].
+
+Each access-log record is built by gathering raw web? log records of the same IPaddress under the condition that any two adjacent web-log records from this IPad? dress are created within a given time interval. (e.g.
+
+two adjacent accesses from the same user are regarded to be continuous if the time-interval between the ac? cesses is less than 30 minutes). These raw log-records are merged into the access-log record-format (Fig.I).
+
+In our study, we further add more attributes in access-log records. Namely, an IPaddress is translated into a network domain. Time of access is translated into a daytime (in 24-hours) and a month. Other at-    tributes can be added to tell if a given event occurs or not during a session.
+
+As a result, the format we use as an access-log record is [Domain, Time, Month, etc, a set of accessed pages].
+
+1 In the following, the terms record, log r?ecord and ac? cess record are used for referring to an access-log record.
+
+Output: frequently-accessed set of pages  From the above log-records, a behavior model of users must be identified. Typically, we must set some con? straints on these records, and compute all frequently? accessed sets of pages under the given constraints. For example, suppose that a web server has a hundred of pages pI, p2, .. , plOO and that a set of pages {pI, p2, p4} and {p1,p5,p8,p10} are detected to occur commonly in 10% of all access-log records that satisfy uec. ac. jp domain. Then, a designer can personalize the web in a way to focus on these set of pages.
+
+It is possible to consider a far more sophisticated model of user profiles from these frequently-accessed sets of pages. Typically, a frequent sequence of pages [4,8,91 should be used there. However, for simplicity, this paper is focused on detecting a frequent set of pages by using a datacube model. Extension of our results to frequent sequences is straightforward. Rather, we focus on computing a set of frequently-accessed pages under various constraints in an interactive manner. The task of building a sophisticated behavior model is left to an? other application server; namely, we feed an output (= frequent set of pages) of our datacube engine to such a server for visualization.
+
+Thus it would be enough to define a simple user? profile model for our usage. In the rest of the pa? per, when displaying a frequent set of pages Pi = [Pib Pi2, ... , Pin], we primarily consider original link structures of web pages; and if pages appearing in Pi have such original links, the links are depicted by thick lines. Or, if such a link does not originally exist, a new link is added as a dotted line. Fig. 5-(c) in a later sec? tion is an example. This graph is considered as a user profile in this paper.
+
+Our goal  On the basis of the above positioning, our goal is to support the following scenario: A log-analyst may need to divide log-records into four groups - the ones visiting a topic-A page, the ones visiting a topic-B page, etc.
+
+The attribute user-domain is also divided into three groups: groups whose number of accesses is great, mid-  1 Domain (or user-domain) is reduced into an upper one repre? senting an organization as far as possible. e.g. xxx.hol.i?.uec.ac.jp is reduced into hol.is.uec.ac.jp. The connection of two adjacent raw web-logs is done by the same IPaddress. The reduction of domain is for easy understanding.
+
+An itemset cube of two dimensions (E,C).
+
+Gl  G2  G3  E = a set of accessed pages, C = Month.
+
+< < ! 1  /) :> April May  <" :?  :> June  (Gx = log?records which access topicX's pages).
+
+D __ a value of a cell is a set of frequently? accessed pages.
+
+It is visualized into user profiles by another server.
+
+Figure 2: An example of datacube storing frequent itemsets  dIe, or low during a summer season. Then, he wants to find frequently-accessed sets of pages in each group - 4 x 3 = 12 groups in total. Next, he may change a viewpoint of analysis, and wants to do this comparison in each month: from April to June. Further, if these monthly results are too detailed, he may want to merge similar groups (topic-A and topic-B) into one, and re? compute the same task. Our datacube system must support the flow of these steps .
+
+A snapshot of our datacube  Before proceeding, let us show a snapshot of our dat? acube. Fig.2 shows a datacube of two dimensions. One dimension is about accessed pages, and is segmented into three groups (Gl, G2, G3) by a topic-related cri? terion (Le., which topic-related pages are visited). The other dimension models months. In each cell [Gi, Mj] of this cube, frequently-accessed sets of pages are com? puted from the corresponding log-records that satisfy the constraints of the cell, and these sets are stored there. Thresholds in all the cells are set to the same ra? tio. Once a cube-style model like this is created, we can easily judge difference and similarity among the profiles of different cells, and it would hint another analysis to us.
+
+3 Datacube itemsets  storing frequent  This section formalizes a datacube storing frequent itemsets and then defines associated operations.
+
+3.1 Assumptions Firstly, we must define a n-dimension space so as to contain access-log records. To do so, we assume the following:  1. A schema of access-log records is a set of attributes from which the records are built. A possible set of    values (which is called a domain in a relational database model) is associated with an attribute. A relational attribute of a log-record is an attribute which can take an atomic value in a corresponding domain. An itemset attribute of a log-record is an attribute which can take a set of atomic values in a given domain.
+
+In case of the access-log record format in Section 2, the attribute user-domain, time, and month are rela? tional attributes. The attribute a set of accessed pages is an itemset attribute, because its value can be a set of pages.
+
+2. We must run an Apriori-style frequent itemset detection procedure on the access-log records. To do so, a database schema must be modeled as a set of items, where an item is a boolean variable. An item tells if a specified proposition holds true in a given record or not. In Apriori, a record is regarded as a set of items which hold true simultaneously in the record.
+
+As a technical term, a set of items (or a set of k items) is called an itemset (or k-itemset). When an item? set I = {i1,i2, ... ,ik} occurs in at least () % of all the records, I is called a frequent itemset under the thresh? old (). The number of occurrences of I in a dataset is named the support count of I 2 . Apriori is a procedure to enumerate all of frequent itemsets from k = 1 to 00 until no more frequent itemsets exist in a given dataset.
+
+k is called a level of an Apriori-style computation.
+
+In order to apply Apriori-style methods to access-log records, we prepare the following items as an initial schema of a database:  1. For an itemset attribute "a set of accessed pages" , each page is regarded as one item. (This is an item checking if this page is accessed or not) .
+
+2. For a relational attribute, an atomic value in a given attribute domain can be an item. Or, a range of values in the domain can be chosen as an item.
+
+In addition, we assume that any item i must belong to only one attribute. Namely, i must be a boolean vari? able which can be completely tested within the domain of one attribute A.
+
+During interactive analysis, an item i belonging to an attribute A can become any boolean predicate about a A's value of a record. For example, in case of the month attribute, a predicate "In April", "In the months during which many accesses occurred", or "from April to June" can become one item. In case of "a set of accessed pages" attribute, a predicate "if a topicA-related page  2 In the literature, the term support sometimes refers to the ra? tio of occurrences per the total number of records, and sometimes it refers to the number of occurrences. To avoid confusion, we  use the terms support count and support mtio in order to refer to the count and the ratio, respectively. Similarly, a threshold count and a threshold ratio refer to the su pport count to be used as a threshold and the support ratio as a threshold, respectively.
+
+(a) N dimension space of access-log records.
+
+(b) Scalar Cube Each cell (ai.bj.ck) has the number of records satisfying (ai,bi,ck).
+
+C  lL:A ) Hit count  ? Histgram ill attribute A  A: user domain B: time of access C: Month D: etc E: set of accessed pages  (c) Itemset Cube Each cell (ai.bi.ck) has frequent itemsets derived from the records satisfying  (ai.bl.ck).
+
+3-dimension scalarlitemset datacube (dimension A, S, C).
+
+Figure 3: overviews of (a) the n-dimension space storing access-logs, (b) scalar cube (storing hit counts), and (c) itemset cube (storing frequent itemsets)  is contained" can become an item.
+
+3.2 n-dimension space for access-log records  Under these preparations, the n-dimension space for access-log records is defined to be a space built by re? garding each attribute of the schema as one dimension.
+
+Note that an itemset attribute is also one dimension, but it takes an itemset as a unit of value in this dimen? sion. About a relational attribute, a dimension cor? responding to it is the same as that in a traditiona.l datacube [3].
+
+Furthermore, different items in a dimension may not be mutually-disjoint, but they can become true at the same time. It is because an item is now a predicate in the dimension. When considering a relational at? tribute A, such non-disjoint items in A are rarely useful.
+
+However, in case of item set attributes, such non-disjoint predicates are often seen.
+
+As a result, an access-log record is regarded as a point in this n-dimension space. Fig.3-(a) depicts the n-dimension space storing the access-log records.
+
+3.3 Datacube for itemsets When k-dimensions [AI, A2, ... , Ak] are given and when each dimension Ai is segmented into some items, a corresponding k-dimension space [AI, A2, ... , Ak] under this segmentation is called a datacube. Let a, be one of the items into which Ai is segmented. Then, the minimal space corresponding to [AI, .. , AkJ=[al, ... , ak] in the datacube is called a cell. A cell contains a value v such that v is computed from all the records which satisfy the constraint [AI, .. , Ak]=[al, ... , akJ.
+
+We use the n-dimension space of the access records defined above. Under this space, two kinds of datacubes are used:  1 .  Scalar cube. When a datacube has a scalar value in each cell, it is called a scalar cube. In our study, we use the number of records, i.e. hit counts, as this value.
+
+2. Itemset cube. Let us assume that a value v in each cell is a set of frequent itemsets which are com? puted from all the records satisfying the constraints of the cell. A datacube satisfying this assumption is called an itemset cube. Concerning a threshold (ratio) 0, it is set to the same value over all cells. (e.g. In each cell Celtz, frequent itemsets in Cellz must be detected at 0 = 2%.)  Typically, an itemset attribute (a set of accessed pages) is segmented into several (non-disjoint) items, and each relational attribute is segmented into disjoint items. ' Under this segmentation, when we specify a combination of some of these relational attributes and the itemset attribute, a scalar cube and an itemset cube are computed according to the specified attributes and segmentation.
+
+Example 1: For example, let us assume that the Month attribute is segmented into three items April, May, and June, and that the accessed-pages attribute is segmented into three items "if a topicX-related page is contained" where X = TI, T2, T3. Then, a scalar cube under these two dimensions describes the number of hit counts according to each month. An itemset cube under the same dimensions tells us i) how the users' be? haviors differ according to which topics are accessed and ii) how the behaviors change as the months elapsed.O  It should be explained why in case of an itemset cube, a threshold (ratio) be the same in all cells. This is be? cause we want to compare frequent itemsets of different cells. To do so, equal quality is primarily required, and the threshold ratio is the quality we use.
+
+Note that before creating an itemset cube, we must materialize a corresponding scalar cube. In this cube, each cell has the number of records satisfying the con? straints of the cell. From this value and a given 0, when computing an itemset cube, infrequent itemsets in each   cell can be filtered out.
+
+Fig.3-(b) shows a scalar cube under {A,B,C} dimen?  sions. From this, we can easily obtain a histgram of hit counts over a given attribute. Fig.3-(c) is an itemset cube under {A,B,C} dimensions. From this cube, we can know users' behaviors in each cell.
+
+3.4 Operations associated with itemset cube  An itemset cube is a natural extension of a traditional data cube. Thus, materialize, slice, and roll-up opera? tions can be defined as well.
+
+1. materialize({scalar or itemset}, dl, items in dl. d2, items in d2, . . .  ) is ama? terialization. This is an operation to materialize a scalar/itemset cube under a specified set of dimensions (d1, d2, ... ) which are segmented into a specified set of items (items in dl, items in d2, .. . ) A materialized result is maintained as a relation table or an array of structures.
+
+Materialization of a scalar/itemset cube is to com? pute values of each cell from a given dataset.
+
+2. slice(cube Cl, { dl=a. d2=b}} is a slice opera? tion of a scalar/itemset cube whose dimensions are {d1, d2, ... , dn}. This is to retrieve a subspace of the cube Cl which satisfies a given constraint {dl=a, d2=b}. The result is another scalar /itemset cube of dimensions {d3, d4, ... , dn} s.t. all cells satisfy {dl=a, d2=b}.
+
+3. roll-up of a scalar/itemset cube is to group a given set of items of a certain attribute into more ab? stract ones and to materialize the cube under the new segmentation.
+
+Let a cube CI have dimensions dl, d2, ... , dn and let dl be segmented into k items it, i2, ... , ik' Then, assume that we want to change the segmentation of dl into new items It = il Vi2V", Vij, h = iJ+I ViJ+2V", Vik. Then, rollup( Cl, dl , {It ,I2}) is a command to transform Cl into a new cube whose dimension dl is segmented by {h,I2} '  3.5 Example of using datacubes FigA demonstrates a scalar cube, an itemset cube, and how these operations transform them into new ones.
+
+In Fig.4-(a), we firstly materialize a scalar cube un? der the dimension user-domain from all records. The result is a one-dimensional array whose values are hit counts of user-domains. Looking at this, we decide to partition user-domains into three classes: Gl (a class of domains which has a lot of accesses), G2 (a class having middle counts of accesses) and G3 (a class of much less accesses) (Fig.4-(b)). Next, the cube CI is    (a) scalar cube having l-dimension A.
+
+(A = user domains).
+
+Hit counts  A  (b) rollup of schema into Gl, G2, G3.
+
+(c) itemset cube of two dimensions (A,C).
+
+A = user domains C = Month  a4, as - G1 a1,a2 -G2  a3,a7 -G3  Gl  G2  G3  < l  April  < <" 1 1 ) )  May June  Figure 4: Example of scalar cube, itemset cube, and associated operations  rolled up into C2 under these items. Then, we mate? rialize a corresponding itemset cube under the dimen? sion "three classes of user-domains" and the dimension "April, May, and June". The resulting itemset cube is shown in Fig.4-(c) . Looking at this cube, it may be found that Gland G3 take similar behaviors during these months. If so, we may want to rollup this cube into that of "Gl or G3" and "G2".
+
+As shown in this example, a user of the datacubes is supposed to use the above scalar /itemset cubes as follows:  1. Firstly, he computes an appropriate scalar cube until he is satisfied with it. During this process, he may roll up or add/delete some dimensions of the scalar cube by using materialize, slice, and roll-up.
+
+2. Next, he computes an appropriate itemset cube under a specified set of dimensions having a specified set of segmentation.
+
+3. Looking at the resulting cube, another grouping may be inspired. If so, roll-up may be used, or repeat the step 1 and 2.
+
+3.6 Technical difficulty The above scenario looks simple at a glance. Unfor? tunately, a materialization and a rollup of an itemset cube are not inexpensive computations. Concerning a scalar cube, all operations are the same as those in tra? ditional datacubes, and thus efficient algorithms have been studied in the literature. In contrast, in case of itemset cubes, the following problems exist:  1. When different items belong to an itemset at? tribute, they may not be mutually-disjoint. As a result, in order to materialize an itemset cube, common log? records must be used for computing different cells. Ifwe   compute each cell independently, this means duplicate accesses of a dataset.
+
+2. Different cells must compute their own frequent itemset at the same threshold ratio. Remind here that different cells (in a scalar cube) have different hit? counts. Let e(Cellx) be the threshold count of this cell; this is the number of records used to determine whether a given itemset is frequent or not in the Cellx. The,n, this value is quite different among different cells. A?; a result, different cells in an itemset cube may need to count different sets of candidate itemsets.
+
+Due to these points, a trivial choice is to do Apriori? style computation for each of these cells independently.
+
+However, this is inefficient due to the point 1 above - especially on a large dataset.
+
+Furthermore, the second point above becomes an ob? stacle when we want to reuse a given itemset cube for a roll-up operation. It is because, by rolling-up Cellx's into a new cell, the threshold counts to be used is also changed from 8(Cellx) to a new one. If the merged cells are mutually-disjoint, a known incremen? tal Apriori-style method [11] can be used. However, if the cells are not mutually-disjoint, a full recomputation becomes necessary for roll-up.
+
+In the following, we describe an efficient algorithm of materialization. Note that slice is an inexpensive op? eration if an operand datacube has been materialized, but that a rollup is expensive. As a result, users must often use materialization without reusing precomputed itemset cubes. In the following, we assume that a slice operation is done by a pair of a materialization and a slice. Also, we consider that a rollup above is done by a  pair of a rollup of a schema and a materialization under the new schema.
+
+3.7 Algorithm of materialization In order to do a materialization of an itemset cube, we must avoid both i) duplicate database scan and ii) counting the same candidate itemsets more than once.
+
+Given a threshold ratio e, let us discuss materializing an itemset cube under one dimension. Let this dimension be an itemset attribute and be segmented into N items.
+
+These N items are assumed to be not mutually disjoint.
+
+Let Cellx be the x-th cell in a resulting itemset cube; this cell corresponds to the x-th item.
+
+Under these conditions, we modify Apriori so as to avoid the above problems.
+
+As a preparation, for a given candidate itemset I, it is given a list of support counts v(I) = [CI, C2, . .. , CN], where each Cx is the number of records supporting I in Cellx?  In addition, we need to redefine the term frequent    itemset which is used in our Apriori-style procedure: In an itemset cube CUBE, a k-itemset I is a frequent itemset only if I is frequent (in the meaning of the orig? inal Apriori) in a certain cell of CUBE. 1's frequency is registered in v(I). (If the x-th element of v(I) is infrequent in C ellx, this element is set void.)  In a given itemset cube, let L( k) be the set of frequent itemsets of length k (in the meaning defined above).
+
+Also, let C(k) be the set of candidate itemsets of length k. Then, our procedure is as follows: [Step 1] At k=l, a database is scanned once, and each  length-l item I is counted in each cell and is given v(l).
+
+If any j-th element in v(J) is greater than ()(CeUj), I is added to L(1).
+
+[Step 2] From L(k) = {h, [2, .. . , I",}, a candidate item?  set J of length (k + 1) is generated. J must sat? isfy the following pruning condition: Any k-subitemset J' of J must exist in L(k); furthermore, for some x E {I, 2, ... , N}, all J' 's of J must be frequent (in the meaning of the original ApTioTi) in the x-th cell. Only in this case, J is built up and is given a new v(J) in which ex needs to be counted. Add such J into C(k+l).
+
+[Step 3] A database is scanned once for counting sup-  ports of an 1's E C(k + 1). The x-th element of v(I) is incremented only if a record r satisfies a constraint of Cellx and if the x-th clement of v(l) is not void. If [ is frequent in certain cells, put I into L(k + 1).
+
+IStep 4] Go back to the step2 until L(k) is null. 0 For example, consider an itemset cube of three cells  and assume that an itemset {A, B} has vO=[3, 2, 6]' an itemset {B, C} has vO= [1,4,8]' and an itemset {A, C} has [6, 5, 8] . Also, suppose that threshold counts are [3, 3, 5] in these cells. Then, a new itemset {A, B, C} can be built only at the third cell, and is given vO = [ - , -, y 1, where y is set by counting the occurrences by the next scan of the dataset.
+
+Clearly, the above procedure can avoid duplicate scanning of the dataset. On the other hand, a can? didate itemset is created as far as it is passed through the pruning test of Step 2 at a certain cell. This may in? crease the total number of candidate itemsets at length 2 or 3.
+
+Performance test The above procedure has been implemented on a  PC-box of a Celeron 800MHz with 256MB memory.
+
+In the Step 2 and 3 above, a normal trie-structure is used for indexing candidate itemsets. Using this package, we firstly tested an artificial dataset made of N2000.T20.I4.DIOOK (2000 items, average transaction length 20, potential depth of frequent itemsets 5, lOOK transactions in [6]).
+
+We tested a materialization of a I-dimension item-   Table 1: The number of candidate itemsets to be counted at level (Lvl) = I to 6 in case of i) apply? ing Apriori on each of {GO, .. , G3} individually (de? noted by Naive) and ii) in case of applying our pro? posed method (denoted by OM). (In the table, the col? umn "Gx" (x = 0, 1 , 2, 3) denotes the case where Apriori is used on all records that satisfy the constraint of Gx. The  "TT' row shows total elapsed times (in seconds (s)) of an applied method Lvi refers to the level )  Lvi GO G1 G2 G3 Naive OM 1 2004 2004 2004 2004 8016 2004 2 46971 460.56 45753 47895 186675 .51.509 3 961 9.53 960 986 3860 1029 4 362 358 362 365 1447 390 5 22 21 22 20 85 25 6 0 0 0 0 0 0  TT 53 s 53 s .52 s 48 s 207 s 56 s  set cube. The dimension was divided into four (non? disjoint) groups GO, GI, G2, G3. Gx is a predicate to test if a log-record contains any items in the set {(50 x x + j)-th item S.t. j = 0,1, .. , 49}. It means that any record falls into a certain group and thus no records arc skipped over. A threshold ratio was fixed to 2 % in each group.
+
+We tested two methods. One is the method proposed above, denoted by OM. The other, denoted by Naive, is a (naive) method to compute each cell independently by Apriori and then to gather all the results as the output. A measure of comparison is an elapsed time of completion and the number of candidates to be counted.
+
+Table.l shows the number of candidate itemsets counted at each level (= length of itemsets to be counted) by the methods. Looking at the table, it can be seen that our method OM can avoid duplicate COIll? putations among different cells.
+
+We also tested a larger case Nl OOOO.T30.I4.DlOOK.
+
+Even in this case, if each group is not restrictive and thus if almost all records must be counted in many groups, similar results were observed. On the other hand, if almost all records are disjointly-partitioned into many groups, our method is slightly disadvanta? geous because a large number of candidate itemsets must be counted at the same time at level 2 or 3. This adds overheads of an underlying data mining engine. In retrospect, the index for candidate itemsets should be further improved.
+
+4 Test on a real-life dataset We tested our datacube system on a real-life dataset.
+
+The used data are logs of a web site which supports a    certain cyber-community. The used log-data are those registered during a I-year activity. The web site con? tained pages about many events, including conventions and seminars. A download service of electric docu? ments was also supported. The number of raw web? logs reached over lOOK records. However, the number of web pages was not great - between 200 and 400 at most.
+
+Fig.5-(a) outlines a structure of (a part of) pages in the web site. When one of the authors was given the log-data for the first time, he could not find which information to be extracted. He tested a well-known method of detecting frequent sequence of pages with? out any constraints - but the results were no more than trivial from a viewpoint of web designers.
+
+As a result, he firstly searched the n-dimension space of access records by creating a scalar cube storing hit counts. This is the scenario of Section 3.5. As a result, he found that a few percentage of user-domains did very many accesses. (Before that, effects of web crawlers were eliminated as far as possible by using the scalar cube). This inspired him to explore the difference of behaviors between such users and the others.
+
+Fig.5-(b) is an itemset cube whose dimensions are "Month" segmented into three months and "User Do? mains" segmented into two items. In order to materi? alize this itemset cube, he just did one command (ma? terialization and slice) to the datacube engine - this was greatly helpful because there was no need to write down any new programs.
+
+This figure shows that the group which did very many accesses watched a particular event ("conv17") every month. In contrast, we can see that by the other group, newer convention-related pages were watched more fre? quently as the time elapsed.
+
+As a result of this observation, he decided to test differences under the dimensions "user-domains which did very many accesses or not" and "which pages were watched, seminar pages or convention pages?". To do so, he just needed to command new roll-ups and mate? rializations. The result is the itemset cube of Fig.5-(c).
+
+This figure shows that user profiles are different accord? ing to which cells they are categorized into.
+
+5 Summary and discussion with related works  In this paper, we proposed a datacube model for stor? ing and manipulating frequent itemsets, which repre? sent frequently-accessed pages during one user session.
+
+Our objective is to solve the difficulty that a decision? maker must do data-mining process many times under   (aJ Link structure Contt Cont2 Cont3 of a Web site. link to ?f ____ di9?at library dawnload rules of .
+
+sponsors:1 t -/ community  mailinglist IndeX? archive I membership 1"-..
+
+registration  ) V  r ts New  ? convI2,13".,20 shortmemol  ?  semi xx)( tutorialpanel (b) Itemset Cube whose dimensions are "accessed pages"  segmented inlo 2 ilems and "Month?? segmented inlo 3 items.
+
+G 1 ? doing very  many accesses  Cont2 Dlib d!wnload  G2 ? doing nol so many accesses  Cont2 , I  April sponso? 1 ;> inde}f- rules of .
+
+mailing / community  D1.b" dOjload sponsor? index  1"-.
+
+Events / .........
+
+conv17 semi20010424  Conf2  Events News I \  conv17 shortmerno '?3 Conf2  DUb dowhioad  May  DUb" doJnloa?,6S of sponsor ? in?e?COmm u"iIy / archive1  " .  I rulasot . '\. index < community I archivel  Events Events / .......
+
+conv17 c:onv18  CanfZ Dlib dO.!",load  ? conv16 conv17 conv18  Conf2  une " . I ru"'01  sponsor? inde/ community  DUb doJmoad !\il" ot "U' I L,ommuo", sponsor?indeX I I archivel Events Events  I ? conv17 conv17 conv18 conv19  (c) Itemset Cube whose dimensions are "accessed pages" , "user domains"" and "Month'?. The dimension ??Month?? is rolled up into "Summer Season'?, and so it is not shown here,  Summer season  Domains aoing not so many accesses  Domains dOing veIY many  accesses.
+
+Group accesSing seminar pages  . .  -_ .. __ . .. _-_ .. _.----... " : rulesClt  ,,,_ sponsors /oommunity ; ?jndex : I \ Events \ ;-,::_conv1A semi20000816--???.
+
+?l.?L conV1? \' semi2000112(}-'? l : : semi20010528 :: L!:::::::::,-::::::::::::::::::: __ :::::?.:  r???????fj;????:::::::r?????????l ;' Dlib download rUle's 01 : : " I ,/ community : : sponso? Inde"" : L. ......... / .................... , i Events : :  : ? ,onV17 1 ?OOO05 2 i i : sam 1 : !
+
+: conv18 .:semi  ,  20000717:: : som?OOOos,e : :  1 :??:???J:?i ? ?.-... -.. -.-.-.. -?????????.??::::-!.?  Group accessing convention pages  ;-.-?.?.? -----.? Conf2 ! , .... Dlib I rulelSof : ' ;;downk)ad community : ; , ?. ',pon 1 < : ; ;  inde ?.?+. meiiin /\ archive 1 ? ii conv" Ev.n" N  rS : i i cony, shortmEirnol t_? .:? : :::?  :---conv'  r-:::::::::::::: Conf2 \ I rUllilol : ,--" DIIb download communit,. .' " 1 / ] j sponsor? indEl, _ _  ? i: EvL ?chN.' : :: cOrtV'r semi2000'16 : : 1 co nvl semI20010424 : '--',' conv17 ?---.. conv18 conv19  Figure 5: Results of the proposed datacube for a real? life dataset. (a) web structure. (b) itemset cube under dimensions "month" and "user domains". (c) Itemset cube under dimensions "user domains" and "accessed pages" .
+
+various criteria. We extended a traditional datacube model into a new one. This cube, called an itemset cube, manages frequent itemsets under various condi? tions which are modeled by a n-dimensional space. As a traditional scalar datacube is, an itemset cube is also materialized, sliced, and rolled-up.
+
+Although this looks simple, fast execution of the operations is difficult because thresholds of frequency must be the same ratio in all cells. This is required because of keeping a uniform quality of the results - it is necessary when comparing user profiles among dif? ferent cells. Further, items in a given dimension are not always mutually disjoint. These properties cause technical difficulty. As a result, in order to material? ize an itemset cube, it is possible to use a naive algo? rithm, which computes frequent itemsets of each cell independently. However this means multiple scans of a database, and should be avoided.
+
+For this goal, we proposed an efficient algorithm for materialization of an itemset cube. It modifies the anti? monotonic pruning strategy of the original Apriori so as to allow for simultaneous counting of candidate itemsets in different cells. Performance tests on a large artificial dataset showed that this algorithm can avoid duplicate scan of a database without large overheads. We also described that slice is easy in itself, but that a roll-up must be done in conjunction with materialization.
+
+The proposed datacube model was implemented and was tested on a real-life dataset of a certain web site.
+
+The results of our experiences showed that the proposed datacube model can reduce the load of a log-analysis user.
+
+The results of this paper are to clarify new functions for a data mining server. This is one of the contribu? tions of our work.
+
+Basically, datacube-style ideas are useful for interac? tive analysis, and are not new in itself. Some preceding studies already tested traditional OLAP datacubes in data mining fields. The study [1] uses a scalar datacube for deriving association rules by using roll-up, slice, and materialization and for incremental/decremental maintenance. The study [5J manages all web logs in a datawarehouse scheme for feeding appropriate logs into a clustering engine. These are good works of signifi? cance, but interactive transformation of frequent item? sets was not considered there. As far as the authors could find, our work is one of the first trials to ma? nipulate frequent itemsets directly under a datacube framework.
+
+One point to be further explored is an acceleration of roll-up by reusing precomputed results. This is strongly required, but is inherently difficult because the thresh? old number of records must change when an itemset   cube is rolled-up (or drilled-down). This situation is similar to the problem of incremental/decremental as? sociation rule mining. Similar techniques are now under our exploration.
+

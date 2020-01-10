@@ -1,0 +1,214 @@
+Self-healing of operational workflow incidents on distributed computing infrastructures
+
+Abstract?Distributed computing infrastructures are com- monly used through scientific gateways, but operating these gateways requires important human intervention to handle oper- ational incidents. This paper presents a self-healing process that quantifies incident degrees of workflow activities from metrics measuring long-tail effect, application efficiency, data transfer issues, and site-specific problems. These metrics are simple enough to be computed online and they make little assumptions on the application or resource characteristics. Incidents are classified in levels and associated to sets of healing actions that are selected based on association rules modeling correlations between incident levels. The healing process is parametrized on real application traces acquired in production on the European Grid Infrastructure. Implementation and experimental results obtained in the Virtual Imaging Platform show that the proposed method speeds up execution up to a factor of 4 and properly detects unrecoverable errors.
+
+
+
+I. INTRODUCTION Distributed computing infrastructures (DCI) are becoming  daily instruments of scientific research, in particular through scientific gateways [1] developed to allow scientists to trans- parently run their analyses on large sets of computing re- sources. While these platforms provide important amounts of resources in an almost seamless way, their large scale and the number of middleware systems involved lead to many errors and faults. Easy-to-use interfaces provided by these gateways exacerbate the need for properly solving operational incidents encountered on DCIs since end users expect high reliability and performance with no extra monitoring or parametrization from their side. In practice, such services are often backed by substantial support staff who monitors running experiments by performing simple yet crucial actions such as rescheduling tasks, restarting services, killing misbehaving experiments or replicating data files to reliable storage facilities. Fair QoS can then be delivered, yet with important human intervention.
+
+For instance, the long-tail effect [2] is a common frustration for users who have to wait for a long time to retrieve the last few pieces of their computations. Operators may be able to address it by rescheduling tasks that are considered late (e.g.
+
+due to execution on a slow machine, low network throughput or just loss of contact) but detection is very time consuming and still rough.
+
+Automating such operations is challenging for two reasons.
+
+First, the problem is online by nature because no reliable user activity prediction can be assumed, and new workloads may arrive at any time. Therefore the considered metrics, decisions  and actions have to remain simple and to yield results while the application is still executing. Second, it is non-clairvoyant due to the lack of information about applications and resources in production conditions. Computing resources are usually dy- namically provisioned from heterogeneous clusters, clouds or desktop grids without any reliable estimate of their availability and characteristics. Models of application execution times are hardly available either, in particular on heterogeneous computing resources.
+
+A scientific gateway is considered here as a platform where users can process their own data with predefined applications workflows. Workflows are compositions of activities defined independently from the processed data and that only consist of a program description. At runtime, activities receive data and spawn invocations from their input parameter sets. Invocations are assumed independent from each other (bag of tasks) and executed on the DCI as single-core tasks which can be resubmitted in case of failures. This model fits several existing gateways such as e-bioinfra [3], P-Grade [4], the Virtual Imaging Platform [5] or De?crypthon [6]. We also consider that files involved in workflow executions are accessed through a single file catalog but storage is distributed. Files may be replicated to improve availability and reduce load on servers.
+
+The gateway may take decisions on file replication, resource provisioning, and task scheduling on behalf of the user. Perfor- mance optimization is a target but the main point is to ensure that correctly-defined executions complete, that performance is acceptable, and that misbehaving runs (e.g. failures coming from user errors or unrecoverable infrastructure downtimes) are quickly detected and stopped before they consume too many resources.
+
+Our ultimate goal is to reach a general model of such a scientific gateway that could autonomously detect and handle operational incidents. In this work, we propose a healing process for workflow activities only. Activities are modeled as Fuzzy Finite State Machines (FuSM) [7] where state degrees of membership are determined by an external healing process.
+
+Degrees of membership are computed from metrics assuming that incidents have outlier performance, e.g. a site or a par- ticular invocation behaves differently than the others. Based on incident degrees, the healing process determines incident levels from thresholds determined from platform history. A specific set of actions is then selected from association rules among incident levels.
+
+Section II presents related work. Our approach is described  2012 12th IEEE/ACM International Symposium on Cluster, Cloud and Grid Computing  DOI 10.1109/CCGrid.2012.24     in section III (general healing process), section IV (metrics used to quantify incident degrees) and section V (incident levels and associated action sets). Experimental results are presented in section VI in production conditions.
+
+
+
+II. RELATED WORK  Managing systems with limited intervention of system ad- ministrators is the goal of autonomic computing [8]. It has been used to address various problems related to self-healing, self-configuration, self-optimization, and self-protection of distributed systems. For instance, provisioning of virtual ma- chines is studied by Nguyen et al. [9] and an approach to tackle service overload, queue starvation, ?black hole? effect and job failures is sketched by Collet et al. [10].
+
+An autonomic manager consists of monitoring, analysis, planning, execution and knowledge (so-called MAPE-K loop).
+
+Generic software frameworks have been built to wrap legacy applications in such loops with limited intrusiveness. For instance, Broto et al. [11] demonstrates the wrapping of DIET grid services for autonomic deployment and configuration. We consider here that the target gateway can be instrumented to report appropriate events and perform actions.
+
+Monitoring is broadly studied in distributed systems, both at coarse (traces, archives) and fine time scales (active mon- itoring, probing). Many workload archives are available. In particular, the grid observatory [12] has been collecting traces for a few years on several grids. However, as noted by Iosup & Epema [13], most existing traces remain at the task level and lack information about workflows and activities. Application patterns can be retrieved from logs (e.g. bag of tasks) but precise information about workflow activities is bound to be missing. Studies on task errors and their distributions are also available [14], [15], but they do not consider operational issues encountered by the gateways submitting these tasks. Besides, active monitoring using tools such as Nagios [16] cannot be the only monitoring source when substantial workloads are involved. Therefore we rely on traces of the target gateway, as detailed in section V. One issue in this case is to determine the timespan where system behavior can be considered steady- state. Although this issue was recently investigated [17], it remains difficult to identify non-stationarities in an online process and we adopt here a stationary model.
+
+Analysis consists in computing metrics (a.k.a. utility func- tions) from monitoring data to characterize the state of the system. System state usually distinguishes two regimes: prop- erly functioning and misfunctioning. Zhang et al. [18] assume that incidents lead to non stationarity of the workload statistics and use the Page-Hinkely test to detect them. Stehle et al. [19] present a method where the convex hull is used instead of hyper-rectangles to classify system states. As described in section V, we use multiple threshold values for a given metric to use more than two levels to characterize incidents.
+
+Planning and actions considered in this work deal with task scheduling and file replication. In these domains, most approaches are clairvoyant, meaning that resource, task, error rate and workload characteristics are precisely known [20], [21]. Heuristics are designed by Casanova et al. [22] for the  case where only data transfer costs are known, on an offline problem though. Camarasu-Pop et al. [23] propose a dynamic load-balancing strategy proposed to remove the long-tail effect on production heterogeneous systems, but it is limited to Monte-Carlo simulations.
+
+The general task scheduling problem is out of our scope.
+
+We assume that a scheduler is already in place, and we only aim at performing actions when it does not deliver proper performance. In particular, we focus on site blacklisting and on task replication to avoid long-tail effect. Task replication, a.k.a. redundant requests is commonly used to address non- clairvoyant problems [2], but it should be used sparingly to avoid overloading the middleware and degrading fairness among users [24]. In this work, task replication is considered when activities are detected blocked or of low efficiency according to the metric presented in section IV.
+
+Similarly, file replication strategies often assume clairvoy- ance on the size of produced data, file access pattern and infrastructure parameters [25], [26]. In practice, production systems mostly remain limited to manual replication strategies though [27].
+
+
+
+III. GENERAL HEALING PROCESS  An activity is modeled as an FuSM with 13 states shown on Fig. 1. The activity is initialized in Submitting Invocations where all the tasks are generated and submit- ted. Tasks consist of 4 successive phases: initialization, inputs download, application execution and output upload. They are all assumed independent, but with similar execution times (bag of tasks). Running is a state where no particular issue is detected; no action is taken and the activity is assumed to behave normally. Completed (resp. Failed) is a terminal state used when all the invocations are successfully completed (resp. at least one invocation failed). These 4 states are crisp (not fuzzy) and exclusive1. The 9 other states are fuzzy states corresponding to detected incidents.
+
+The healing process sets the degree of FuSM states from incident detection metrics and invocation statuses. Then it de- termines the actions to be performed to address the incidents.
+
+If no action is required then the process waits until an event occurs (task status change) or a timeout is reached.
+
+Let I = {xi, i = 1, . . . , n} be the set of possible in- cidents (9 in this work) and ? = (?1, . . . , ?n) ? [0, 1]n their degrees in the FuSM. Incident xi can occur at different levels {xi,j , j = 1, . . . ,mi} delimited by threshold values ?i = {?i,j , j = 1, . . . ,mi}. The level of incident i is determined by j such that ?i,j ? ?i < ?i,j+1. A set of actions ai(j) is available to address xi,j :  ai : [1,mi] ? ?(A) j ?? ai(j) (1)  where A is the set of possible actions taken by the healing process and ?(A) is the power set of A.
+
+In addition to the incidents themselves, incident causes are taken into account. Association rules [28] are used to identify  1Their degree can only be 0 or 1 and if 1 then all the other states have a degree of 0.
+
+Fig. 1. Fuzzy Finite State Machine (FuSM) representing an activity.
+
+relations between levels of different incidents. Association rules to xi,j are defined as Ri,j = {ru,vi,j = (xu,v, xi,j , ?u,vi,j )}.
+
+Rule ru,vi,j means that when xu,v happens then xi,j also happens with confidence ?u,vi,j ? [0, 1]. The confidence of a rule is an estimate of probability P (xi,j |xu,v). Note that ri,ji,j ? Ri,j and ?i,ji,j = 1. We also define R =  ? i??1,n?,j??1,mi? Ri,j .
+
+Fig. 2 presents the algorithm used at each iteration of the healing process. Incident degrees are determined based on metrics presented in section IV and incident levels j are obtained from historical data as explained in section V. A roulette wheel selection [29] based on ? is then performed to select xi,j the incident level of interest at this iteration.
+
+Roulette wheel selection assigns a proportion of the wheel to each incident level according to their probability and a random selection is performed based on a spin of the roulette wheel. The probability of an incident xi to be selected is p(xi) = ?i/  ?n j=1 ?j . A potential cause xu,v for incident  xi,j is then selected from a roulette wheel selection on the association rules ru,vi,j , where xu is at level v. Rule r  u,v i,j is  weighted ?u ? ?u,vi,j in the roulette selection. Only first-order causes are considered here but the approach could be extended to include more recursion levels. Note that ri,ji,j participates in this selection so that a first-order cause is not systematically chosen. Finally, actions in au(v) are performed.
+
+Table I illustrates this mechanism on an example case where only 3 incidents are considered.
+
+
+
+IV. INCIDENT DEGREE  This section describes the metrics used to determine the degree of the 9 considered incidents (step 02 on Fig. 2).
+
+a) Activity Blocked: this incident happens when an invo- cation is considered late compared to the others. It is responsi- ble for many operational issues, leading to substantial speed-up reductions. For instance, it occurs when one invocation of the  Input: invocation statuses and history of ? Output: set of actions a  01. wait for event or timeout 02. determine incident degrees ? based on metrics 03. determine incident levels j such that ?i,j ? ?i < ?i,j+1 04. select incident xi by roulette wheel selection based on ? 05. select rule ru,v = (xu,v, xi,j , ?  u,v i,j ) ? Ri,j by roulette  wheel selection based on ?u ? ?u,vi,j , where xu is at level v 06. a= au(v) 07. perform actions in a  Fig. 2. One iteration of the healing process.
+
+???? ??  ? ?  ?? ?   ??? ?  ?? ???  ?? ?  ????  ???????  Fig. 3. Detection of blocked activity.
+
+activity requires more CPU cycles or when the invocation faces longer waiting times, lost tasks or executes on resources with poorer performance. This situation is detected online from the number n(t) of completed invocations at time t (see Fig. 3).
+
+At time t, we compute the slope a(t) of the regression line of {(ti, n(ti)), ti ? t}. In case the iteration is triggered by a timeout instead of an event, then (t, n(t) + 1) is added to the regression set. This is meant to ensure that long-running invocations can be handled before they complete. We then define the incident degree ?b from the contraction rate of the  Step 02 and 03: incident degrees and levels are determined: xi: incident name Degree ?i Level j x1: activity blocked 0.8 2 x2: low efficiency 0.4 1  x3: input data unavailable 0.1 1  Step 04: x1,2 is selected with probability 0.80.8+0.4+0.1 .
+
+Step 05: association rules r2,11,2 , r 3,1 1,2 and r  1,2 1,2 are considered:  Rule Confidence r2,11,2 : x2,1 ? x1,2 0.8 r3,11,2 : x3,1 ? x1,2 0.2 r1,21,2 : x1,2 ? x1,2 1  r2,11,2 is chosen with probability 0.8?0.4  0.8?0.4+0.2?0.1+0.8?1 .
+
+Step 06: actions in a2(1) are performed.
+
+TABLE I EXAMPLE CASE.
+
+linear regression slope:  ?b = 1? a(t) amax(t)  where amax(t) is maximal value of a(t) in [0, t]. t = 0 is the time when the activity is started, i.e., all the invocations are initialized. Note that the maximum degree ?b = 1 is reached when the activity is completely blocked (limt?? a(t) = 0).
+
+On the other hand, ?b = 0 is reached when a(t) = amax(t).
+
+Invocations are assumed of identical lengths, which is common for a workflow activity.
+
+b) Low Efficiency: this happens when the time spent by all the activity invocations in data transfers dominates CPU time. It may be due to sites with poor network connectivity or intrinsic to the application. The incident degree is defined from the ratio between the cumulative CPU time Ci consumed at time t by all completed invocations and the cumulative execution time at time t of all completed invocations:  ?e = 1? ?n(t)  i=1 Ci ?n(t)  i=1 (Ci +Di)  where Di is the time spent by invocation i in data transfers.
+
+c) Input Data Unavailable: this happens when a file is  registered in the file catalog but the storage resource(s) is(are) unavailable or unreachable. The incident degree ?iu in this state is determined from the input transfer failure rate due to data unavailability. Transfers of completed, failed, and running invocations are considered.
+
+d) Input Data does not Exist: this happens when an incorrect data path was specified, the file was removed by mistake or the file catalog is unavailable or unreachable.
+
+Again, the incident degree ?ie is directly determined by the input transfer failure rate due to non-existent data. Transfers of completed, failed, and running invocations are considered.
+
+e) Site Misconfigured for Input Data: this incident hap- pens when sites have utmost input data transfer failure rate.
+
+The incident degree ?is at time t is measured as follows:  ?is = max(?1, ?2, . . . , ?k)?median(?1, ?2, . . . , ?k) where ?i denotes the input transfer failure ratio (including both input data unavailable and input data does not exist) on site i at time t and k is the number of white-listed sites used by the activity at time t. The difference between the maximum rate and the median ensures that the incident degree has high values only when some sites are misconfigured. This metric is correlated but not redundant with the two previous ones. If some input data file is not available due to site-independent issues with the storage system, then ?iu will grow but ?is will remain low because all sites fail identically. On the contrary, ?is may grow while ?iu and ?ie remain low.
+
+f) Output Data Unavailable: output data can also be unavailable. Unavailability happens due to three main reasons: the user did not specify the output path correctly, the applica- tion did not produce the expected data, or the file catalog or storage resource are unavailable or unreachable. The incident degree ?ou is determined by the output transfer failure rate.
+
+Transfers of completed, failed and running invocations are considered.
+
+g) Site Misconfigured for Output Data: the incident degree ?os in this incident is determined as follows:  ?os = max(?1, ?2, . . . , ?k)?median(?1, ?2, . . . , ?k)  where ?i denotes the output transfer failure ratio on site i at time t and k is the number of white-listed sites used by the activity at time t.
+
+h) Application Error: applications can fail due to a variety of reasons among which: the application executable is corrupted, dependencies are missing, or the executable is not compatible with the execution host. The incident degree ?a in this state is measured by the task failure rate due to application errors. Completed, failed, and running tasks are considered.
+
+i) Site Misconfigured for Application: The incident de- gree ?as in this state is measured as follows:  ?as = max(?1, ?2, . . . , ?k)?median(?1, ?2, . . . , ?k)  where ?i denotes the task failure rate due to application errors on site i and k is the number of white-listed sites used by the activity at time t.
+
+
+
+V. INCIDENT LEVELS AND ACTIONS  Incident degrees ?i are quantified in discrete incident levels so that different sets of actions can be used to address different levels of the incident. The threshold number and values are determined from observed distributions of ?i. The number mi of incident levels associated to incident i is set as the number of modes in the distribution of ?i. Thresholds ?i,j are determined from mode clustering.
+
+A. Training Dataset  We collected traces from the Virtual Imaging Platform [5] gateway between April and August 2011. Applications de- ployed in this platform are described as workflows executed using the MOTEUR workflow engine [30]. Resource provi- sioning and task scheduling is provided by DIRAC [31] using so-called ?pilot jobs?. Resources are provisioned online with no advance reservations. Tasks are executed on the biomed virtual organization (VO) of the European Grid Infrastructure (EGI)2 which has access to some 150 computing sites world- wide and to 120 storage sites providing approximately 4 PB of disk.
+
+This data set contains 1, 082 executions of 36 different workflows executed by 26 users. Workflow executions contain 1, 838 activity instances, corresponding to 92, 309 invocations and 123, 025 tasks (including resubmissions).
+
+Figure 4 shows the cumulative amount of running activities along this period. It shows that the workload is quite uniformly distributed although a slight increase is observed in June.
+
+2http://www.egi.eu     ? ?? ?  ?? ??  ?? ??  ???? ?  ? ??? ????     ??? ?????? ??????? ??????? ??????? ???????  Fig. 4. Cumulative amount of running activities from April to August 2011.
+
+B. Incident Levels and Actions  Incident degrees were computed after each event found in this data set (total of 641, 297 events). Fig. 5 displays histograms of computed incident degrees. For readability pur- poses, only ?i ?= 0 values are represented. Histograms are clearly multi-modal, which confirms that incident degrees are quantified. Level numbers and threshold values ? are set from visual mode detection in these histograms and reported on Table II with associated actions.
+
+Incidents at level 1 are considered painless for the execution and they do not trigger any action. Other levels can lead to radical (completely stop the activity or blacklist a site) or intermediate actions (task replication, file replication, or provisioning of extra resources).
+
+C. Association Rules  Association rules are computed based on the frequency of occurrences of two incident levels. The confidence ?u,vi,j of a rule xu,v ? xi,j measures the probability that an incident level xi,j happens when xu,v occurs. Table III shows rule samples extracted from the training data-set and ordered by decreasing confidence. The set of rules leading to activity blocked (x1,2) and low efficiency (x2,2) incidents shows that they are partially dependent of other ?cause? incidents, which is considered by the self-healing process.
+
+At the bottom of the table we find rules with null confidence.
+
+These are consistent with common-sense interpretation of the incident dependencies (e.g. no site-specific issue when input data is unavailable).
+
+
+
+VI. EXPERIMENTS  The healing process was implemented in the Virtual Imag- ing Platform (see description in section V-A) and deployed in production. The experiments presented hereafter evaluate the ability of the healing process to (i) improve workflow makespan in case of recoverable incidents and (ii) quickly identify and report critical issues.
+
+A. Implementation  The FuSM and healing process were implemented in the MOTEUR workflow engine. The timeout value in the healing process was computed dynamically as the median of the task inter-completion delays in the current execution.
+
+?b  Slope contractions (%)  F re  qu en  cy  0 20 40 60 80 100     ?e  1 ? e (%)  F re  qu en  cy  0 20 40 60 80 100     ?iu  Input failed transfers ? unavailability (%)  F re  qu en  cy  0 20 40 60 80 100      ?ie  Input failed transfers ? data does not exist (%)  F re  qu en  cy  0 20 40 60 80 100     ?is  Input failed transfer errors ? site misconfigured (%)  F re  qu en  cy  0 20 40 60 80 100     ?ou  Output failed transfers (%)  F re  qu en  cy  0 20 40 60 80 100      ?os  Output failed transfer errors ? site misconfigured (%)  F re  qu en  cy  0 20 40 60 80     ?a  Application errors (%)  F re  qu en  cy  0 20 40 60 80 100    ?as  Application errors ? site misconfigured (%)  F re  qu en  cy  0 20 40 60 80     Fig. 5. Histograms of incident degrees sampled in bins of 5%.
+
+Task replication is performed by resubmitting running tasks to DIRAC. To avoid concurrency issues in the writing of output files, a simple mechanism based on file renaming was implemented. To limit infrastructure overload, running tasks are replicated up to 5 times.
+
+Input file unavailability is distinguished from non-existent file using ad-hoc parsing of standard error files. File replication is implemented differently depending on the incident. In case of input data unavailability, a file is replicated to a storage resource randomly selected in the biomed VO. The maximal allowed number of file replicas is set to 5. In case a site is misconfigured, replication to the site local storage resource is first attempted. This aims at circumventing inter-domain connectivity issues. If there is no local storage available or the replication process fails, then a second attempt is performed to a storage resource successfully accessed by other tasks executed on the same site.
+
+Problematic sites are only temporarily blacklisted during a time interval set from exponential back-off. The site is     Incident Number of incident Level 1 Level 2 Level 3 levels (mi) ?i,1 actions ?i,2 actions ?i,3 actions  x1: activity blocked 2 0 ? 0.6 replicate running tasks x2: low efficiency 2 0 ? 0.6 replicate input files  replicate running tasks x3: input data unavailable 3 0 ? 0.2 replicate input files 0.8 stop activity  x4: input data does not exist 2 0 ? 0.8 stop activity x5: site misconfigured for input data 3 0 ? 0.3 replicate files on sites 0.65 blacklist site  reachable from problematic site x6: output data unavailable 2 0 ? 0.8 stop activity  x7: site misconfigured for output data 2 0 ? 0.1 blacklist site x8: application error 2 0 ? 0.5 stop activity  x9: site misconfigured for application 2 0 ? 0.1 blacklist site TABLE II  INCIDENT LEVELS AND ACTIONS.
+
+Association rule ?u,vi,j x5,2 ? x2,2 0.3809 x7,2 ? x1,2 0.3529 x5,3 ? x1,2 0.3333 x1,2 ? x2,2 0.3059 x3,2 ? x1,2 0.2975 x7,2 ? x2,2 0.2941 x5,2 ? x1,2 0.2608 x9,2 ? x1,2 0.2435 x2,2 ? x1,2 0.2383  . . . . . .
+
+x3,2 ? x2,2 0.1276 x7,2 ? x3,3 0.1250 x3,3 ? x9,2 0.1228 x7,2 ? x3,2 0.0625  . . . . . .
+
+x3,3 ? x5,2 0.0000 x3,3 ? x5,3 0.0000 x4,2 ? x5,2 0.0000 x4,2 ? x5,3 0.0000 x5,2 ? x3,3 0.0000 x5,2 ? x4,2 0.0000 x5,3 ? x3,3 0.0000 x5,3 ? x4,2 0.0000  TABLE III CONFIDENCE OF RULES BETWEEN INCIDENT LEVELS.
+
+first blacklisted for 1 minute only and then put back on the white list. In case it is detected misconfigured again, then the blacklist duration is increased to 2 minutes, then to 4 minutes, 16 minutes, etc.
+
+B. Experiment conditions  Two workflow activities are considered. FIELD-II/pasa consists of 122 invocations of an ultrasonic simulator on an echocardiography 2D data set. It is a data-intensive activity where invocations use from a few seconds to some 15 min- utes of CPU time; it transfers 208 MB of input data and outputs about 40 KB of data. Mean-Shift/hs3 has 250 CPU-intensive invocations of an image filtering application.
+
+Invocation CPU time ranges from a few minutes up to one hour; input data size is 182 MB and output is less than 1 KB.
+
+Files were replicated on two storage sites for both activities.
+
+Two experiments were performed on both workflow ac- tivities. Experiment 1 aims at testing that recoverable errors are detected and handled. It is a correct execution where all the input files exist and the application is supposed to run  properly and produce the expected results. Five repetitions were performed for each workflow activity.
+
+Experiment 2 aims at testing that unrecoverable errors are quickly identified and the execution is stopped. Unrecoverable errors were intentionally injected in 3 different runs: in run non-existent inputs, non-existent file paths were used for all the invocations; in application-error, all the file paths existed but input files were corrupted; and in non-existent output, input files were correct but the application did not produce the expected results.
+
+MOTEUR was configured to resubmit failed tasks up to 5 times in all runs of both experiments. For each experiment, a workflow execution using our method (Self-Healing) was compared to a control execution (No-Healing). Executions were launched in production conditions, i.e., without any control of the number of available resources and reliability.
+
+Self-Healing and No-Healing were both launched simultaneously to ensure similar grid conditions. Runs were performed along a time period of one week, therefore under different grid conditions. The DIRAC scheduler was config- ured to equally distribute resources among executions. We used DIRAC v5r12p9 and MOTEUR 0.9.19.
+
+C. Results and Discussion  Experiment 1: Fig. 6 shows the makespan of FIELD-II/pasa and Mean-Shift/hs3 for the 5 repetitions. The makespan was considerably reduced in all repetitions of both activities. Speed-up values yielded by Self-Healing ranged from 2.6 to 4 for FIELD-II/pasa and from 1.3 to 2.6 for Mean-Shift/hs3.
+
+Table IV shows occurrences of incident levels and as- sociated actions. All recoverable incidents were observed, except x7,2. For FIELD-II/pasa, x2,2 was the predominant incident due to the data-intensive nature of the application. No blocked activity was detected due to important task replication triggered by low efficiency. For Mean-Shift/hs3, low efficiency and blocked activity almost equally appeared. The total number of replicated tasks for all repetitions was 1, 128 for FIELD-II/pasa (i.e. 1.8 task replication per invocation in average) and 644 for Mean-Shift/hs3 (i.e. 0.5 task replication per invocation in average).
+
+Experiment 2: Fig. 7 shows the makespan of FIELD-II/pasa and Mean-Shift/hs3 for the 3 runs     Repetitions  M ak  es pa  n (s  )         1 2 3 4 5  No?Healing Self?Healing  Repetitions  M ak  es pa  n (s  )          1 2 3 4 5  No?Healing Self?Healing  Fig. 6. Experiment 1: execution makespan for FIELD-II/pasa (top) and Mean-Shift/hs3 (bottom).
+
+Activity Incident level Occurrence Actions FIELD-II/pasa x2,2 262 replicate running tasks  replicate input files x9,2 12 blacklist site  Mean-Shift/hs3 x1,2 111 replicate running tasks x2,2 83 replicate running tasks  replicate input files x5,2 16 replicate files on sites x5,3 6 blacklist site x9,2 8 blacklist site  TABLE IV EXPERIMENT 1: OCCURRENCES OF INCIDENT LEVELS (CUMULATIVE  VALUES FOR 5 REPETITIONS).
+
+where unrecoverable errors were introduced. No-Healing was manually stopped after 7 hours to avoid flooding the infrastructure with faulty tasks. In all cases, Self-Healing was able to detect the issue and stop the execution far before No-Healing. It confirms that the healing process is indeed able to identify unrecoverable errors and stop the execution accordingly. As shown on Table V, the number of submitted fault tasks was significantly reduced, which has benefits both to the infrastructure and to the gateway itself.
+
+Number of tasks Run Self-Healing No-Healing  application-error FIELD-II/pasa 196 732 Mean-Shift/hs3 249 1500  non-existent input FIELD-II/pasa 293 732 Mean-Shift/hs3 417 1500  non-existent output FIELD-II/pasa 287 732 Mean-Shift/hs3 364 1500  TABLE V NUMBER OF SUBMITTED FAULTY TASKS.
+
+In average, the experiments used more than 400 nodes from  ? ??  ?? ??  ? ?     ?  ????  ????  ????  ?????  ?????  ?????????? ????????????  ???? ????  ???? ?  ??? ???  ??? ???!
+
+???? ????  ???? ?  ??? ???  ??? ???!
+
+???? ????  ???? ?  ??? ???  ??? ???!
+
+?????"? ?????##?# ?????$?? ?? %???& ?????$?? ?? %?& ?&  Fig. 7. Experiment 2: makespan of FIELD-II/pasa and Mean-Shift/hs3 for 3 different runs.
+
+36 distinct sites of the production system.
+
+
+
+VII. CONCLUSION  We presented a simple, yet practical method for autonomous detection and handling of operational incidents in workflow activities. No strong assumption is made on the task duration or resource characteristics and incident degrees are measured with metrics that can be computed online. We made the hypothesis that incident degrees were quantified into distinct levels, which we verified using extensive historical informa- tion. Incident levels are associated (offline) to action sets ranging from light execution tuning (file/task replication) to radical site blacklisting or activity interruption. Action sets are selected based on the degree of their associated incident level and on confidence of association rules determined from execution history.
+
+This strategy was implemented in the MOTEUR workflow engine and deployed on the European Grid Infrastructure with the DIRAC resource manager. Results show that the proposed method speeds up execution up to a factor of 4 and properly detects unrecoverable errors.
+
+The approach can be extended in several ways. First, other incidents could be added, provided that they can be quantified online by a metric ranging from 0 to 1. Possible candidates are infrastructure service downtimes (e.g. file catalog, storage servers, computing sites) detected by external active moni- toring systems such as Nagios [16]. Action sets could also be extended, for instance with actions related to resource provisioning.
+
+Besides, mode detection used for incident quantification could be improved by (i) automated detection (e.g. with Mean- Shift [32]) and (ii) periodical update from execution history.
+
+Using the history of actions performed to adjust incident de- gree could also be envisaged. For instance, incidents for which several actions already have been taken could be considered more critical.
+
+Finally, other gateway components could be targeted with the same approach. Our future work addresses complete workflow executions, taking actions such as pausing workflow executions, detected blocked workflows beyond activities, or allocating resources to users and executions.
+
+
+
+VIII. ACKNOWLEDGMENT  This work is funded by the French National Agency for Research under grant ANR-09-COSI-03 ?VIP?. We thank the European Grid Initiative and National Grid Initiatives, in particular France-Grilles, for providing the infrastructure and technical support. We also thank Ting Li and Olivier Bernard for providing optimization use-cases to the Virtual Imaging Platform.
+

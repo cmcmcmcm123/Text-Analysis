@@ -1,0 +1,168 @@
+Duplicate Detection for Identifying Social Spam in Microblogs
+
+Abstract?As an important kind of social media, microblog has become an important source of opinion mining and collective behavior study. However, social spams may affect the analytical results greatly. This paper focuses on the problem of identifying potential social spammers who copy pieces of in- formation from others. An improved locality-sensitive hashing based method is used for detecting duplicated tweets. Intensive empirical study over a real-life microblog dataset crawled from Sina Weibo, one of the most popular microblogging services, is conducted. The characteristics of potential spammers and their behaviors are analyzed.
+
+Keywords-duplicate detection; social spam; microblog; locality-sensitive hash; MapReduce
+
+I. INTRODUCTION  Social media has become one of the major sources for people to consume information. It has been shown that social media can be used in sensing earthquake[32], predicting financial index[3] and political election[37], and sentiment analysis[29].
+
+The increasing importance of social media also attracts spammers to post pieces of irrelevant, false, or even harmful information. Since such kind of spammings usually take advantage of social network to spread the spams, they are often called social spams[11], [28], [22]. A major difference between social spam and traditional spams, such as email spam[10] and link spam[14], is that, in social media, spam- mers need to attract common users to follow spammers, so that spams are subscribed. A social spammer often pretends to be a common user or even an information hub, and posts spams from time to time.
+
+We focus on the problem of identifying potential social spammers in microblogging services in this paper. Mi- croblog is the most important and popular kind of social media. Popular microblogging services include Twitter1, Tumblr2, and Sina Weibo3. Since the following relationship in microblogs is one-way, and usually does not need to be approved by the followee, spammers are easy to live in the microblogosphere silently. A microblog spammer may pre- tend to be a common user and progressively attract followers before spams are posted for a long time. Identifying such  1http://twitter.com/ 2http://tumblr.com/ 3http://weibo.com/  users is challenging, since they are deceptive and there are only few features from spams available.
+
+Technologies of duplicate detection is used to find users whose tweets4 are mainly copied. These users are classi- fied as potential spammers. This method is orthogonal and complementary to content-based[11], profile-based[22], and annotation-based[28] spam detection method. The intuition behind our approach is that, to pretend to be a common and/or informative user, the easiest way is to copy tweets from others. On the other hand, if a user posts pieces of original information along with a set of spams, then his followers are those attracted by his own sharing. Then, whether he is a spammer or not should be determined on the content he shared, which can be achieved by using existing methods.
+
+The main contributions of this paper are summarized as follows.
+
+? Duplicate detection is used for identifying potential social spammers.
+
+? An improved duplicate detection algorithm, called LSH-with-filtering, is introduced. The MapReduce im- plementation of the algorithm is also presented. The enhanced algorithm is shown to be accurate and effi- cient in detecting duplicated tweets.
+
+? The proposed method is evaluated over a real-life dataset from Sina Weibo, one of the most popular microblogging services in China. The characteristics of those potential spammers, including their behavior, and social networks are analyzed in details. It is shown that they have different characteristics compared to those common users.
+
+The rest part of this paper is organized as follows. In Sec- tion 2, the preliminaries of microblog services and duplicate detection methods are introduced. Our improved LSH-based duplicate detection algorithm along with its MapReduce implementation is introduced in Section 3. Section 4 is devoted to the detailed report of intensive study of the Sina Weibo dataset. After the introduction to related work in Section 5, the last section is for concluding remarks and discussion.
+
+It should be noted that the classification of spams, es-  4The terms of Twitter, the most popular microblogging service, is used in this paper.
+
+2013 IEEE International Congress on Big Data  DOI 10.1109/BigData.Congress.2013.27     pecially commercial spams, and advertisement is subjective.
+
+We do not distinguish them, and use the term spams to repre- sent all pieces of irrelevant, false, or malicious information.
+
+
+
+II. PRELIMINARIES  A. Microblogs  Terms used by Twitter is used in this paper. A tweet is a triple < ti, uj , c >, in which c is a piece of infomration shared by user uj at timestamp ti. A followship relationship is a binary (u, v), which means user u is following user v.
+
+Here, u is called the follower, while v is called the followee.
+
+Thus, all tweets shared by v would appear in u?s timeline, which is a reversely chronologically ordered list of tweets shared by any of u?s followees.
+
+The followship network is a directed graph G : (V,E), in which V is the set of all users, and E is the set of followship relationships. A user may retweet another tweet, whether it is first created by himself or other users. Thus, the retweet is a tweet < ti, u, c > with a pointer in c to another tweet < tj , v, c  ? >. It should be noted that the retweeted tweet itself may be a retweet too.
+
+Both the retweet and the retweeted one can be seen by followers of the author of the retweet. Therefore, if a user wants to share a piece of information created by another user, a more straightforwared and often easier way is just retweeting the original tweet, instead of copying and pasting the content of the original tweet and sharing the piece of information as a new tweet. Though there are chances that two users create identical tweets independantly, the possibility that most tweets of a user are coincidently the same as tweets from other users is low. Thus, duplicated content is an important clue for identifying suspicious users.
+
+B. Duplicate detection with locality-sensitive hashing  Duplicate detection is intensively studied for its wide application in information retrieval. Existing technologies can be used to find near duplicate pieces of documents[31].
+
+Note that sometimes there are minor differences between two documents, due to duplicator?s intention or accidental modifications. To be self-containment, the traditional dupli- cate detection method used in this paper is introduced in this subsection.
+
+Each tweet is first transformed into a word collection by using k-shingling[17]. A shingle in the word collection is a contiguous subsequence of tokens5 whose length is k in the tweet.
+
+The similarity of two word collections A and B are measured by Jaccard similarity, which is defined as:  J(A,B) = ?A ?B? ?A ?B? . (1)  5A token is a character if the tweet is written in Chinese, or a word if the tweet is written in English.
+
+Minhash[4], [5] is used to cluster similar tweets, i.e.
+
+tweets whose corresponding word collection have large Jaccard similarity, together. Given a hash function h on shingles, the minhash hmin(S) returns the minimum h(s) for any s ? S, where S is a word collection, i.e.
+
+hmin(S) = argmin s?S  h(s). (2)  An important property of minhash is that,  Pr[hmin(A) = hmin(B)] = J(A,B). (3)  Thus, given a set of independent hash functions h1, h2, . . . , hn, Algorithm 1 is used to generate minhash sig- nature. The signature can be used to approximate the Jaccard similarity. Given two collections A and B, if p = J(A,B), then the error of using signature of n minhash functions is? p (1? p) /n, which is bounded by 1/2?n.
+
+Algorithm 1 Generate minhash signature 1: INPUT: Shingle collection S, and hash functions hi, i = 1, 2, . . . , n 2: ONPUT: < hmin(1), hmin(2), . . . , hmin(n) > 3: for all i do 4: hmin(i)?? 5: end for 6: for all si ? S do 7: for all hj do 8: if hj(si) < hmin(i) then 9: hmin(i)? hj(si)  10: end if 11: end for 12: end for  To efficiently detect near duplicated tweets, given n min- hash functions, locality-sensitive hashing (LSH)[24], [30], [33] is used. LSH divides those n minhash functions into b bands, each of which contains r minhash functions. Each band is associated with a hash function that takes vectors with r elements and returns a number denoting a bucket.
+
+The probability that two tweets are hashed into same bucket by all bands is 1? (1? pr)b. The probability depicts an S- curve. Therefore, documents with the same LSH result are often treated as candidates of near duplicated ones.
+
+
+
+III. LSH WITH FILTERING  A. LSH with threshold  The probability of LSH collision has a sudden surge when Jaccard value is greater than or equal to (1/b)1/r.
+
+Though simply treating tweets with the same LSH result as duplicated one is simple and efficient, it may bring in errors.
+
+A more definite way, which is used in this paper, is filtering those tweets further based on their minhash similarity by using the threshold (1/b)1/r. Thus, only pairs of tweets whose minhash similarities are larger than the threshold are treated as duplicated ones.
+
+B. MapReduce implementation  MapReduce is a programming paradigm for development of data analytics tasks that need to be executed in parallel on clusters[9]. It has the advantage that developers do not need to take care of how the program is deployed and executed in nodes of the cluster, or the fault tolerance of the system.
+
+Only functions of a mapper and a reducer are need to be implemented. A mapper returns a set of < key, value > pairs, and may be deployed to be executed parallelly on several nodes in the cluster by the system, i.e. Hadoop, automatically. The system then shuffles all < key, value > pairs emitted by the mapper executions based on their key?s.
+
+All pairs with the same key are transmitted to the same node, where a reducer runs and processes all these pairs with the same key.
+
+Since the number of tweets that need to be processed for detecting duplications is quite large, our duplicate detection method is implemented based on MapReduce, or more specifically, Hadoop, an open source implementation of the MapReduce paradigm. The pseudocode of the implementa- tion is shown in Algorithm 2, 3, 4, and 5.
+
+Algorithm 2 Mapper of preprocessing 1: input: < key, value > in which:  key: file name; value: tweet file F 2: onput: {< key?, value? >} in which:  key?: length of a tweet; value?: < i, u(i), t, T > {tweet identifier, author, time, and tokens}  3: for all tweet Ti in F do 4: QJ ? eliminate symbols(Ti); 5: T ? {Q?J s k-shingles}; 6: key? ? ?T?; 7: value? ?< i, u(i), t, T >; 8: emit(< key?, value? >); 9: end for  Algorithm 3 Reducer of preprocessing 1: input: < key, value > in which:  key: length of a tweet; value: < i, u(i), t, T > 2: onput: {< key?, value? >} in which:  key?: length of a tweet; value?: < i, u(i), t, T > 3: for all < key, value > do 4: emit(< key, value >); {Do nothing.} 5: end for  Algorithm 4 Mapper of LSH indexing 1: input: < key, value > in which:  key: length of a tweet; value: < i, u(i), t, T > 2: onput: {< key?, value? >} in which:  key?: bucket number; value?: < i, t, key, T > 3: signature? minhash(T ); 4: key? ? LSH(signature); 5: emit(key?, < i, t, key, T >);  A trick, which was previoused used in [1], [2], is used in Algorithm 5 line 6 for further reducing the times of Jaccard  Algorithm 5 Reducer of LSH indexing 1: input: < key, value > in which:  key: bucket number; value: < i, ti, sizei, Ti > 2: onput: {< key?, value? >} in which:  key?: bucket; value?: duplicated tweets {The first tweet in it is not a duplication.}  3: I ? {i}; value? ? ?; 4: for all i remained in I in ascendant order of ti do 5: for all j remained in I , j ?= i do 6: if (sizei ? t) ? sizej ? sizei/t, {t = (1/b)1/r} then 7: if J(Ti, Tj) ? t then 8: value? ? value?  ? {j};  9: I ? I ? {j}; 10: end if 11: end if 12: end for 13: end for 14: emit(key, value?);  0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1 0.7  0.75  0.8  0.85  0.9  0.95   Precision  R ec  al l      k=2 k=3 k=4  Figure 1. Precision-recall plot of the improved LSH method with different parameter settings. For each k, there are six points in the curve, each, from left to right, represents the precision and recall value with b equals to 5, 10, 20, 30, 40, and 50.
+
+similarity computation. Intuitively, the Jaccard similarity between two sets Ti and Tj , whose size are sizei and sizej , while sizei ? sizej , is less than sizei/sizej . Thus, a tweet i is only possible to be a near duplication of another tweet j, when sizej is larger than sizei?J and less than sizei/J , where J is the threshold of Jaccard similarity for detecting duplications.
+
+C. Performance evaluation  The improved LSH-based duplicate detection method is evaluated over a sample of Sina Weibo dataset, which includes 483,749 tweets with labels, in which 174,998 tweets are duplicated ones.
+
+With n = 200 minhash functions, the performance over different parameter value combinations are tested. The result of precision-recall is shown in Figure 1. The number of charactors in a shingle, i.e. k, is set to be 2, 3, or 4, while     the number of bands, i.e. b, is set to be 5, 10, 20, 30, 40, or 50. It is shown that the method achieves high precision and recall simultaneously when k = 3 and b = 20. Thus, this parameter setting is used in the following study of social spamming.
+
+
+
+IV. SOCIAL SPAMS IN MICROBLOGS  A. Dataset and preprocessing  A dataset crawled from Sina Weibo via Sina Weibo API is used in this study. Our distributed crawler progressively crawls tweets, followship networks, and user profiles. The crawler begins from 32 seed users, who are opinion leaders and researchers. Then, the breadth-first search leads the crawler to 1.7 million users in the three-level followship network traversal. All tweets of these users posted before the end of February 2012 are collected. There are 649 million tweets in the dataset. We retrieve all 283, 204, 017 non-retweeted tweets from 1, 574, 332 users in the dataset, and use them as the source of duplicate detection. These tweets are sorted based on their published time, so that later tweets with duplicated content are considered as copied.
+
+Totally 14.7 million users are reached in four-level follow- ship network traversal. There are 1, 397, 243, 218 followship relationships retreived. Meanwhile, profiles of those users are also collected.
+
+Note that the dataset is not complete. Furthermore, items are not crawled from a static snapshot. Even though, the dataset is sufficiently large to depict the duplication phe- nomenon. The detail of the dataset and crawler is introduced in [25].
+
+Tweets are preprocessed before the duplicate detection is conducted. First, symbols such as @, for mensions, and ##, for hashtags, are eliminated. Shortened URLs are also re- moved. Furthermore, texts that generated by microblogging clients, such as ?Share Image?, are removed, so that those tweets will not be considered as duplicated ones. Smileyes are also deleted. In summary, symbols and content generated by the microblogging service itself, or client softwares, are removed from tweets, so that remaining texts are all composed by users.
+
+B. Duplicated tweets and potential spammers  The threshold of Jaccard similarity that two tweets are though to be near duplicated is set to 0.8, which means if two tweets share more than 80% of their 3-shinglings, they are treated as near duplicated ones. By using this criteria, 7.06% tweets in the dataset are duplicated ones of previous tweets.
+
+Different users have different number and ratio of du- plicated tweets. The distribution of duplicated tweets over users is shown in Table I. The users fit in the Duplicated and Severely-duplicated are treated as potential spammers, and labeled as Abnormal Users in the rest of this paper, since  Table I DISTRIBUTION OF DUPLICATED TWEETS OF DIFFERENT USERS.
+
+Duplication Ratio of Percentage level duplicated tweets of users Normal [0, 0.2) 88.2% Slightly duplicated [0.2, 0.4) 8.4% Duplicated [0.4, 0.6) 2.1% Severely duplicated [0.6, 1] 1.3%  there are a large number of tweets from them are copied from others.
+
+C. Characterizing duplicate spamming  A natural question is that whether the behaviors of those potential spammers are consistent with other normal users.
+
+The distribution of tweets over days in weeks, and hours in days, are shown in Figure 2. It is shown that the distribution of time that those tweets from abnormal users are posted is different from that of tweets from others. First, on Monday, while most normal users may be busy with work and spend less time in microblogging, those abnormal users post more tweets than other days in the week. Secondly, the percentage of tweets from abnormal users during 2:00am and 8:00am is much higher than those from normal users. It is because that some abnormal users are actually running by robots, and they do not rest at night.
+
+D. Characterizing duplicate spammers  The users are classified into five categories by hand. The categories are defined as follows:  ? Certified users These are users whose identities are certified by Sina Weibo Company. Thus, their real-life identities can be traced and obtained.
+
+? Robots These are accounts whose tweets are sent from robots.
+
+? Information aggregators These not-certified accounts mainly share news from media or rumors.
+
+? Marketing accounts These not-certified accounts mainly share jokes or pieces of information related to commercial activities.
+
+? Others All other users are classified into this category.
+
+The distribution of users over these categories is shown  in Figure 3. As expected, most robot accounts are abnormal users. It should be noted that some robots just post pieces information from other sources, such as Twitter, to Sina Weibo. Thus, they are not classified into abnormal users.
+
+Furthermore, for duplicated content, information aggregators are more welcome.
+
+The number of tweets over users is shown in Figure 4. It is interesting that the distribution of abnormal users perfectly fits a power-law distribution, while that of normal users does not. A possible explanation to this phenomena is that some normal users begin to use the Sina Weibo service later than others. Therefore, they have less tweets than expected. It     Mon Tues Wed Thur Fri Sat Sun  0.02  0.04  0.06  0.08  0.1  0.12  0.14  0.16  Day  #P er  ce nt  ag e(  N or  m al  iz ed  b y  W ee  k)      Normal User Abnormal User  (a)  0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23  0.01  0.02  0.03  0.04  0.05  0.06  0.07  Hour  #P er  ce nt  ag e(  N or  m al  iz ed  b y  D ay  )      Normal User Abormal User  (b)  Figure 2. Distribution of tweets over (a) days in weeks and (b) hours in days.
+
+0 1    In fo  ag gr  eg at  or  Ce rti  fie d  Ma rk  et in  g  Ro bo  t  Ot he  rs  (a)      Normal User Abnormal User          4 0       In fo  ag gr  eg at  or  Ce rti  fie d  Ma rk  et in  g  Ro bo  t  Ot he  rs  (b)      Normal User Abnormal User            17 17 17    In fo  ag gr  eg at  or  Ce rti  fie d  Ma rk  et in  g  Ro bo  t  Ot he  rs  (c)      Normal User Abnormal User          2 0 4   9 6    In fo  ag gr  eg at  or  Ce rti  fie d  Ma rk  et in  g  Ro bo  t  Ot he  rs  (d)     Normal User Abnormal User  Figure 3. Distribution of users over five categories. The distribution of users who have followers in the range of [100, 1, 000), [1, 000, 10, 000), [10, 000, 100, 000), and [100, 000, 1, 000, 000), are shown in (a), (b), (c), and (d), respectively.
+
+should also be noted that some abnormal users have an extremely large number of tweets. They are mainly robots.
+
+The distribution of followees and followers are shown in Figure 5. It is shown that abnormal users tend to have less followees, followers, and bi-followships. Figure 6 shows that abnormal users have much less bi-followship rate, even for those users have many followers.
+
+#Tweet  F re  qu en  cy      Abnormal User Normal User  Figure 4. Distribution of number of tweets.
+
+The clustering coefficient Ci of vertice vi is defined as  Ci = ?{ejk|eji, eki ? E, (ejk ? E or ekj ? E)}?  ?{vj |eji ? E}? . (4)  It can be used as a measurement of tightness of relation- ships of vertices in a graph. The distribution of clustering coefficient in box plot is shown in Figure 7. It is shown that abnormal users tend to have much less clustering coefficient for those who have many followers. Meanwhile, for those abnormal users who have very few followers, they have larger clustering coefficient. It is because that these users often form small communities and follow each other in the community.
+
+#Followee  F re  qu en  cy      Abnormal User Normal User  (a) Distribution of followees.
+
+#Follower  F re  qu en  cy      Abnormal User Normal User  (b) Distribution of followers.
+
+#Bi?Follow  F re  qu en  cy      Abnormal User Normal User  (c) Distribution of bi-followships.
+
+Figure 5. Distribution of followships.
+
+10 100 1000 10000 100000 1e+006  0.15  0.2  0.25  0.3  0.35  0.4  #Follower  C lu  st er  in g  C oe  ffi ci  en t  (a) Normal users  10 100 1000 10000 100000 1e+006  0.15  0.2  0.25  0.3  0.35  0.4  #Follower  C lu  st er  in g  C oe  ffi ci  en t  (b) Abnormal users  Figure 7. Distribution of clustering coefficient.
+
+#Followee  #B i?  F ol  lo w      Abnormal User(with #follower larger than 100000) Normal User(with #follower larger than 1000000)  Figure 6. Distribution of bi-followships over followees for users whose followers are more than 10, 000.
+
+
+
+V. RELATED WORKS  Duplicate detection has received much attention in the past several years. Near-duplicate detection has been an important research problem for more than a decade[5], [7], [16], [36]. There are two main issues to be considered when solving an duplication detection problem, i.e. effciency and accuracy. With the growth of web data, applications of duplication detection typically need to handle a very large collection of documents. Hence, previous studies on content duplication put more emphasis on efficiency than accuracy.
+
+Among extensive research work, hash-based methods were received more attention due to its ability of detecting duplication or near-duplication in high dimensional space.
+
+Zhang et al. proposed a new signature generation algorithm, which was based on learned hash functions for words.
+
+In order to deal with tens of billions of documents, they implemented the detection approach on graphical processing units (GPUs)[40]. Another novel approach was presented     that utilizes simhash[6], [16], [27] to find near-duplicates in large collections of documents. A probabilistic search technique in the Hamming space of simhashes was proposed in [34] that can be significantly faster and more space- effcient than the previous simhash approaches.
+
+Local-sensitive hashing (LSH) is adopted in this paper to detect duplications. LSH was proposed by P. Indyk and R.Motwani in 1998[17]. An efficient implementation was then proposed[12]. It is based on the idea that high similarity data would possibly keep similar even processed by hash function. LSH has been widely used in differ- ent applications, such as content-based similarity search engine[23], agglomerative hiearchical clustering[19], and similarity learning[15].
+
+Other methods for efficient and accurate duplicate detec- tion exist. Stop word n-gram method has been shown to be reliable for identifying similarity in the document level[35].
+
+A distributed filtering mechanism based on Bloom filters was proposed by Georgia Koloniari et al. to address the problem of large-scale duplicate-free delivery of events produced by distributed sources[20].
+
+Microblogging services are studied intensively in re- cent years[18], [21], [39], [41], [25]. Previous research in- cludes influence analysis[13], information diffusion network analysis[13], [41], and collective behavior study[41]. This paper focuses on a different microblog analysis problem, i.e. identifying social spammers in microblogs, which can also be treated as a preprocessing for further analytics over data from microblog.
+
+Social spamming has attracted increasing interests in research community. Features including tags, content, ads within pages, and links were used for detecting social spams in Delicious[28]. Content-based method using clustering techniques was proposed for social spam detection on the Facebook data[11]. A honeybot scheme was designed for harvesting social spams[22]. Features of spams were ana- lyzed based on data from Twitter and MySpace. Our research is different from existing reasearch work in that, we tend to identify those potential spammers. Thus, our work focuses on the behavior of those users, instead of the content of spams.
+
+
+
+VI. CONCLUSIONS AND DISCUSSION A duplicate detection based method is proposed for iden-  tifying potential social spammers in microblogs. It is shown that the method is effective to find users with different behaviors and social networking characteristics.
+
+Our future work includes the in-depth study of abnormal users with many duplicated tweets, and new methods for identifying spamming tweets based on both the content of tweets and the characteristics of authors.
+

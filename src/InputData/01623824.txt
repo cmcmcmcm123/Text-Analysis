@@ -1,0 +1,122 @@
+Estimating Top N Hosts in Cardinality Using Small Memory Resources
+
+Abstract  We propose a method to find N hosts that have the N highest cardinalities, where cardinality is the number of dis- tinct items such as the number of flows, ports, or peer hosts.
+
+The method also estimates their cardinalities.
+
+While existing algorithms to find the top N frequent items can be directly applied to find N hosts that send the N largest numbers of packets through packet data stream, find- ing hosts that have the N highest cardinalities requires ta- bles of previously seen items for each host to check whether an item of an arrival packet is new, which requires a lot of memory. Even if we use the existing cardinality estimation methods, we still need to have cardinality information about each host. In this paper, we use the property of cardinality estimation, in which the cardinality of intersections of mul- tiple data sets can be estimated with cardinality information of each data set. Using the property, we propose an algo- rithm that does not need to maintain tables for each host, but only for partitioned addresses of a host and estimate the cardinality of a host as the intersection of cardinalities of partitioned addresses. We also propose a method to find top N hosts in cardinalities which is to be monitored to detect anomalous behavior in networks.
+
+We evaluate our algorithm through actual backbone traf- fic data. While the estimation accuracy of our scheme de- grades for small cardinalities, as for the top 100 hosts, the accuracy of our algorithm with 4, 096 tables is almost the same as having tables of every hosts.
+
+1 Introduction  With an increasing number of threats against network se- curity, monitoring network traffic to detect anomalous be- havior has become a critical task in network operations.
+
+However, as traffic volume also increases significantly,  monitoring traffic becomes a difficult task because it re- quires a large amount of storage and processing resources.
+
+Data stream computation, where a data stream is pro- cessed a small number of times, has been studied to over- come this difficulty. In that type of computation, only a small amount of information about a data stream needs to be maintained to estimate statistical values such as mean and cardinality. Those calculations can be applied to monitor traffic on line on hardware devices that have small memory resources.
+
+One of the most basic applications of those data stream computations is finding the top N frequent items in the stream, such as finding the top N hosts who send/receive the N most number of packets through a packet data stream [1, 2, 3, 4, 5]. Finding the top N hosts in number of packets or traffic volume is important for basic traffic moni- toring and useful to detect changes in traffic sent/received by hosts [6]. However, it is insufficient to find anoma- lies whose traffic volume is not so large such as network or a port scans. To detect those anomalies, monitoring not only traffic volume but also traffic features or communica- tion patterns has been proposed recently [7, 8]. In monitor- ing traffic features or communication patterns, monitoring hosts? network behavior, such as the number of peer hosts, number of unique TCP/UDP ports, or number of flows sent by hosts is useful. By keeping top N ranking of hosts in those numbers and monitoring the change in the ranking and its value is useful to detect anomalies in a network that can- not be detected with traffic-volume-based monitoring. For example, a host that suddenly sends many flows is suspected of beginning a network/port scan. If a host suddenly sends packets to many peer hosts and then those hosts attack other server, the original host is suspected of being a controller of a botnet [9].
+
+However, counting the cardinality of a host?s set of items, such as peer hosts, ports, or flows, requires having a table of previously seen items to check whether an item of an arrival packet has been previously seen for each host. Thus,     to count the cardinality of each host, we must have tables of previously seen items for each host, which requires a huge memory resource, especially in monitoring high-rate (e.g., backbone) traffic.
+
+Meanwhile, in the area of data stream computation, car- dinality estimation has also been studied [10, 11, 12, 13].
+
+In those methods, we do not need tables of previously seen items; we only need a small amount of information on car- dinality of previously-seen item set, which we call the car- dinality summary as in [14] . By applying this method to estimate the cardinalities of hosts, tables of previously seen items for each host are not necessary. However, having a cardinality summary for each host is still required.
+
+There are some researches on finding hosts that have many flows or destination hosts [15, 16, 17]. In [15, 16], a hash based sampling is used to decrease the amount of data and the number of tables for hosts. However, with those sampling methods, the upper limit for the number of tables is not guaranteed. In [17], as same as our method, a 2-dimentional bit array corresponding to hash values of source host and a pair of souce and destination hosts is used.
+
+However, it is difficult for naive bitmap methods to esti- mate large cardinalities because of bitmap methods have the coupon collectors problem.
+
+Here, one of the properties of those estimations is that the cardinality of intersection or union of multiple data sets can be estimated with cardinality summaries of each data set, i.e., we do not need the cardinality summary of the in- tersection or union of data sets [14]. By using this prop- erty, we can estimate the cardinality of hosts without need- ing the cardinality summary of each host, only the cardi- nality summary of partitioned IP addresses is needed. For example, we can estimate the cardinality of a host whose IP address is 192.168.0.1, with cardinality summaries of parti- tioned addresses 192.*.*.*, *.168.*.*, *.*.0.*, and *.*.*.1.
+
+Therefore, we can reduce the number of required cardinality summaries significantly. In this paper, by using the above property, we propose a method that can find top N hosts in cardinalities and estimate their cardinalities with small memory resources.
+
+Our scheme cannot estimate small cardinalities caused by collisions of host addresses in a partitioned address.
+
+However, as for the top 100 hosts, our scheme is found to have almost same accuracy as having a cardinality summary for each host.
+
+In the rest of the paper, for simplicity, we use the number of flows sent by a host as an example of the cardinality of a host, but as described above, our method can also be used to estimate the cardinality of other sets such as peer hosts, ports, or application-level content such as URIs or mail ad- dresses sent by a host.
+
+The rest of the paper is organized as follows. In sec- tion 2, existing methods to estimate cardinality are briefly  described. We then propose an algorithm to estimate the cardinality of hosts with cardinality summaries of parti- tioned host addresses in section 3.1. We propose a method in section 3.2 to find the top N hosts in cardinalities of those hosts. Those top N hosts are maintained by having top N hosts table in addition to the cardinality summaries. In sec- tion 3.3, a modification of the method where host addresses are randomized or hashed to a wider range to avoid colli- sions in cardinality summaries is presented. In section 4, the proposed algorithm is evaluated with actual Internet back- bone data.
+
+2 Cardinality estimation  In this section, we briefly describe existing methods to estimate cardinality. The basic idea for these methods is to have information about cardinality for a data stream called a cardinality summary, which indicates probabilities of the occurrence of the items in the data stream. Then, with the probabilities, the number of unique items, cardinality, in the data stream is estimated.
+
+In [12], for example, Durand et.al proposes a log-log counting algorithm where each item in a data stream is hashed and the Position of First One-Bit (PFOB) of the hash value is picked up. For example, if the hash value of item x is expressed as 0001..., then the PFOB of x, ?(x), is 4. The first bit of the hash value is 1 with probability 0.5, and ?(x) is 1 with probability 0.5 if hash functions ran- domly transform an item to a hash value. On the other hand, the probability that a given ?(x) occurs is 1/2?(x). There- fore, the number of unique items in data stream D can be estimated with the maximum of PFOB (MPFOB) for D, m(D) := maxx?D ?(x), as roughly 2m(D). To increase accuracy, multiple MPFOBs are maintained and the aver- age value of MPFOBs is used in [12]. That is, picking the first k-bit string of a hashed value, using the k-bit string as the MPFOB identification number i, and picking the PFOB ?(x) from the rest of the bit string. Then, the cardinality is estimated by using MPFOBs mi(D), i = 1, ..., 2k, as  ?k ? 2k ? 21/2 k ?  i mi(D), (1)  where ?k is the bias adjustment factor expressed as fol- lows [12]:  ?k =  ( ?(?1/2k)2  ?1/2k ? 1 log(2)  )?2k . (2)  This estimator is reported as accurate especially for large cardinalities. On the other hand, because even if all MP- FOBs are zero, Eq. (2) is ?k ? 2k, Eq. (2) over-estimate for small cardinalities 1.
+
+1Actually, an algorithm called linear counting is used to estimate the     Here, one of the properties of those cardinality estima- tions is we can estimate the cardinality of intersectoins or unions of multiple data set with cardinality summaries of each data set [14]. For example, if we have MPFOBs of two data sets, A and B, {mi(A), mi(B)}{i=1,..,2k}, then the cardinality of A?B can be estimated by using max{m i(A), mi(B)} because mi(A ? B) = max{mi(A), mi(B)}.
+
+We can also estimate the cardinality of A ? B, because |A ? B| = |A| + |B| ? |A ? B|.
+
+3 Proposed method  3.1 Estimation of cardinality of hosts  We propose a method to estimate the number of flows sent by a host by using the property.
+
+To do this, we partition a host address, and maintain MP- FOB tables for each partitioned address. Here we describe the case in which a 32-bit IP address is partitioned into four 8-bit sub-addresses, that is the host address h is partitioned into {a1(h), a2(h), a3(h), a4(h)}.
+
+If we write f(A) as the number of flows sent by address set A, then the number of flow sent by host h, f(h), is ex- pressed as  f(h) = f(a1(h) ? a2(h) ? a3(h) ? a4(h)) = S1 ? S2 + S3 ? S4, (3)  where Sk = ?  1?i1<???<ik?4 f(ai1(h)?ai2 (h) ? ? ??aik (h)) (i.e. sum over all k-combinations of (1, 2, 3, 4)). Here, the number of flows sent by union of partitioned address sets f(ai1(h) ? ai2(h) ? ? ? ? aik(h)) is estimated with the MP- FOBs of each partitioned address aij (h) (j = 1, . . . , k) by taking maximum of those MPFOBs, thus we can estimate the number of flows f(h) by MPFOBs of each partitioned address.
+
+However, it is rather complex to compute Eq. (3), thus we show an alternative estimator, which is suited for our purpose; estimating large number of flows. Here if the number of flows sent by host h is equal or larger than that of all hosts belongs to one of partitioned addresses ai(h), 1 ? i ? 4, then the MPFOB of flows sent by ai(h) is the same as MPFOB of flows sent by h. Because MPFOBs of partitioned addresses cannot be smaller than that of h, in that case, by taking minimum of the MPFOBs of all parti- tioned addresses, we can estimate the number of flows sent by h. To find the top N hosts, we only have to estimate the larger number of flows. Thus, this estimation is expected to work for our purpose. Specifically, in our method, for each  small number flows [13]. The combination of log-log counting and linear counting is also proposed in [14]. However, we did not pursue an im- provement in accuracy in estimating a small number of flows because our purpose was to find the top N number of flows.
+
+MPFOB of Bucket ID 001(after)  0a1(h) (=192.*.*.*)  3a4(h) (= *.*.*.1)  5a3(h) (= *.*.10.*)  1a2(h) (= *.168.*.*)  MPFOB of Bucket ID 001 (before)  Partitioned Addresses      MPFOB of Bucket ID 001(after)  0a1(h) (=192.*.*.*)  3a4(h) (= *.*.*.1)  5a3(h) (= *.*.10.*)  1a2(h) (= *.168.*.*)  MPFOB of Bucket ID 001 (before)  Partitioned Addresses      Number of flows  10.0.0.11  127.0.0.14  192.168.10.13  10.0.0.32  AddressesRank      Number of flows  10.0.0.11  127.0.0.14  192.168.10.13  10.0.0.32  AddressesRank  Value change  Estimate (f(192.168.10.1)) = 150  Update MPFOB table  MPFOB table  Top N hosts table  Address=192.168.10.1, Hash(FlowID) = 00100100?..
+
+0 0 1 0 0 1 0 0?..
+
+Bucket ID = 001, r(p) = 3  k  Value change  Update Top N hosts table  Figure 1. Update procedure of MPFOB tables for arrival packet  arrival packet, p, MPFOB tables of the host are updated as follows (Fig. 1).
+
+UPDATE MPFOB TABLE Step 1: Hash flow information {SrcIP, DstIP, SrcPort, Dst-  Port, Protocol} of packet p.
+
+Step 2: Pick the first k-bit string of the hashed value as  MPFOB ID i and calculate the PFOB from the rest bit string as ?(p).
+
+Step 3: Update the MPFOBs mi(aj(h)) as mi(aj(h)) = max{mi(aj(h)), ?(p)}, (j = 1, . . . , 4), for each MPFOB ID i and for each partitioned address {a1(h), a2(h), a3(h), a4(h)} of source IP address h of packet p.
+
+Then, we use MPFOB tables to estimate the number of flows f(h) for a given host?s address, h, as follows.
+
+ESTIMATE Step 1: For each bucket ID i in 1, 2, . . . , 2k, let m?i (h) =  min{mi(a1(h)), mi(a2(h)), mi(a3(h)), mi(a4(h))} for partitioned address {a1(h), a2(h), a3(h), a4(h)} of host address h.
+
+Step 2: Calculate the estimate, f?(h), of f(h) as follows:  f?(h) = ?k ? 2k ? 2 2k  ?2k i=1  m?i (h). (4)  Thus, we can estimate the number of flows for each hosts with 2k ?28?4 MPFOB tables, which can be considerably smaller than 2k? ?number of all hosts? if we have MPFOB tables for each host.
+
+3.2 Finding top N hosts in number of flows  Next, we propose a method to maintain the top N hosts in the number of flows (Fig. 1).
+
+The proposed method maintains two types of tables: top N hosts and MPFOB tables for each partitioned address.
+
+The top N hosts table is updated based on the update of MPFOB tables as follows.
+
+UPDATE TOP N HOSTS TABLE Step 1: For each packet arrival, update MPFOB tables of  host h sending the packet according to the UPDATE MPFOB TABLE procedure.
+
+Step 2: If no values in the MPFOB table change, then the item of the packet is considered as being previously seen by the host of the packet, even if it is possible that actual number of flows changes. Nothing needs to be done with the top N tables. Return to Step 1.
+
+Otherwise, go to Step 3.
+
+Step 3: The flow of the packet is considered as new by the host, so we estimate the number of unique flows, car- dinality, of the host using ESTIMATE.
+
+Step 3.1: If h is found in the top N host tables, then update the estimated number of flows in the table.
+
+Step 3.2: If h is not found in the top N host tables and the estimated number of flows is larger than the estimated number of flows of hosts in the table, remove the host that has the least number of flows in the table and insert the host h to appropriate position.
+
+Our insights about the proposed top N estimation method are as follows.
+
+? As described in section 1, our purpose, which is crucial for anomaly detection, is to find the top N hosts in car- dinality and estimate the cardinalities of those hosts.
+
+Accuracy of our method increases as the number of flows increases, thus the method fits to our purpose.
+
+? The proposed method maintains MPFOB tables for partitioned addresses, or, as extended later in sec- tion 3.3, for hashed addresses, and it does not preserve  host address information. Therefore, using only MP- FOB tables, we cannot estimate the number of flows of a host but we need the host address to estimate the number of flows for the host. This drawback is the same as that of sketch-based counting, as pointed out in [18]. By having the top N flow tables in addition to MPFOB tables as in [2], we can overcome the draw- back.
+
+3.3 Randomization of host address  In our method, partitioned address collision causes es- timation error (over-estimation). For example, when the number of flows is 100 for hosts whose addresses are 192.0.0.5, 1.168.0.5, 1.1.10.5,, 1.1.1.1, then the method over-estimates the number of flows of host 192.168.10.1 as larger than 100, even if actual number is smallar than 100. In addition, because IP address have property of lo- cality, that is, addresses are concentrated to small portion of whole address space [19], it is expected that many addresses are concentrated to small number of first (8-bits) partitioned addresses, and probability of collision may become high.
+
+To overcome the problem, host address itself can be hashed so that it is randomized. In this hashing, we can hash 32 bit-length host address to wider range. Then we partition the hashed bit-string to l-length bit-string (we still call this bit string as partitioned address), and have MPFOB tables mi(aj(h)), j = 1, ..n for each partitioned address (n is the number of partition). By doing so , we can decrease the probability of collision, that is an address of other hosts is hashed to the same partitioned addresses. Here, there is a trade-off between the partitioned address size and the num- ber of partitions, with a fixed number of tables. The opti- mum choice of the address size is shown in the next section.
+
+3.4 Estimation error probability and optimum choice of partitioned address size  The choice of the number of partitions and partitioned address size is critical to increase accuracy with a given number of MPFOB tables. Thus, we evaluate the proba- bility of the estimation error of the method in terms of those parameters. Here, we focus only on the error that originates from the proposed partitioning method and ignore the er- ror that originates from log-log counting, which has been evaluated in [12].
+
+The partitioning method causes over-estimation error, because the method uses the minimum of the MPFOBs of partitioned addresses. That is, for a host h, if in all of the partitioned addresses of h, there are hosts that have a larger number of flows than that of h, then our method over-estimates the number of flows. In estimating the top N hosts, the probability that h, which is not in the top N     0.001  0.01  0.1   0 100 200 300 400 500  Partitioned address size  O ve  re st  im at  io n  pr ob  ab ili  ty  Figure 2. Probability of misidentififaction as top 100 hosts as function of partitioned ad- dresses size l  hosts but is misestimated as being in the top N hosts, p(l) is calculated as follows. For one partitioned address, the probability that at-least one host in the top N table has the same partitioned address as that of h is 1 ? (1 ? 1/l)N .
+
+Thus, for n partitioned addresses,  p(l) =  ( 1 ?  ( 1 ? 1  l  )N)n . (5)  Let l? be an l where p(l) is a minimum as l? := argminl p(l). Then, l? is independent of n and determined by only N . A plot of l vs. p(l) with N = 100, n = 4 and n ? l = 1024 is shown in Fig. 2. We find that p(l) takes its minimum at about l = 150. While finding l? ex- actly is difficult, by numerically evaluating l? for various N , we find that l? is nearly 1.44 ? N . Therefore, when N and the number of MPFOB tables, l ? n, are given, l should be determined as two powered by the nearest integer to log2(1.44 ? N).
+
+4 Evaluation  We evaluate our method with traffic data captured in an Internet backbone link. The data lasts 60 seconds, and there are 56,543 hosts. The maximum number of flows of hosts is 10,128, and the total number of flows is 684,855. We use the first 8 bits of a hashed flow ID as a MPFOB ID. Thus, we maintained 256 MPFOB tables for each partitioned address.
+
+We show a scatter plot of the actual number of flows and estimated number of flows sent by hosts on a log-log scale in Fig. 3. For comparison, we also show a result for the case where MPFOB tables are maintained for each IP address, not each partitioned addresses, as shown in ?Full addr?. As described in Eq. (2), log-log counting over-estimates the number of flows for all hosts smaller than ?k ? 2k. On the other hand, for hosts whose number of flows is larger than ?k ? 2k, the number of flows are estimated accurately.
+
+On the other hand, a naive proposed method where an MPFOB table is maintained with the original partitioned     1 10 100 1000 10000  No hash 256x4 256x16 1024x4 Full addr  E st  im at  ed n  um be  r of  fl ow  s  Actual number of flows  Figure 3. Scatter plot of actual and estimated values  address estimates the number of flows for a host inaccuratly (?No hash?). However, we found that accuracy increases by hashing the address (256?4 hash), and hashing to wider ranges (1024 ? 4 hash or 256 ? 16 hash), where in former case, addresses are hashed to 240 bit string and partitioned four 10 bit-string addresses, and in latter case, addresses are hashed to 128 bit string and partitioned 16 8 bit-string ad- dresses. (Thus in both cases, required number of MPFOB tables is 4,096.)  To evaluate the accuracy of finding top N hosts and es- timation of their cardinalities, we evaluate two measures, rank-miss ratio and root-mean square of relative error (RM- SRE) for estimated top N hosts. Former is the ratio of the number of hosts which is not in top N is mis-estimated as in top N , to N . Latter is the mean relative error of a number of flows and estimated one as:???? 1  N  N? i=1  ( ?f(hi) ? f(hi) f(hi)  )2 , (6)  where hi is the host that estiamted as top i by our method.
+
+Figs. 4, 5 show the results. In both figures, the re-  sults show similar trends. For higher ranked hosts, the accuracies of our method are the almost same as full ad- dress method (?Full addr?) and suddenly the accuracies get worse at some ranks. The ranks where the accuracy get worse depend on whether the address is hased or not, or for the case of hased address, depend on the paramters of the partitioned address size l and the number of partitions n. For l ? n = 4,096 cases, we compare four patterns; (l, n) = (2048, 2), (1024, 4), (512, 8), (256, 16). It can be found that for l = 256, or 512, we can achieve the same accuaries as ?Full addr?, within N ? 100. Recall that, for N = 100, l? ? 144 2. Through the results, it can be  2As a hash function, we use MD5, whose hash range is 128-bit, thus      0.1  0.2  0.3  0.4  0.5  1 10 100 1000 10000 TopN  R an  k m  is s  ra tio  1024x4 2048x2 256x16 256x4 512x8 Full addr No hash  Figure 4. Rank miss ratio  1.E-02  1.E-01  1.E+00  1.E+01  1.E+02  1.E+03  1.E+04  1 10 100 1000 10000  TopN  R M  S R  E  1024x4  2048x2  256x16  256x4  512x8  Full addr  No hash  Figure 5. Mean-root square of relative error  said that we can reduce the number of required tables from 56,543 to 4,096 if the objective is estimating the number of flows for top 100 hosts, which is useful to find network anomalies.
+
+5 Conclusion  In this paper, we propose a method that can estimate the find top N hosts in cardinality and estimate their cardinal- ities without having MPFOB tables for each host but with that for each partitioned host address. By doing so, we can reduce the required memory size. We evaluate our algo- rithm through actual backbone traffic data and show that using 4, 096 tables. the algorithm can find the top 100 hosts in cardinality with the same accuracy as having tables of every 56,543 hosts.
+
+Acknowledgements  This study was supported by the Ministry of Internal Af- fairs and Communications of Japan.
+

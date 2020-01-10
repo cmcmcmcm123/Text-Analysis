@@ -1,0 +1,182 @@
+A Parallel Algorithm for Approximate Frequent Itemset Mining using MapReduce
+
+Abstract?Recently, several algorithms based on the MapRe- duce framework have been proposed for frequent pattern mining in Big Data. However, the proposed solutions come with their own technical challenges, such as inter-communication costs, in- process synchronizations, balanced data distribution and input parameters tuning, which negatively affect the computation time. In this paper we present MrAdam, a novel parallel, distributed algorithm which addresses these problems. The key principle underlying the design of MrAdam is that one can make reasonable decisions in the absence of perfect answers. Indeed, given the classical threshold for minimum support and a user- specified error bound, MrAdam exploits the Chernoff bound to mine ?approximate? frequent itemsets with statistical error guarantees on their actual supports. These itemsets are generated in parallel and independently from subsets of the input dataset, by exploiting the MapReduce parallel computation framework.
+
+The result collections of frequent itemsets from each subset are aggregated and filtered by using a novel technique to provide a single collection in output. MrAdam can scale well on gigabytes of data and tens of machines, as experimentally proven on real datasets. In the experiments we also show that the proposed algorithm returns a good statistically bounded approximation of the exact results.
+
+Keywords?Map-Reduce, Frequent Itemset Mining, Chernoff Bound
+
+I. INTRODUCTION  Since its introduction by Agrawal et al. [1], frequent itemset mining has been one of the most popular and important tasks in data mining. Frequent itemset mining is an essential step in the process of association rule mining (ARM) and has been a focused theme in data mining research for over two decades. Abundant literature has been dedicated to this task and tremendous progress has been made.
+
+In this paper we are interested in the most computationally expensive phase of ARM, i.e., frequent itemset mining (FIM), during which the set of all frequent itemsets are extracted from a transactional database. Existing FIM algorithms such as Apriori [1] and FP-Growth [2], require that the dataset is centralized and memory-resident. Indeed, these techniques work well on small datasets, but are not suitable for Big Data. With the increase in size and with the distribution of available datasets, the computation involved in extracting frequent itemsets is demanding both in time and in space.
+
+Applying frequent itemset mining to large and distributed dataset is problematic.
+
+A typical algorithm scans the input dataset, often multiple times, and store intermediate counts of a large number of can- didate frequent itemsets [1], [2]. To speed up the computation, a significant number of algorithms have been investigated in the fields of Parallel and Distributed Data Mining [3]?[8].
+
+The computation and the data are distributed across several machines and then the local results are aggregated in order to extract a global result. However, these algorithms require data balancing/replication and the exchange of partial data among the computation nodes during the mining process.
+
+An alternative approach is to settle for an output that ap- proximate the exact solution with a user specified error bound.
+
+The key observation is that, one can make reasonable decisions in the absence of the exact collection of frequent itemsets, both in number and in frequency. Often, approximated results are sufficient, especially if obtained by greatly reducing the running time.
+
+In this paper we present MrAdam,a a parallel, distributed algorithm which mines an approximation of the collections of frequent itemsets. MrAdam does not require any interme- diate communication and synchronization during the mining process. The algorithm combines a statical approach based on the Chernoff bound (see Section III-A) and the MapReduce framework to run a mining algorithm on subsets of the input dataset independently and in parallel. The resulting collections of frequent itemsets from each subset are aggregated using an SE-tree data structure [9]. However, the output extracted using this approach is not equal to the result achievable from mining the frequent itemsets from the input dataset. It may miss several frequent itemsets which are infrequent in some subsets of the input dataset. This is true especially for long itemsets, i.e. itemsets composed by several items, and for low values of minimum frequency threshold. To face this issue we propose to apply an interpolation technique that, using the partial results stored in an SE-tree, estimates the frequency for itemsets which are infrequent for some subset.
+
+To the best of our knowledge MrAdam is the first algorithm  aAcronym of MapReduce version of A Distributed algorithm for Approximate frequent itemset Mining.
+
+to utilize this approach for the task of frequent itemset mining on Big Data. In particular given a minimum frequency thresh- old ?, a reliability parameter ?, and a dataset D partitioned to {D1, D2, . . . , Dn}, MrAdam define the following discovery process. First, for each Di the Chernoff bound is used to compute ?, that is, an estimation of the maximum bounded error for ?. Then, locally frequent itemsets with a support greater than or equal to (? ? ?) are mined using FP-Growth on computational nodes of MapReduce. Finally, the collection of globally frequent itemsets is approximated by analyzing locally discovered itemsets, and by using an interpolation technique to estimate the frequencies of the itemsets which are infrequent in some datasets. Leveraging on this process, MrAdam offers a probabilistic qualitative perspective of the approximated collection of itemsets returned as output. In par- ticular, it guarantees that the output is a (1??) approximation of the exact result.
+
+The rest of the paper is organized as follow. In section II we discuss the related works. In Section III we formalize the problem. Section IV describes the MapReduce computation framework. The proposed solution is illustrated in Section V.
+
+In Section VI we present and discuss the experimental results.
+
+Finally, we draw our conclusions in Section VII.
+
+
+
+II. RELATED WORK  A. Sequential Frequent Itemset Mining  Mining frequent itemsets with the sequential approach has been well-addressed in the last two decades. The first known frequent itemset mining algorithm is Apriori [1], [10], which was proposed in 1993. Apriori generates the candidate itemsets of length k from the set of already generated frequent itemsets of length k?1. This algorithm requires multiple database scans equal to the size of the maximum length of frequent itemsets in the worst case. Moreover, it requires a large amount of memory to handle the candidate itemsets, most of which will happen to be infrequent after scanning the database. Although a number of algorithms have been proposed for improving the performance of Apriori-based algorithms [7], [10], [11], none of them can solve the generic performance bottleneck of Apriori-based algorithms, especially when considering larger itemsets.
+
+To overcome the above problems, Han et al. [2] introduced the frequent itemset tree (FP-tree) and proposed the FP-Growth algorithm, which reduces the number of database scans to two and eliminates the requirement of candidate generation. With the first database scan, FP-growth finds the set of distinct items and their respective supports (i.e., frequency) in the database.
+
+Then, the algorithm summarizes the database in the form of a frequency-descending tree (i.e., the FP-tree) with the second database scan. Each node of the tree stores both an item and a count. The latter represents the number of transactions that contain all the items in the path from the root node to the current node. By ordering the items in each transaction according to the frequency-descending order, it achieves a  higher level of prefix sharing, thus reducing the size of the tree. The complete set of frequent itemsets is then generated from the FP-tree at no additional scanning cost by recursively applying a divide-and-conquer-based itemset growth approach.
+
+B. Parallel Frequent Itemset Mining  Several algorithms have been proposed in the literature to address the problem of frequent pattern mining in parallel and distributed environments. In 1999, Zaki [3] conducted a survey on association rule mining and its parallelization schemes.
+
+In [4], Agrawal and Shafer proposed three strategies (Count Distribution, Data Distribution, and Candidate Distribution), summarizing a wide spectrum of trade-offs between compu- tation, communication, memory usage, synchronization, and exploitation of problem-domain knowledge. Ashrafi et al. [5] and Orlando et al. [6] proposed further optimizations on the approaches introduced in [12]. The Partition algorithm in [7] focuses on efficiently partitioning large datasets. However, all of these algorithms still suffer from the Apriori limitations, as discussed above, since they are based on the Apriori principle.
+
+Inspired by the MapReduce framework proposed by Google [13] and the Hadoop implementation [14], several so- lutions based have been recently proposed for mining frequent itemsets. The Mahout Framework [15] provides MapReduce implementations for the most common data mining algorithms, which can be ran in the cloud using more than one hundreds processors and petabytes of memory. An adaption of the efficient FP-Growth algorithm to MapReduce, called PFP [16], is implemented in Mahout. Given a minimum frequency threshold, PFP operates as follows. Initially, it applies a parallel and distributed counting approach to compute frequent items, which are then randomly partitioned into groups. Sub- sequently, in a single MapReduce round, the entire dataset is read to generate group-dependent transactions. Each group is assigned to a reducer which build a local FP-Tree. The process continues iteratively by building conditional FP-Tree. This al- gorithm suffers from data replication, inter-communication and in-process synchronization problems. The number of group- dependent transactions generated for each single transaction is potentially equal to the number of groups. This means that the dataset may be replicated for each computational node, resulting in a huge amount of data to be sent to the reducers.
+
+Therefore, this approach may lead to high run time for syn- chronization and communication, which, due to the bandwidth, are the most expensive phases in a MapReduce algorithm.
+
+Several other solutions [17]?[20] looked at improving PFP and adapting Apriori to MapReduce. However, these algorithms incur in a huge data replication, given their aim of extracting the ?exact? set of the frequent itemsets.
+
+A different approach is proposed in [21], which discovers random subsets of the dataset and then returns an approxima- tion of the exact solution. The quality of the results largely depends on a number of parameters such as the number of samples, the number of transaction in the dataset, a user     defined error ?, a minimum probability ?, a d-index, a replica- tion parameter ?, and the type of the mapper used (Partition, Binomial, Coin Flipper, Input Sampler). Since tuning all these parameters is a demanding task, the authors provided a Matlab script to infer some of these parameters. However, for very large dataset, supporting the user with an optimal estimation of all these parameters is tricky. In contrast, MrAdam requires only a reliability parameter ? and then, using the Chernoff bound and the estimation function it returns an approximation of the frequent itemsets with probability (1? ?).
+
+
+
+III. PROBLEM FORMULATION AND DEFINITIONS  Let I = {i1, i2, ..., im} be the set of the items in a certain domain. A subset of I , i.e. an element of 2I , is called itemset.
+
+A k-itemset is an itemset with k items from I . A dataset D is a list of transactions where each transaction T is a subset of I . Given an itemset X, the support of X, sD(X), is the number of transactions in D containing X .
+
+Definition 1: Given a minimum frequency threshold ? (? ? [0, 1]) the task of Frequent Itemset Mining is to extract all the itemsets with frequency greater than or equal to ?, that is the set  FI(D, I, ?) = {(X, sD(X)) : X ? 2I ? sD(X) ? ? ? |D|} (1)  In our model a dataset D is composed of a list of sub- datasets (D1, D2, . . . , Dn). The model it is not balanced in the sense that the number of transactions in each Di may vary. The method we are proposing yield approximate results depending on a unique parameter ?. Indeed, MrAdam returns an approximation of the collection of the frequent itemsets with a probability (1 ? ?). This is obtained by analyzing the locally frequent itemsets with a support greater than or equal to (???) generated on the various computational nodes, where ? is an error derived from ? for each local dataset Di by means of the Chernoff bound.
+
+A. Chernoff bound  Let o1, o2, . . . , on be a sequence of n independent Bernoulli trials, with probability p of success (i.e. (1 ? p) of failure).
+
+Let X be the associated random variable with Binomial distribution (X ? B(n, p)) and r the number of successes in the n observations. The expectation of r is np. The Chernoff bound [22] states that, for any ? > 0,  Pr{|r ? np| ? np?} ? 2e ?np?2  2 (2)  Now, let r = r/n (r is known as running average), and consider the minimum support ? as the probability p. The above equation becomes:  Pr{|r ? ?| ? ??} ? 2e ?n??2  2 (3)  Furthermore, by replacing ?? with ?, we get:  Pr{|r ? ?| ? ?} ? 2e ?n?2 2? (4)  By denoting the right side of the equation 4 with ?, we can express ? in terms of ?:  ? =  ? 2? ln 2/?  n (5)  and we can state that the probability that the running average r is beyond ?? of ? is at most ?.
+
+By modeling the mining process as a Bernoulli distribution, the Chernoff bound can be usefully exploited for efficiently mining frequent itemsets from a distributed dataset D. Let Di be a subset of D such that |Di| ? |D|. Then for any itemset we can compute two distinct support values, namely sDi(X) and sD(X). By replacing r with sDi(X) and r with sD(X) in equation 3, we can state that, the support value of X at Di is beyond ?? to its value at D with probability at most ? (delta is called reliability parameter). Thus, the sDi(X) is within the interval [sD(X)? ?, sD(X)+ ?] with probability at least (1 ? ?). Thus, using the Chernoff bound we can derive an estimation of the maximum acceptable error ? that we can commit at each subset Di to mine all the frequent itemsets for D with probability at least (1? ?).
+
+Example 1: Let ? = 0.1, ? = 0.1, and |Di| = 6000 (i.e., n = 6000). Using the Chernoff bound we can derive the value 0.0099 for ?. The minimum support ? used for Di can be therefore modified based on ? value (?Si = ? ? ? = 0.1? 0.099) in order to discover the set of potential frequent itemsets with probability at least (1? ?).
+
+Consequently we can use the Chernoff bound to mine the locally frequent itemsets with a support at least (???) from the computational nodes. Moreover, in order to avoid the problem of multiple testing for the Chernoff bound, we compute the ? value only once as first step of the local mining process.
+
+
+
+IV. MAPREDUCE  Conceptually, MapReduce is a programming paradigm, promoted by Google [13], which allows for the analysis of very large datasets in a massively parallel manner on clusters of commodity hardware. The MapReduce programmer concentrates only on the logical definition of two functions map and reduce. Once these functions are defined, some implementation of the MapReduce framework (e.g., a com- ponent of Apache Hadoop [14]) uses the former to compute, concurrently, values for each data item, and the latter to reduce the values computed by the concurrent maps to a single value.
+
+More precisely, the input of algorithms defined through the MapReduce paradigm is defined as a sequence of ordered key-value pairs (k, v). The map function takes as input one key-value pair at time, and produces a finite multiset of pairs {(k1, v1), (k2, v2), . . . , (kn, vn)}. Let U be the multiset union of all the multisets produced by the map function when     applied to all input pairs. We can partition U into sets Uk indexed by a particular key k. Uk contains all and only the values v for which there are pairs (k, v) with key k produced by the function map. The reduce function takes as input a key k and the multiset Uk and produce another list {(k1, v1), (k2, v2), . . . , (kn, vn)}. The output of a reduce can be used as input for another map function. By definition the map function can be executed in parallel for each input pair.
+
+In the same way, the computation of the output of a reduce can be used as input for another map function. We denote the computational nodes executing the map function as mappers and those executing the reduce function as reducers.
+
+
+
+V. ALGORITHM  A high-level description of the MrAdam is reported in Algo- rithm 1. The input includes: i) a path of an HDFSb folder that contains the dataset D partitioned into {D1, D2, . . . , Dn}; ii) a minimum frequency threshold ?; iii) a reliability parameter ?. At line 1, the function map computes ? for each subset Di of D by using the Chernoff bound (see Section III-A), and then discovers all the itemsets whose frequency is at least (? ? ?). This computation is mapped independently to each computation node, thus it is executed in parallel. Each map outputs a collection of key value pairs, where each pair stores an itemset and its support count. At line 2, the results from the map phase are combined in order to obtain a collection of pairs where each key is an itemset and each value holds a list of support counts. Finally, at line 3, the partial results are aggregated and stored in an SE-tree. The collection of the globally frequent itemsets is approximated by exploring level by level the SE-tree and by using an interpolation function (see Definition 3) to estimate the frequency of the itemsets which are extracted by some map function.
+
+Algorithm 1: MrAdam input : HDFS folder path FD, minimum frequency  threshold ?, a reliability parameter ? output: FI , approximation of the set of exact frequent  itemsets  /* First Step - Chernoff Bound and FP-Growth */  1 KV ? MrAdam.Map(FD, ?, ?).Combine(key).Reduce();  2 FI ? MrAdam.Map(KV, ?, ?); /* outputs the frequent itemsets */  A. MrAdam: First Step  As showed in Figure 1, the first step involves first a map and then a reduce phase. The map phase takes as input a dataset Di, a minimum frequency threshold ? and a reliability  bThe Hadoop Distributed File System ( HDFS ) is a distributed file system designed to run on commodity hardware.
+
+Figure 1. An example of SE-tree built from the collection of items I = {1, 2, 3, 4}. The root is the empty set. The first level is composed by all the 1-items {1}, {2}, {3}, and {4}.
+
+parameter ? ? (0, 1]. Initially, the maximum acceptable error ? is computed on the basis of equation 5. Then, by calling FP-Growth [2], the collection of the frequent itemsets with frequency at least (?? ?) is generated. This guarantees that in the second step (see Subsection V-B), it is possible to generate the collection of the global frequent itemsets with probability at least (1 ? ?). Based on this we can give a definition of (? ? ?Di)-candidate frequent itemset.
+
+Definition 2: Let Di be a subset of D and ?Di the error ob- tained from equation 5. An itemset X is a (?, ?Di)-candidate frequent itemset if sDi(X) ? (? ? ?Di)? |Di|.
+
+MrAdam generates, for each subset Di, the set of (?, ?Di)- candidate frequent itemset with probability at least (1??). By varying the value of ? from 1 to 0 (not included), the subset is more deeply explored and MrAdam returns progressively larger sets of candidate itemsets which are globally frequent with probability at least (1 ? ?). Since the value of ? is computed by using the Chernoff bound, the execution time of FP-Growth is not negatively affected by this parameter, as in other methods presented in the literature. Indeed, also in PARMA [21] a value for ? is provided as input parameter, but it has to be properly tuned to achieve high quality results.
+
+In the reduce phase all the results from the parallel map phase are aggregated to generate a collection of key value pairs where each pair is in the form of (k, (v1, v2, . . . , vn)).
+
+B. MrAdam: Aggregation and Estimation  In the second round of the MapReduce workflow, MrAdam aggregates the result from the first phase to obtain an approx- imation of FI(D, I, ?) with probability at least (1? ?). This stage is composed by a single map phase that takes as input the collections of (k, (v1, v2, . . . , vn)) and builds an SE-tree.
+
+This data structure allows us to enumerate an ordered and finite collection of items. The ordering imposed on the items affects the parent/child relationship in the set-enumeration tree but not its completeness. Figure V-B presents an example of SE-tree built over the collections I = {1, 2, 3, 4}.
+
+Each node of the tree contains an itemset (i.e. a key k of the input collection) and a vector of support values, i.e. a value (v1, v2, . . . , vn) of the input collection. Once the SE-Tree is     Figure 2. This figure show how the exact collection of globally frequent itemsets monotonically decreases increasing the number k of computation nodes.
+
+built, the aggregation of the results begins by exploring the SE-Tree.
+
+The MrAdam baseline step consists in a breadth-first ex- ploration of a SE-Tree. In particular, for each node of the tree, MrAdam sums the support values stored in the node?s vector.
+
+Then it uses the sum value to test whether the itemset X is globally frequent, in which case, it adds X to the global frequent set and explores its children.
+
+Since the global support of each itemset is computed by summing the stored supports, the choice of a value for the reliability parameter ? affects the quality of the approximate result. More precisely, the precision of the baseline step is always 100%, while the recall has the minimum value for ? = 1 and the maximum value when ? approaches 0. As we will show in our experiments, the recall decreases as the number of computational nodes increases. Figure 2 presents an interesting representation of the problem. The ellipses with continue line represent the collections of the frequent itemset discovered by the baseline for different number of computation nodes, while the gray ellipse with dotted line illustrates the set of the globally frequent itemsets. By increasing the number of computational nodes (k = 1, . . . , n), the baseline outputs increasingly smaller subsets of the collection of the global frequent itemsets. Thus, to address this issue we use an interpolation technique that utilizes the valuable knowledge stored in the SE-tree to infer an approximate support for each itemset that is infrequent in a subset mined in the first stage (see Subsection V-A).
+
+Definition 3: (Structural Interpolated Support). Let S be an SE-tree, X a candidate frequent k-itemset that is infrequent on the subset Di, and P (X) the set of the (k?1)-subitemsets of X obtained by exploring the sub-set relations stored in S.
+
+Then the structural interpolated support of X for the dataset Di is defined as follows:  SIFDi(X) = min Y ?P (X)  sDi(Y ), (6)  The value computed from SIFDi(X) is accepted only if:  1) all the (k ? 1)-subitemsets of X are in FI(D, I, ?) and any of these itemsets is marked as approximated,  2) SIFDi(X) < ? ? |DBSi |.
+
+Otherwise, the interpolated support of X for Di is set to 0.
+
+Basing on Definition 3, we say that an itemset X is  a globally frequent approximated itemset if it is frequent according to its structural interpolated support. The third step of MrAdam, called MrAdamChernoff, returns all the globally frequent approximated itemsets with probability at least (1? ?).
+
+
+
+VI. EXPERIMENT  MrAdam has been implemented using the MapReduce version 2.2.0 of Hadoop. Its performance has been evaluated using a private Hadoop Cluster composed by 8 Virtual Ma- chines (VMs). Each VM is equipped with an Intel Xeon with 2.2GHz processor and 8GB of RAM memory. Moreover, we used a VM equipped with 32GB of RAM memory for further evaluations.
+
+The goals of our experiments are: (i) to study the runtime overhead introduced by running MrAdam on Hadoop with respect to (w.r.t.) running FP-Growth on a single server, (ii) to evaluate the performance of MrAdam with respect to its current competitors, and (iii) to evaluate the scalability of MrAdam in contrast to the other considered algorithms.
+
+While the goals (ii) and (iii) define obvious evaluation parameters of MrAdam, the (i) could be considered odd in the experimental evaluation of a ?Big Data? algorithm. However, in our opinion the results coming from this evaluation are quite interesting. At first, they show how the dataset size play a central role in the selection of a distributed vs. non-distributed algorithm. Then, they motivate why several alternative ap- proaches to MapReduce such as Apache Sparkc and Apache Stormd, have been recently introduced.
+
+TABLE I PROPERTIES OF THE REAL DATASETS USED FOR EXPERIMENTS.
+
+Dataset #transactions ? Mushroom 8.124 0.008 Pumsb 49.046 0.8 Accident 340.185 0.4 MushroomLarge 4.029.504 0.008 PumsbLarge 2.059.932 0.8 AccidentLarge 4.082.196 0.4  We conducted our empirical investigation by using real datasets presented at the Frequent Itemset Mining Implementa- tion workshop (FIMI) [23]. In particular, we used the datasets Mushroom, Pumsb and Accident. Table I shows the number of transactions and the minimum frequency thresholds used for the experiments. As it will be explained later, we also manually generated ?large? versions of the original datasets in order to test the scalability of the analyzed algorithms. We compared MrAdamBaseline (a baseline version of MrAdam), MrAdamChernoff, FP-Growth and PFP. Unfortunately, the comparison with PARMA has not been possible, since the original implementation of the algorithme throwed runtime  cApache Spark is a fast and general engine for large-scale data processing http://spark.apache.org/  dApache Storm is a distributed real time computation engine http://storm.
+
+incubator.apache.org/  ehttps://github.com/hltcoe/parma               1  2  3  4  5  6  7  8  T im  e (  s )  Computation Nodes  FPGrowth MrAdamBaseline  MrAdamChernoff(?=0.1) MrAdamChernoff(?=0.05) MrAdamChernoff(?=0.01)  PFP  Figure 3. Performance comparison on the Mushroom dataset.
+
+exceptions during the experimental analysis.
+
+A. Accuracy and Runtime  The accuracy of the algorithms has been evaluated by using the precision, recall and F-measure defined as follows:  precision = TP  TP + FP , recall =  TP  TP + FN , (7)  F ?measure = 2(precision? recall) precision+ recall  (8)  Thus, for each dataset we discovered the exact collection of the frequent itemsets by using the FP-Growth algorithm. Then, we compared the ?exact? collection against the ?approximate? ones returned by MrAdamBaseline and MrAdamChernoff.
+
+Figure 3 shows the running time (in seconds) for the Mush- room dataset. We observe that MrAdamBase has a running time comparable to FP-Growth. Moreover, the running time of MrAdamChernoff for ? = [0.1, 0.05, 0.01] increases with the number of computational nodes. Finally, PFP has a running time up to ten times higher than FP-Growth. These results are interesting because they show how much overhead is added by MapReduce and Hadoop in terms of running time (goal (i)).
+
+As regards the F-Measure (see Table II), we observe that it decreases linearly for MrAdamBaseline. The use of interpo- lated supports in MrAdamChernoff recovers around the 19% of frequent itemsets missed by the baseline method.
+
+TABLE II F-MEASURE VARYING THE COMPUTATION NODES FOR MUSHROOM.
+
+Algorithm 2 4 6 8 MrAdamBaseline 0.989 0.875 0.762 0.713 MrAdamChernoff(? = 0.1) 1 0.999 0.998 0.998 MrAdamChernoff(? = 0.05) 1 1 1 0.999 MrAdamChernoff(? = 0.01) 1 1 1 1  Similar results are observed for the Pumsb dataset (see Figure 4 and Table III). Again, the running time of PFP is negatively affected by the number of computational nodes.
+
+TABLE III F-MEASURE VARYING THE COMPUTATION NODES FOR PUMSB.
+
+Algorithm 2 4 6 8 MrAdamBaseline 0.964 0.942 0.928 0.871 MrAdamChernoff(? = 0.1) 1 1 1 1 MrAdamChernoff(? = 0.05) 1 1 1 1 MrAdamChernoff(? = 0.01) 1 1 1 1            1  2  3  4  5  6  7  8  T im  e (  s )  Computation Nodes  FPGrowth MrAdamBaseline  MrAdamChernoff(?=0.1) MrAdamChernoff(?=0.05) MrAdamChernoff(?=0.01)  PFP  Figure 4. Performance comparison on the Pumsb dataset.
+
+A different trend is outlined by the experiment conducted on the Accident dataset, which has 340,185 transactions. Figure 5 shows that MrAdam clearly outperforms both FP-Growth and PFP. Moreover, while for MrAdam the execution time de- creases when the number of computational nodes increases, the computation time of PFP is negatively affected by the number of computational nodes. As regards the F-Measure, Table IV strengthen the fact that the approach used in MrAdamChernoff can recover several missed global frequent itemsets.
+
+TABLE IV F-MEASURE VARYING THE COMPUTATION NODES FOR ACCIDENT.
+
+Algorithm 2 4 6 8 MrAdamBaseline 0.991 0.983 0.979 0.965 MrAdamChernoff(? = 0.1) 1 0.999 0.999 0.999 MrAdamChernoff(? = 0.05) 1 0.999 0.999 0.999 MrAdamChernoff(? = 0.01) 1 0.999 0.999 0.999            1  2  3  4  5  6  7  8  T im  e (  s )  Computation Nodes  FPGrowth MrAdamBaseline  MrAdamChernoff(?=0.1) MrAdamChernoff(?=0.05) MrAdamChernoff(?=0.01)  PFP  Figure 5. Performance comparison on the Accident dataset.
+
+1  2  3  4  5  6  7  8  T im  e (  s )  Computation Nodes  FPGrowth MrAdamBaseline  MrAdamChernoff(?=0.1) MrAdamChernoff(?=0.05) MrAdamChernoff(?=0.01)  PFP  Figure 6. Performance comparison on the MushroomLarge dataset with 4.029.504 of transactions.
+
+1  2  3  4  5  6  7  8  T im  e (  s )  Computation Nodes  FPGrowth MrAdamBaseline  MrAdamChernoff(?=0.1) MrAdamChernoff(?=0.05) MrAdamChernoff(?=0.01)  PFP  Figure 7. Performance comparison on the PumsbLarge dataset.
+
+The above results point out that the dimension of the dataset is a key factor to gain advantage from MapReduce as stated in the goal (i) of the experimental evaluation. This is confirmed by further experiments conducted for the ?large? datasets presented in Table I. The running time for the ?large? versions of the three databases is reported in Figures 6, 7 and 8. MrAdam is up to ten times faster than FP-Growth and up to one hundred times faster than PFP. While PFP suffers from the data replication problem, as discussed in [17], [21], MrAdam solves this issue by mining an approximation of the collections of frequent itemsets. Finally Tables V, VI, VII confirm that the interpolated support used in MrAdamChernoff is effective in reducing the number of missed global frequent itemesets (from 8% to 19%, depending on the dataset).
+
+TABLE V F-MEASURE VARYING THE COMPUTATION NODES FOR  MUSHROOMLARGE.
+
+Algorithm 2 4 6 8 MrAdamBaseline 0.987 0.924 0.863 0.782 MrAdamChernoff(? = 0.1) 1 0.969 0.943 0.910 MrAdamChernoff(? = 0.05) 1 0.993 0.985 0.981 MrAdamChernoff(? = 0.01) 1 1 1 0.991  TABLE VI F-MEASURE VARYING THE COMPUTATION NODES FOR PUMSBLARGE.
+
+Algorithm 2 4 6 8 MrAdamBaseline 0.962 0.948 0.918 0.901 MrAdamChernoff(? = 0.1) 1 1 1 0.988 MrAdamChernoff(? = 0.05) 1 1 1 0.984 MrAdamChernoff(? = 0.01) 1 1 1 0.981        1  2  3  4  5  6  7  8  T im  e (  s )  Computation Nodes  FPGrowth MrAdamBaseline  MrAdamChernoff(?=0.1) MrAdamChernoff(?=0.05) MrAdamChernoff(?=0.01)  PFP  Figure 8. Performance comparison on the AccidentLarge dataset.
+
+B. Scalability  The scalability of MrAdam is evaluated by running the algorithm on 20, 30, and 40 computational nodes. Results are compared with those of PFP for the same number of computational nodes. Figure 9 gives evidence of the opposite trends shown by MrAdam and PFP. While the running time of the former decreases with the number of computational nodes, the execution time of PFP increases linearly. MrAdam is always faster than PFP. Moreover, Table VIII shows that the accuracy of MrAdamChernoff remains high, with an F- measure close to 0.99 (up to 0.995 for 40 computational nodes). Therefore, MrAdam does not suffer from the data replication problem as PFP and returns a good approximation of the ?exact? set of globally frequent itemsets.
+
+
+
+VII. CONCLUSIONS  In this paper we present MrAdam, a novel algorithm for frequent itemset mining from Big Data using MapReduce.
+
+TABLE VII F-MEASURE VARYING THE COMPUTATION NODES FOR ACCIDENTLARGE.
+
+Algorithm 2 4 6 8 MrAdamBase 0.991 0.988 0.977 0.947 MrAdamCh(? = 0.1) 1 1 1 1 MrAdamCh(? = 0.05) 1 1 1 1 MrAdamCh(? = 0.01) 1 1 1 1  TABLE VIII F-MEASURE VARYING THE COMPUTATION NODES FOR ACCIDENTLARGE.
+
+Algorithm 10 20 30 40 MrAdamCh(? = 0.01) 0.99995 0.9993 0.9989 0.9959             0  5  10  15  20  25  30  35  40  T im  e (  s )  Computation Nodes  FPGrowth MrAdamChernoff(?=0.01)  PFP  Figure 9. Performance comparison of MrAdamChernoff(? = 0.01) w.r.t.
+
+PFP and FP-Growth for an increasing number of computational nodes.
+
+Given a path of an HDFS folder that contains the dataset D partitioned into n subsets {D1, D2, . . . , Dn}, a minimum threshold ? and a reliability parameter ?, MrAdam first com- putes an error bound ? of ? for each dataset Di. Then, it generates in parallel the sets of itemsets locally frequent to each Di. Finally, it approximates the collection of the globally frequent itemsets by aggregating the itemsets discovered at the first stage and by applying an interpolation technique to estimate the frequencies of the itemsets which are infrequent in some dataset Di. MrAdam does not require any time- consuming communication and synchronization activity, and experiments on a range of datasets of different size (from 68,125 to 4 million of transactions) have demonstrated that it scales well and can be from 2 to 100 times faster then PFP and FP-Growth. Experiments also proved that MrAdam returns a good approximation of the ?exact? results, thus confirming its actual applicability in a Big Data context.
+

@@ -1,0 +1,106 @@
+Parallel Auto-encoder for Efficient Outlier Detection Yunlong Ma, Peng Zhang, Yanan Cao, Li Guo
+
+Abstract?Detecting outliers from big data plays an important role in network security. Previous outlier detection algorithms are generally incapable of handling big data. In this paper we present an parallel outlier detection method for big data, based on a new parallel auto-encoder method. Specifically, we build a replicator model of the input data to obtain the representation of sample data. Then, the replicator model is used to measure the replicability of test data, where records having higher reconstruction errors are classified as outliers. Experimental results show the performance of the proposed parallel algorithm.
+
+Index Terms?outlier detection, parallel auto-encoder, replica- tor neural network, Map-Reduce.
+
+
+
+I. INTRODUCTION In data mining and statistics, outliers refer to observation-  s/samples that are numerically distant from the rest of the data.
+
+Outliers often contain important information underneath, and thus play a key role in network security applications, such as fraud detection, network intrusion detection, to name a few.
+
+Based on the detection approaches, existing methods can be roughly classified as distance-based, density-based and others.
+
+A popular approach to detect outliers is to estimate probability distributions of training data, where a replicator model is constructed from training data [1].
+
+Auto-encoder [2] has been popularly used to learn effi- cient codings, which actually generate a replicator model [3].
+
+However, auto-encoder cannot process large-scale data sets efficiently, due to its serial implementation. In this paper, we present a Parallel Outlier Detection method based on Auto- encoder (PODAE for short). To the best of our knowledge, this is the first work to parallelize auto-encoder to meet the needs of detecting outliers from big data.
+
+
+
+II. AUTO-ENCODER An auto-encoder is an artificial neural network used for  learning efficient codings [4], which aims to learn a com- pressed representation (encoding) from a data set. It is a powerful tool for dimension reduction, and a basic tool in deep learning. As shown in Fig. 1, an auto-encoder generally contains three layers:  1) An input layer, where the neurons correspond to ele- ments of an input record.
+
+2) Hidden layers, which encodes the input record by map- ping/compressing functions.
+
+3) An output layer, where each neuron shares the same meaning as the input layer.
+
+The optimal solution to an auto-encoder is strongly related to PCA, if linear neurons are used or there is only one  Fig. 1. The three-layer auto-encoder with 6 input neurons, the output layer shares the same number of neurons with the input layer, where each neuron represents the same meaning. The size of the hidden layer is 3, where the input sample is compressed to a hidden representation.
+
+If the hidden activation function is linear and the mean square error is adopted, auto-encoder is similar to PCA.
+
+sigmoid hidden layer. Auto-encoders can also be used to learn overcomplete feature representations of data.
+
+The training of auto-encoder consists of two steps, encoding and decoding. In the encoding step, input data x ? [0, 1]d are mapped to a hidden representation y ? [0, 1]d? through a deterministic mapping function, as in Eq.(1),  y = s(Wx + b) (1)  where s is a non-linear operator, e.g., the sigmoid function, and y is the latent representation (code). Then, y is mapped back into a reconstruction x? of the same shape as x through a similar transformation, as in Eq.(2),  x? = s(W?y + b?) (2)  In the decoding step, the auto-encoder is optimized by min- imizing the average reconstruction error which can be mea- sured in many ways. The measure depends on the probability distribution of the dataset. For example, when the probability distribution is Gaussian, we can use the traditional squared error, in Eq.(3), as the measure,  L(x, x?) =? x? x? ?2 (3) If the input record can be interpreted as either bit vectors  or vectors of bit probabilities, the reconstruction error can be defined as in Eq.(4),      L(x, x?) = ? d?  k=1  [xk log x?k + (1? xk) log(1? x?k)] (4)  If there is only one linear hidden layer, and the mean square error is used to train the coding, then the k hidden units project the input data onto the span of the first k principal components of the data. If the hidden layer is non-linear, auto-encoder can learn multi-model aspects of the input data.
+
+Since y can be viewed as a lossy compression of x, the method generally cannot learn a perfect representation for all x. The auto-encoder derives low reconstruction error, if test and training samples share the same distribution. On the other hand, high reconstruction error can be view as an outlier.
+
+Therefore, auto-encoder is actually a replicator model, which is trained by replicating the output dataset with the training dataset. The replicability of testing dataset reflects the outliers in data sets, which can be taken as a practical measure to detected outliers.
+
+
+
+III. OUTLIER DETECTION BASED ON PARALLEL AUTO-ENCODER  We aim to learn a representation by training a replicator model of input data. In case that test data share the same dis- tribution with training data, our method can accurately locate outliers in the test data by ranking the reconstruction error, which can be measured based on the probability distribution of the training data.
+
+Algorithm 1 gives the pseudo code of PODAE. In the first two steps, we randomly partition the training set to k comput- ing units. From Line 3 to 11, we process on each computing unit in parallel. In each unit, we randomly shuffle the data, and access data sequentially, such that we can calculate the stochastic gradient descent in parallel [5]. In Line 12, we obtain the encoding and decoding parameters by aggregating results from all computers. It?s easy to parallel computing the reconstruction error of each testing record Line 13 to 16, and reorder the outlier factors in descending order employing sorting mechanism of the Apache Hadoop Framework (Line 17). At the last step, we evaluate the detecting performance by comparing the precision, recall rate and F1 measure.
+
+
+
+IV. EXPERIMENTS  We validate the performance of the proposed algorithm on both a synthetic data set and two public data sets, i.e., the Wisconsin Breast Cancer data, and KDD Cup 1999 network intrusion data. We generate a large data set by following mixture Gaussian distributions. The experiments are conducted on a distributed cluster with 32 cores and 40GB memory computing resources. The Apache Hadoop version is 1.0.4.
+
+1) Accuracy: We compare the precision, recall and F1 measures of the top p percentage of the ranked records. From Fig. 2, we can observe that for both synthetic and real-world data sets, the proposed algorithm can detect almost all the outliers in the top 15% ranked records, and the top 10%  Algorithm 1 The PODAE algorithm Input: Training set {xi|xi ? Rd, i = 1, ? ? ? ,N}, Testing set ({x?j , lj)|x?j ? Rd, lj ? R, j = 1, ? ? ? ,N?}, Learning rate ?, number of computing units k.
+
+Output: A descending output set ranked according to reconstruction error.
+
+1) Define T = ?N/k?.
+
+2) Randomly partition the training set, giving T examples  to each computing unit.
+
+3) for all i ? {1, . . . , k} parallel do 4) Randomly shuffle the data on unit i.
+
+5) Initialize encoding and decoding parameter ?i,0, ??i,0.
+
+6) for all t ? {1, . . . , T} do 7) Get the tth example on the ith unit xi,t, 8) ?i,t ? ?i,t?1 ? ???J(?i,t?1;xi,t),  9) ??i,t ? ??i,t?1 ? ???J(??i,t?1;xi,t).
+
+10) end for 11) end for 12) Aggregate from all computing units ? = 1k  ?k i=1 ?i,t,  ?? = 1k ?k  i=1 ? ? i,t.
+
+13) for all n? ? {1, . . . ,N?} parallel do 14) Calculate testing output x??.
+
+15) Obtain reconstruction error OFj = 1d  ?d i=1(x  ? ji ?  x??ji)2.
+
+16) end for 17) Parallel do: reorder OF in descending order.
+
+18) Compute precision, recall and F1 measure.
+
+are almost one hundred percent abnormal. Moreover, the F1 measure is very close to 1. Thus, we can safely say that the proposed algorithm has a good detection performance.
+
+2) Scalability: We test the scalability of the proposed al- gorithm w.r.t. three evaluation criterions, i.e., speedup, scaleup and sizeup [6].
+
+Speedup: To measure the speedup, we keep the dataset  (a) Synthetic data (b) Subset of the KDD Cup dataset  Fig. 2. Testing precision, recall and F1 measure on some datasets.
+
+The horizontal axis is the percentage of the total testing dataset, in a descending order according to the reconstruction error. The vertical axis indicates the precision, recall and F1 measure value of outliers detected in various percentage. The proposed method could detect almost all of the outliers in the top 15% of the ranked records.
+
+(a) Speedup (b) Scaleup (c) Sizeup  Fig. 3. Performances w.r.t. speedup, scaleup, sizeup. When the dataset is small, the speedup value is not very significant, when the dataset increases to a certain degree, there will be a near-linear speedup with the dataset increasing. As the dataset becomes larger, the scalability drops marginally.
+
+The algorithm always maintains a scaleup higher than 82%. When more computing cores are available, the sizeup decreases significantly.
+
+unchanged and increase the number of cores in the computing system. More specifically, we firstly apply the proposed al- gorithm in a system consisting of 4 cores, and then gradually increase the number. The number of cores varies from 4 to 32.
+
+We also test on different sizes of datasets, from 4 million to 64 million. The speedup given by the larger computing resource with m cores is measured as:  Speedup(m) = run-time on 1 core  run-time on m cores (5)  Scaleup: Scaleup measures the ability to growth with both the clustering system and the dataset size, the larger the better.
+
+The scaleup metric defines the ability of an m-times larger system to perform an m-times larger job as the original system.
+
+Scaleup(data,m) = run-time for processing data on 1 core  run-time for processing m*data on m cores (6)  Sizeup: Sizeup is to hold the number of cores unchanged in the clustering, and increasing the dataset size. It measures how much longer it takes on a given system, when the dataset size is m-times larger than the original dataset. It is defined as follow:  Sizeup(data,m) = run-time for processing m*data  run-time for processing data (7)  Fig. 3 shows the detailed performances.
+
+It can be seen from Fig. 3(a) that, when the dataset is small,  such as 4 and 8 million, the speedup is not very significant due to the communication time among nodes and time occupied by fault-tolerance. Therefore, we should assign more tasks in local machines to decrease the rate of communication cost.
+
+However, as dataset size increases, computing time will take up the main part, leading to a good speedup performance.
+
+In Fig. 3(b), we can observe that as the data set becomes larger, the scalability drops slowly. It always maintains a value of scaleup higher than 82%, which means the proposed algo- rithm can process larger scale datasets when more computing resources are available.
+
+When the computing resources is small such as 4 and 8 cores, the sizeup performances change marginally. However, as more computing resources are available, the sizeup on 16  or 32 cores decreases significantly, due to the reduction of the computing time on each core and hence the total time decreases. As a result, communication and other costs take up greater weight. The sizeup performance is shown in Fig. 3(c).
+
+
+
+V. CONCLUSIONS  In this paper, we present an efficient outlier detection method for big data based on the parallel auto-encoder al- gorithm. By randomly partitioning the training set into com- puting units, we can use stochastic gradient descent in parallel on each computing unit. Then, by aggregating results from all units, we can obtain the hidden representations of the training set. The trained model is used to measure the replicability of test data, where records with higher reconstruction errors are outliers. Experimental results show the performance of the proposed algorithm.
+

@@ -1,0 +1,258 @@
+Distributed Column Subset Selection on MapReduce
+
+Abstract?Given a very large data set distributed over a cluster of several nodes, this paper addresses the problem of selecting a few data instances that best represent the entire data set. The solution to this problem is of a crucial importance in the big data era as it enables data analysts to understand the insights of the data and explore its hidden structure. The selected instances can also be used for data preprocessing tasks such as learning a low-dimensional embedding of the data points or computing a low-rank approximation of the corresponding matrix. The paper first formulates the problem as the selection of a few representative columns from a matrix whose columns are massively distributed, and it then proposes a MapReduce algorithm for selecting those representatives. The algorithm first learns a concise representation of all columns using random projection, and it then solves a generalized column subset selection problem at each machine in which a subset of columns are selected from the sub-matrix on that machine such that the reconstruction error of the concise representation is minimized. The paper then demonstrates the effectiveness and efficiency of the proposed algorithm through an empirical evaluation on benchmark data sets.
+
+Keywords-Column Subset Selection; Greedy Algorithms; Dis- tributed Computing; Big Data; MapReduce;
+
+I. INTRODUCTION  Recent years have witnessed the rise of the big data era in computing and storage systems. With the great advances in information and communication technology, hundreds of petabytes of data are generated, transferred, processed and stored every day. The availability of this overwhelming amount of structured and unstructured data creates an acute need to develop fast and accurate algorithms to discover useful information that is hidden in the big data. One of the crucial problems in the big data era is the ability to represent the data and its underlying information in a succinct format.
+
+Although different algorithms for clustering and dimen- sion reduction can be used to summarize big data, these algorithms tend to learn representatives whose meanings are difficult to interpret. For instance, the traditional clustering algorithms such as k-means [1] tend to produce centroids which encode information about thousands of data instances.
+
+The meanings of these centroids are hard to interpret. Even clustering methods that use data instances as prototypes, such as k-medoid [2], learn only one representative for each cluster, which is usually not enough to capture the insights of the data instances in that cluster. In addition, using medoids as representatives implicitly assumes that the  data points are distributed as clusters and that the number of those clusters are known ahead of time. This assumption is not true for many data sets. On the other hand, traditional dimension reduction algorithms such as Latent Semantic Analysis (LSA) [3] tend to learn a few latent concepts in the feature space. Each of these concepts is represented by a dense vector which combines thousands of features with positive and negative weights. This makes it difficult for the data analyst to understand the meaning of these concepts.
+
+Even if the goal of representative selection is to learn a low-dimensional embedding of data instances, learning dimensions whose meanings are easy to interpret allows the understanding of the results of the data mining algorithms, such as understanding the meanings of data clusters in the low-dimensional space.
+
+The acute need to summarize big data to a format that appeals to data analysts motivates the development of dif- ferent algorithms to directly select a few representative data instances and/or features. This problem can be generally formulated as the selection of a subset of columns from a data matrix, which is formally known as the Column Subset Selection (CSS) problem [4], [5], [6]. Although many algo- rithms have been proposed for tackling the CSS problem, most of these algorithms focus on randomly selecting a subset of columns with the goal of using these columns to obtain a low-rank approximation of the data matrix. In this case, these algorithms tend to select a relatively large number of columns. When the goal is to select a very few columns to be directly presented to a data analyst or indirectly used to interpret the results of other algorithms, the randomized CSS methods are not going to produce a meaningful subset of columns. One the other hand, deterministic algorithms for CSS, although more accurate, do not scale to work on big matrices with massively distributed columns.
+
+This paper addresses the aforementioned problem by presenting a fast and accurate algorithm for selecting a very few columns from a big data matrix with massively distributed columns. The algorithm starts by learning a concise representation of the data matrix using random projection. Each machine then independently solves a gen- eralized column subset selection problem in which a subset of columns is selected from the current sub-matrix such that the reconstruction error of the concise representation is minimized. A further selection step is then applied to   DOI 10.1109/ICDM.2013.155     the columns selected at different machines to select the required number of columns. The proposed algorithm is designed to be executed efficiently over massive amounts of data stored on a cluster of several commodity nodes.
+
+In such settings of infrastructure, ensuring the scalability and the fault tolerance of data processing jobs is not a trivial task. In order to alleviate these problems, MapReduce [7] was introduced to simplify large-scale data analytics over a distributed environment of commodity machines.
+
+Currently, MapReduce (and its open source implementation Hadoop [8]) is considered the most successful and widely- used framework for managing big data processing jobs.
+
+The approach proposed in this paper considers the different aspects of developing MapReduce-efficient algorithms.
+
+The contributions of the paper can be summarized as follows: ? The paper proposes an algorithm for distributed Col-  umn Subset Selection (CSS) which first learns a con- cise representation of the data matrix and then selects columns from distributed sub-matrices that approximate this concise representation.
+
+? To facilitate CSS from different sub-matrices, a fast and accurate algorithm for generalized CSS is proposed.
+
+This algorithm greedily selects a subset of columns from a source matrix which approximates the columns of a target matrix.
+
+? A MapReduce-efficient algorithm is proposed for learn- ing a concise representation using random projection.
+
+The paper also presents a MapReduce algorithm for distributed CSS which only requires two passes over the data with a very low communication overhead.
+
+? Large-scale experiments have been conducted on benchmark data sets in which different methods for CSS are compared.
+
+The rest of the paper is organized as follows. Section II describes the notations used throughout the paper. Section III gives a brief background on the CSS problem. Section IV describes a centralized greedy algorithm for CSS, which is the core of the distributed algorithm presented in this paper.
+
+Section V gives a necessary background on the framework of MapReduce. The proposed MapReduce algorithm for distributed CSS is described in details in Section VI. Section VII reviews the state-of-the-art CSS methods and their applicability to distributed data. In Section VIII, an empirical evaluation of the proposed method is described. Finally, Section IX concludes the paper.
+
+
+
+II. NOTATIONS The following notations are used throughout the paper  unless otherwise indicated. Scalars are denoted by small letters (e.g., m, n), sets are denoted in script letters (e.g., S , R), vectors are denoted by small bold italic letters (e.g., f , g), and matrices are denoted by capital letters (e.g., A, B). The subscript (i) indicates that the variable corresponds  to the i-th block of data in the distributed environment. In addition, the following notations are used: For a set S:  |S| the cardinality of the set.
+
+For a vector x ? Rm:  xi i-th element of x.
+
+?x? the Euclidean norm (?2-norm) of x.
+
+For a matrix A ? Rm?n: Aij (i, j)-th entry of A.
+
+Ai: i-th row of A.
+
+A:j j-th column of A.
+
+A:S the sub-matrix of A which consists of the  set S of columns.
+
+AT the transpose of A.
+
+?A?F the Frobenius norm of A: ?A?F =?  ?i,jA2ij .
+
+A? a low rank approximation of A.
+
+A?S a rank-l approximation of A based on the  set S of columns, where |S| = l.
+
+
+
+III. COLUMN SUBSET SELECTION (CSS)  The Column Subset Selection (CSS) problem can be generally defined as the selection of the most represen- tative columns of a data matrix [4], [5], [6]. The CSS problem generalizes the problem of selecting representative data instances as well as the unsupervised feature selection problem. Both are crucial tasks, that can be directly used for data analysis or as pre-processing steps for developing fast and accurate algorithms in data mining and machine learning.
+
+Although different criteria for column subset selection can be defined, a common criterion that has been used in much recent work measures the discrepancy between the original matrix and the approximate matrix reconstructed from the subset of selected columns [9], [10], [11], [12], [13], [4], [5], [6], [14]. Most of the recent work either develops CSS algorithms that directly optimize this criterion or uses this criterion to assess the quality of the proposed CSS algorithms. In the present work, the CSS problem is formally defined as  Problem 1: (Column Subset Selection) Given an m?n matrix A and an integer l, find a subset of columns L such that |L| = l and  L = argmin S  ?A? P (S)A?2F ,  where P (S) is an m ?m projection matrix which projects the columns of A onto the span of the candidate columns A:S .
+
+The criterion F (S) = ?A?P (S)A?2F represents the sum of squared errors between the original data matrix A and its rank-l column-based approximation (where l = |S|),  A?S = P (S)A . (1)     In other words, the criterion F (S) calculates the Frobe- nius norm of the residual matrix E = A?A?S . Other types of matrix norms can also be used to quantify the reconstruction error. Some of the recent work on the CSS problem [4], [5], [6] derives theoretical bounds for both the Frobenius and spectral norms of the residual matrix. The present work, however, focuses on developing algorithms that minimize the Frobenius norm of the residual matrix.
+
+The projection matrix P (S) can be calculated as  P (S) = A:S ( AT:SA:S  )?1 AT:S , (2)  where A:S is the sub-matrix of A which consists of the columns corresponding to S. It should be noted that if S is known, the term  ( AT:SA:S  )?1 AT:SA is the closed-form solu-  tion of least-squares problem T ? = argmin T  ?A?A:ST?2F .
+
+The set of selected columns (i.e., data instances or fea-  tures) can be directly presented to a data analyst to learn about the insights of the data, or they can be used to preprocess the data for further analysis. For instance, the selected columns can be used to obtain a low-dimensional representation of all columns into the subspace of selected ones. This representation can be obtained by calculating an orthogonal basis for the selected columns Q and then embedding all columns of A into the subspace of Q as W = QTA. The selected columns can also be used to calculate a column-based low-rank approximation of A [12].
+
+Moreover, the leading singular values and vectors of the low- dimensional embedding W can be used to approximate those of the data matrix.
+
+
+
+IV. GREEDY CSS  The column subset selection criterion presented in Section III measures the reconstruction error of a data matrix based on the subset of selected columns. The minimization of this criterion is a combinatorial optimization problem whose optimal solution can be obtained in O  ( nlmnl  ) [5]. This  section briefly describes a deterministic greedy algorithm for optimizing this criterion, which extends the greedy method for unsupervised feature selection recently proposed by Farahat et al. [15], [16]. A brief description of this method is included in this section for completeness. The reader is referred to [16] for the proofs of the different formulas presented in this section.
+
+The greedy CSS [16] is based the following recursive formula for the CSS criterion.
+
+Theorem 1: Given a set of columns S . For any P ? S , F (S) = F (P)? ?E?R?2F ,  where E = A ? P (P)A, and E?R is the low-rank approxi- mation of E based on the subset R = S \ P of columns.
+
+Proof: See [16, Theorem 2].
+
+The term ?E?R?2F represents the decrease in reconstruction  error achieved by adding the subset R of columns to P .
+
+This recursive formula allows the development of an efficient greedy algorithm that approximates the optimal solution of the column subset selection problem. At iteration t, the goal is to find column p such that  p = argmin i  F (S ? {i}) , (3)  where S is the set of columns selected during the first t? 1 iterations.
+
+Let G be an n ? n matrix which represents the inner- products over the columns of the residual matrix E, i.e., G = ETE. The greedy selection problem can be simplified to (See [16, Section 6])  Problem 2: (Greedy Column Subset Selection) At iter- ation t, find column p such that  p = argmax i  ?G:i?2 Gii  where G = ETE, E = A? A?S and S is the set of columns selected during the first t? 1 iterations.
+
+For iteration t, define ? = G:p and ? = G:p/ ?  Gpp =  ?/ ?  ?p . The vector ?(t) can be calculated in terms of A and previous ??s as  ?(t) = ATA:p ? t?1? r=1  ?(r)p ? (r) . (4)  The numerator and denominator of the selection criterion at each iteration can be calculated in an efficient manner without explicitly calculating E or G using the following theorem.
+
+Theorem 2: Let f i = ?G:i?2 and gi = Gii be the numerator and denominator of the criterion function for column i respectively, f = [f i]i=1..n, and g = [gi]i=1..n.
+
+Then,  f (t) = ( f ? 2  ( ? ?  ( ATA? ? ?t?2r=1  ( ?(r)  T  ? ) ?  (r) ))  + ???2 (? ? ?) )(t?1)  ,  g(t) = ( g ? (? ? ?)  )(t?1) .
+
+where ? represents the Hadamard product operator.
+
+Proof: See [16, Theorem 4].
+
+Algorithm 1 shows the complete greedy CSS algorithm.
+
+The distributed CSS algorithm presented in this paper intro- duces a generalized variant of the greedy CSS algorithm in which a subset of columns is selected from a source matrix such that the reconstruction error of a target matrix is minimized. The distributed CSS method uses the greedy generalized CSS algorithm as the core method for selecting columns at different machines as well as in the final selection step.
+
+Algorithm 1 Greedy Column Subset Selection Input: Data matrix A, Number of columns l Output: Selected subset of columns S  1: Initialize S = { } 2: Initialize f (0)i = ?ATA:i?2, g(0)i = AT:iA:i for i = 1...n 3: Repeat t = 1? l: 4: p = argmax  i f (t) i /g  (t) i , S = S ? {p}  5: ?(t) = ATA:p ? ?t?1  r=1 ? (r) p ?(r)  6: ?(t) = ?(t)/ ?  ?(t)p 7: Update f i?s, gi?s (Theorem 2)
+
+V. MAPREDUCE PARADIGM  MapReduce [7] was presented as a programming model to simplify large-scale data analytics over a distributed environment of commodity machines. The rationale behind MapReduce is to impose a set of constraints on data access at each individual machine and communication between different machines to ensure both the scalability and fault- tolerance of the analytical tasks. Currently, MapReduce is considered the de-facto solution for many data analytics tasks over large distributed clusters [17], [18].
+
+A MapReduce job is executed in two phases of user- defined data transformation functions, namely, map and reduce phases. The input data is split into physical blocks distributed among the nodes. Each block is viewed as a list of key-value pairs. In the first phase, the key-value pairs of each input block b are processed by a single map function running independently on the node where the block b is stored. The key-value pairs are provided one-by-one to the map function. The output of the map function is another set of intermediate key-value pairs. The values associated with the same key across all nodes are grouped together and provided as an input to the reduce function in the second phase. Different groups of values are processed in parallel on different machines. The output of each reduce function is a third set of key-value pairs and collectively considered the output of the job. It is important to note that the set of the intermediate key-value pairs is moved across the network between the nodes which incurs significant additional execution time when much data are to be moved.
+
+For complex analytical tasks, multiple jobs are typically chained together [17] and/or many rounds of the same job are executed on the input data set [18].
+
+In addition to the programming model constraints, Karloff et al. [19] defined a set of computational constraints that ensure the scalability and the efficiency of MapReduce- based analytical tasks. These computational constraints limit the used memory size at each machine, the output size of both the map and reduce functions and the number of rounds used to complete a certain tasks.
+
+The MapReduce algorithms presented in this paper ad-  here to both the programming model constraints and the computational constraints. The proposed algorithm aims also at minimizing the overall running time of the distributed column subset selection task to facilitate interactive data analytics.
+
+
+
+VI. DISTRIBUTED CSS ON MAPREDUCE  This section describes a MapReduce algorithm for the distributed column subset selection problem. Given a big data matrix A whose columns are distributed across different machines, the goal is to select a subset of columns S from A such that the CSS criterion F (S) is minimized.
+
+One na??ve approach to perform distributed column subset selection is to select different subsets of columns from the sub-matrices stored on different machines. The selected subsets are then sent to a centralized machine where an additional selection step is optionally performed to filter out irrelevant or redundant columns. Let A(i) be the sub- matrix stored at machine i, the na??ve approach optimizes the following function.
+
+c? i=1  ???A(i) ? P (L(i))A(i) ???2 F  , (5)  where L(i) is the set of columns selected from A(i) and c is the number of physical blocks of data. The resulting set of columns is the union of the sets selected from different sub- matrices: L = ?ci=1L(i). The set L can further be reduced by invoking another selection process in which a smaller subset of columns is selected from A:L.
+
+The na??ve approach, however simple, is prone to missing relevant columns. This is because the selection at each machine is based on approximating a local sub-matrix, and accordingly there is no way to determine whether the selected columns are globally relevant or not. For instance, suppose the extreme case where all the truly representative columns happen to be loaded on a single machine. In this case, the algorithm will select a less-than-required number of columns from that machine and many irrelevant columns from other machines.
+
+In order to alleviate this problem, the different machines have to select columns that best approximate a common representation of the data matrix. To achieve that, the proposed algorithm first learns a concise representation of the span of the big data matrix. This concise representation is relatively small and it can be sent over to all machines.
+
+After that each machine can select columns from its sub- matrix that approximate this concise representation. The proposed algorithm uses random projection to learn this concise representation, and proposes a generalized Column Subset Selection (CSS) method to select columns from different machines. The details of the proposed methods are explained in the rest of this section.
+
+A. Random Projection The first step of the proposed algorithm is to learn a  concise representation B for a distributed data matrix A.
+
+In the proposed approach, a random projection method is employed. Random projection [20][21][22] is a well-known technique for dealing with the curse-of-the-dimensionality problem. Let ? be a random projection matrix of size n?r, and given a data matrix X of size m ? n, the random projection can be calculated as Y = X?. It has been shown that applying random projection ? to X preserves the pairwise distances between vectors in the row space of X with a high probability [20]:  (1? ?) ?Xi: ?Xj:? ? ?Xi:??Xj:?? ? (1 + ?) ?Xi: ?Xj:? ,  (6)  where ? is an arbitrarily small factor.
+
+Since the CSS criterion F (S) measures the reconstruction  error between the big data matrix A and its low-rank approximation P (S)A, it essentially measures the sum of the distances between the original rows and their approxi- mations. This means that when applying random projection to both A and P (S)A, the reconstruction error of the original data matrix A will be approximately equal to that of A? when both are approximated using the subset of selected columns:  ?A? P (S)A?2F ? ?A?? P (S)A??2F . (7) So, instead of optimizing ?A ? P (S)A?2F , the distributed CSS can approximately optimize ?A?? P (S)A??2F .
+
+Let B = A?, the distributed column subset selection problem can be formally defined as  Problem 3: (Distributed Column Subset Selection) Given an m? n(i) sub-matrix A(i) which is stored at node i and an integer l(i), find a subset of columns L(i) such that |L(i)| = l(i) and  L(i) = argmin S  ?B ? P (S)B?2F ,  where B = A?, ? is an n? r random projection matrix, S is the set of the indices of the candidate columns and L(i) is the set of the indices of the selected columns from A(i).
+
+A key observation here is that random projection matrices whose entries are sampled i.i.d from some univariate distri- bution ? can be exploited to compute random projection on MapReduce in a very efficient manner. Examples of such matrices are Gaussian random matrices [20], uniform random sign (?1) matrices [21], and sparse random sign matrices [22].
+
+In order to implement random projection on MapReduce, the data matrix A is distributed in a column-wise fashion and viewed as pairs of ?i, A:i? where A:i is the i-th column of A. Recall that B = A? can be rewritten as  B =  n? i=1  A:i?i: (8)  Algorithm 2 Fast Random Projection on MapReduce Input: Data matrix A, Univariate distribution ?, Number of dimensions r Output: Concise representation B = A?, ?ij ? ? ?i, j  1: map: 2: B? = [0]m?r 3: foreach ?i, A:i? 4: Generate v = [v1, v2, ...vr], vj ? ? 5: B? = B? +A:iv 6: for j = 1 to m 7: emit ?j, B?j:? 8: reduce: 9: foreach ?j, [[B?(1)]j:, [B?(2)]j:, ..., [B?(c)]j:]?  10: Bj: = ?c  i=1[B?(i)]j:  11: emit ?j, Bj:?  and since the map function is provided one columns of A at a time, one does not need to worry about pre-computing the full matrix ?. In fact, for each input column A:i, a new vector ?i: needs to be sampled from ?. So, each input column generates a matrix of size m? r which means that O(nmr) data should be moved across the network to sum the generated n matrices at m independent reducers each summing a row Bj: to obtain B. To minimize that network cost, an in-memory summation can be carried out over the generated m ? r matrices at each mapper. This can be done incrementally after processing each column of A. That optimization reduces the network cost to O(cmr), where c is the number of physical blocks of the matrix1. Algorithm 2 outlines the proposed random projection algorithm. The term emit is used to refer to outputting new ?key, value? pairs from a mapper or a reducer.
+
+B. Generalized CSS  This section presents the generalized column subset selec- tion algorithm which will be used to perform the selection of columns at different machines. While Problem 1 is concerned with the selection of a subset of columns from a data matrix which best represent other columns of the same matrix, Problem 3 selects a subset of columns from a source matrix which best represent the columns of a different target matrix. The objective function of Problem 3 represents the reconstruction error of the target matrix B based on the selected columns from the source matrix. and the term P (S) = A:S  ( AT:SA:S  )?1 AT:S is the projection matrix which  projects the columns of B onto the subspace of the columns selected from A.
+
+In order to optimize this new criterion, a greedy algorithm can be introduced. Let F? (S) = ??B ? P (S)B??2  F be the  1The in-memory summation can also be replaced by a MapReduce combiner [7].
+
+distributed CSS criterion, the following theorem derives a recursive formula for F? (S).
+
+Theorem 3: Given a set of columns S . For any P ? S ,  F? (S) = F? (P)? ???F?R  ???2 F  ,  where F = B ? P (P)B, and F?R is the low-rank approxi- mation of F based on the subset R = S \ P of columns of E = A? P (P)A.
+
+Proof: Using the recursive formula for the low-rank approximation of A: A?S = A?P + E?R, and multiplying both sides with ? gives  A?S? = A?P?+ E?R? .
+
+Low-rank approximations can be written in terms of projec- tion matrices as  P (S)A? = P (P)A?+R(R)E? .
+
+Using B = A?,  P (S)B = P (P)B +R(R)E? .
+
+Let F = E?. The matrix F is the residual after approxi- mating B using the set P of columns  F = E? = ( A? P (P)A  ) ? = A??P (P)A? = B?P (P)B.
+
+This means that  P (S)B = P (P)B +R(R)F  Substituting in F? (S) = ??B ? P (S)B??2 F  gives  F? (S) = ???B ? P (P)B ?R(R)F  ???2 F  Using F = B ? P (P)B gives  F? (S) = ???F ?R(R)F  ???2 F  Using the relation between Frobenius norm and trace,  F? (S) = trace ((  F ?R(R)F )T (  F ?R(R)F ))  = trace ( FTF ? 2FTR(R)F + FTR(R)R(R)F  )  = trace ( FTF ? FTR(R)F  ) = ?F?2F ?  ???R(R)F ???2 F  Using F? (P) = ?F?2F and F?R = R(R)F proves the theorem.
+
+Using the recursive formula for F? (S ? {i}) allows the development of a greedy algorithm which at iteration t optimizes  p = argmin i  F? (S ? {i}) = argmax i  ???F?{i} ???2 F  (9)  Algorithm 3 Greedy Generalized Column Subset Selection Input: Source matrix A, Target matrix B, Number of columns l Output: Selected subset of columns S  1: Initialize f (0)i = ?BTA:i?2, g(0)i = AT:iA:i for i = 1...n 2: Repeat t = 1? l: 3: p = argmax  i f (t) i /g  (t) i , S = S ? {p}  4: ?(t) = ATA:p ? ?t?1  r=1 ? (r) p ?(r)  5: ?(t) = BTA:p ? ?t?1  r=1 ? (r) p ?(r)  6: ?(t) = ?(t)/ ?  ?(t)p , ? (t) = ?(t)/  ? ?(t)p  7: Update f i?s, gi?s (Theorem 4)  Let G = ETE and H = FTE, the objective function of this optimization problem can be simplified as follows.???F?{i}  ???2 F =  ???E:i (ET:iE:i)?1 ET:iF ???2 F  = trace ( FTE:i  ( ET:iE:i  )?1 ET:iF  )  =  ??FTE:i??2 ET:iE:i  = ?H:i?2 Gii  .
+
+(10)  This allows the definition of the following generalized CSS problem.
+
+Problem 4: (Greedy Generalized CSS) At iteration t, find column p such that  p = argmax i  ?H:i?2 Gii  where H = FTE, G = ETE, F = B ? P (S)B, E = A?P (S)A and S is the set of columns selected during the first t? 1 iterations.
+
+For iteration t, define ? = H:p and ? = H:p/ ?  Gpp = ?/  ? ?p . The vector ?(t) can be calculated in terms of A, B  and previous ??s and ??s as ?(t) = BTA:p? ?t?1  r=1 ? (r) p ?(r).
+
+Similarly, the numerator and denominator of the selection criterion at each iteration can be calculated in an efficient manner using the following theorem.
+
+Theorem 4: Let f i = ?H:i?2 and gi = Gii be the nu- merator and denominator of the greedy criterion function for column i respectively, f = [f i]i=1..n, and g = [gi]i=1..n.
+
+Then,  f (t) = ( f ? 2  ( ? ?  ( ATB? ? ?t?2r=1  ( ?(r)T?  ) ?  (r) ))  + ???2 (? ? ?) )(t?1)  ,  g(t) = ( g ? (? ? ?)  )(t?1) ,  where ? represents the Hadamard product operator.
+
+As outlined in Section VI-A, the algorithm?s distribution  strategy is based on sharing the concise representation of the data B among all mappers. Then, independent l(b) columns     Algorithm 4 Distributed CSS on MapReduce Input: Matrix A of size m? n, Concise representation B, Number of columns l Output: Selected columns C  1: map: 2: A(b) = [ ] 3: foreach ?i, A:i? 4: A(b) = [A(b) A:i] 5: S? = GeneralizedCSS(A(b), B, l(b)) 6: foreach j in S? 7: emit ?0, [A(b)]:j? 8: reduce: 9: For all values {[A(1)]:S?(1) , [A(2)]:S?(2) , ...., [A(c)]:S?(c)}  10: A(0) = [ [A(1)]:S?(1) , [A(2)]:S?(2) , ...., [A(c)]:S?(c)  ] 11: S = GeneralizedCSS (A(0), B, l) 12: foreach j in S 13: emit ?0, [A(0)]:j?  from each mapper are selected using the generalized CSS algorithm. A second phase of selection is run over the?c  b=1 l(b) (where c is the number of input blocks) columns to find the best l columns to represent B. Different ways can be used to set l(b) for each input block b. In the context of this paper, the set of l(b) is assigned uniform values for all blocks (i.e. l(b) = ?l/c??b ? 1, 2, ..c). Other methods are to be considered in future extensions. Algorithm 4 sketches the MapReduce implementation of the distributed CSS algorithm. It should be emphasized that the proposed MapReduce algorithm requires only two passes over the data set and its moves a very few amount of the data across the network.
+
+
+
+VII. RELATED WORK  Different approaches have been proposed for selecting a subset of representative columns from a data matrix. This section focuses on briefly describing these approaches and their applicability to massively distributed data matrices. The Column Subset Selection (CSS) methods can be generally categorized into randomized, deterministic and hybrid.
+
+The randomized methods sample a subset of columns from the original matrix using carefully chosen sampling probabilities. Frieze et al. [9] was the first to suggest the idea of randomly sampling l columns from a matrix and using these columns to calculate a rank-k approximation of the matrix (where l ? k). That work of Frieze et al.
+
+was followed by different papers [10], [11] that enhanced the algorithm by proposing different sampling probabilities.
+
+Drineas et al. [12] proposed a subspace sampling method which samples columns using probabilities proportional to the norms of the rows of the top k right singular vectors of A. Deshpande et al. [13] proposed an adaptive sampling  method which updates the sampling probabilities based on the columns selected so far.
+
+Column subset selection with uniform sampling can be easily implemented on MapReduce. For non-uniform sampling, the efficiency of implementing the selection on MapReduce is determined by how easy are the calculations of the sampling probabilities. The calculations of probabil- ities that depend on calculating the leading singular values and vectors are time-consuming on MapReduce. On the other hand, adaptive sampling methods are computationally very complex as they depend on calculating the residual of the whole data matrix after each iteration.
+
+The second category of methods employs a deterministic algorithm for selecting columns such that some criterion function is minimized. This criterion function usually quan- tifies the reconstruction error of the data matrix based on the subset of selected columns. The deterministic methods are slower, but more accurate, than the randomized ones.
+
+In the area of numerical linear algebra, the column pivoting method exploited by the QR decomposition [23] permutes the columns of the matrix based on their norms to enhance the numerical stability of the QR decomposition algorithm.
+
+The first l columns of the permuted matrix can be directly selected as representative columns. Besides methods based on QR decomposition, different recent methods have been proposed for directly selecting a subset of columns from the data matrix. Boutsidis et al. [4] proposed a deterministic column subset selection method which first groups columns into clusters and then selects a subset of columns from each cluster. C?ivril and Magdon-Ismail [14] presented a deterministic algorithm which greedily selects columns from the data matrix that best represent the right leading singular values of the matrix. Recently, Boutsidis et al. [6] presented a column subset selection algorithm which first calculates the top-k right singular values of the data matrix (where k is the target rank) and then uses deterministic sparsification methods to select l ? k columns from the data matrix.
+
+Besides, other deterministic algorithms have been proposed for selecting columns based on the volume defined by them and the origin [24], [25].
+
+The deterministic algorithms are more complex to im- plement on MapReduce. For instance, it is time-consuming to calculate the leading singular values and vectors of a massively distributed matrix or to cluster their columns using k-means. It is also computationally complex to calculate QR decomposition with pivoting. Moreover, the recently proposed algorithms for volume sampling are more complex than other CSS algorithms as well as the one presented in this paper, and they are infeasible for large data sets.
+
+A third category of CSS techniques is the hybrid methods which combine the benefits of both the randomized and deterministic methods. In these methods, a large subset of columns is randomly sampled from the columns of the data matrix and then a deterministic step is employed to reduce     Table I THE PROPERTIES OF THE DATA SETS USED TO EVALUATE THE  DISTRIBUTED CSS METHOD.
+
+Data set Type # Instances # Features RCV1-200K Documents 193,844 47,236  TinyImages-1M Images 1 million 1,024  the number of selected columns to the desired rank. For instance, Boutsidis et al. [5] proposed a two-stage hybrid CSS algorithm which first samples O (l log l) columns based on probabilities calculated using the l-leading right singular vectors, and then employs a deterministic algorithm to select exactly l columns from the columns sampled in the first stage. However, the algorithm depends on calculating the leading l right singular vectors which is time-consuming for large data sets.
+
+The hybrid algorithms for CSS can be easily imple- mented on MapReduce if the randomized selection step is MapReduce-efficient and the deterministic selection step can be implemented on a single machine. This is usually true if the number of columns selected by the randomized step is relatively small.
+
+In comparison to other CSS methods, the algorithm pro- posed in this paper is designed to be MapReduce-efficient.
+
+In the distributed selection step, representative columns are selected based on a common representation. The common representation proposed in this work is based on random projection. This is more efficient than the work of C?ivril and Magdon-Ismail [14] which selects columns based on the leading singular vectors. In comparison to other de- terministic methods, the proposed algorithm is specifically designed to be parallelized which makes it applicable to big data matrices whose columns are massively distributed. On the other hand, the two-step of distributed then centralized selection is similar to that of the hybrid CSS methods.
+
+The proposed algorithm however employs a deterministic algorithm at the distributed selection phase which is more accurate than the randomized selection employed by hybrid methods in the first phase.
+
+
+
+VIII. EXPERIMENTS  Experiments have been conducted on two big data sets to evaluate the efficiency and effectiveness of the proposed distributed CSS algorithm on MapReduce. The properties of the data sets are described in Table I. The RCV1-200K is a subset of the RCV1 data set [26] which has been prepared and used by Chen et al. [27] to evaluate parallel spectral clustering algorithms. The TinyImages-1M data set contains 1 million images that were sampled from the 80 million tiny images data set [28] and converted to grayscale.
+
+Similar to previous work on CSS, the different methods are evaluated according to their ability to minimize the reconstruction error of the data matrix based on the subset of selected columns. In order to quantify the reconstruction  error across different data sets, a relative accuracy measure is defined as  Relative Accuracy = ?A? A?U?F ? ?A? A?S?F ?A? A?U?F ? ?A? A?l?F  ? 100% ,  where A?U is the rank-l approximation of the data matrix based on a random subset U of columns, A?S is the rank-l approximation of the data matrix based on the subset S of columns and A?l is the best rank-l approximation of the data matrix calculated using the Singular Value Decomposition (SVD). This measure compares different methods relative to the uniform sampling as a baseline with higher values indicating better performance.
+
+The experiments were conducted on Amazon EC22 clus- ters, which consist of 10 instances for the RCV1-200K data set and 20 instances for the TinyImages-1M data set. Each instance has a 7.5 GB of memory and a two-cores processor.
+
+All instances are running Debian 6.0.5 and Hadoop version 1.0.3. The data sets were converted into a binary format in the form of a sequence of key-value pairs. Each pair consisted of a column index as the key and a vector of the column entries. That is the standard format used in Mahout3  for storing distributed matrices.
+
+The distributed CSS method has been compared with  different state-of-the-art methods. It should be noted that most of these methods were not designed with the goal of applying them to massively-distributed data, and hence their implementation on MapReduce is not straightforward.
+
+However, the designed experiments used the best practices for implementing the different steps of these methods on MapReduce to the best of the authors? knowledge. In specific, the following distributed CSS algorithms were compared.
+
+? UniNoRep: is uniform sampling of columns without re-  placement. This is usually the worst performing method in terms on approximation error and it will be used as a baseline to evaluate methods across different data sets.
+
+? HybirdUni, HybirdCol and HybirdSVD: are different distributed variants of the hybrid CSS algorithm which can be implemented efficiently on MapReduce. In the randomized phase, the three methods use probabilities calculated based on uniform sampling, column norms and the norms of the leading singular vectors? rows, respectively. The number of selected columns in the randomized phase is set to l log (l). In the deterministic phase, the centralized greedy CSS is employed to select exactly l columns from the randomly sampled columns.
+
+? DistApproxSVD: is an extension of the centralized algorithm for sparse approximation of Singular Value Decomposition (SVD) [14]. The distributed CSS algo- rithm presented in this paper (Algorithm 4) is used  2Amazon Elastic Compute Cloud (EC2): http://aws.amazon.com/ec2 3Mahout is an Apache project for implementing Machine Learning  algorithms on Hadoop. See http://mahout.apache.org/.
+
+Table II THE RUN TIMES AND RELATIVE ACCURACIES OF DIFFERENT CSS METHODS. THE BEST PERFORMING METHOD FOR EACH l IS HIGHLIGHTED IN BOLD,  AND THE SECOND BEST METHOD IS UNDERLINED. NEGATIVE MEASURES INDICATE METHODS THAT PERFORM WORSE THAN UNIFORM SAMPLING.
+
+Methods Run time (minutes) Relative accuracy (%) l = 10 l = 100 l = 500 l = 10 l = 100 l = 500  RCV1 - 200K Uniform - Baseline 0.6 0.6 0.5 0.00 0.00 0.00 Hybird (Uniform) 0.8 0.8 2.9 -2.37 -1.28 4.49  Hybird (Column Norms) 1.6 1.5 3.7 4.54 0.81 6.60 Hybird (SVD-based) 1.3 1.4 3.6 9.00 12.10 18.43  Distributed Approx. SVD 16.6 16.7 18.8 41.50 57.19 63.10 Distributed Greedy CSS (rnd) 5.8 6.2 7.9 51.76 61.92 67.75 Distributed Greedy CSS (ssgn) 2.2 2.9 5.1 40.30 62.41 67.91  Tiny Images - 1M Uniform - Baseline 1.3 1.3 1.3 0.00 0.00 0.00 Hybird (Uniform) 1.5 1.7 8.3 19.99 6.85 6.50  Hybird (Column Norms) 3.3 3.4 9.4 17.28 3.57 7.80 Hybird (SVD-based) 52.4 52.5 59.4 3.59 8.57 10.82  Distributed Approx. SVD 71.0 70.8 75.2 70.02 31.05 24.49 Distributed Greedy CSS (ssgn) 22.1 23.6 24.2 67.58 25.18 20.74  to select columns that best approximate the leading singular vectors (by setting B = Uk?k). The use of the distributed CSS algorithm extends the original algorithm proposed by C?ivril and Magdon-Ismail [14] to work on distributed matrices. In order to allow efficient implementation on MapReduce, the number of leading singular vectors is set of 100.
+
+? DistGreedyCSS: is the distributed column subset selec- tion method described in Algorithm 4. For all experi- ments, the dimension of the random projection matrix is set to 100. This makes the size of the concise representation the same as the DistApproxSVD method.
+
+Two types of random matrices are used for random projection: (1) a dense Gaussian random matrix (rnd), and (2) a sparse random sign matrix (ssgn).
+
+For the methods that require the calculations of Singular Value Decomposition (SVD), the Stochastic SVD (SSVD) algorithm [29] is used to approximate the leading singular values and vectors of the data matrix. The use of SSVD significantly reduces the run time of the original SVD- based algorithms while achieving comparable accuracy. In the conducted experiments, the SSVD implementation of Mahout was used.
+
+Table II shows the run times and relative accuracies for different CSS methods. It can be observed from the table that for the RCV1-200K data set, the DistGreedyCSS methods (with random Gaussian and sparse random sing matrices) outperforms all other methods in terms of relative accuracies.
+
+In addition, the run times of both of them are relatively small compared to the DistApproxSVD method which achieves accuracies that are close to the DistGreedyCSS method.
+
+Both the DistApproxSVD and DistGreedyCSS methods achieve very good approximation accuracies compared to randomized and hybrid methods. It should also be noted that using a sparse random sign matrix for random projection takes much less time than a dense Gaussian matrix, while  achieving comparable approximation accuracies. Based on this observation, the sparse random matrix has been used with the TinyImages-1M data set.
+
+For the TinyImages-1M data set, although the DistAp- proxSVD achieves slightly higher approximation accuracies than DistGreedyCSS (with sparse random sign matrix), the DistGreedyCSS selects columns in almost one-third of the time. The reason why the DistApproxSVD outperforms DistGreedyCSS for this data set is that its rank is relatively small (less than 1024). This means that using the leading 100 singular values to represent the concise representation of the data matrix captures most of the information in the matrix and accordingly is more accurate than random projection.
+
+The DistGreedyCSS however still selects a very good subset of columns in a relatively small time.
+
+
+
+IX. CONCLUSION  This paper proposes an accurate and efficient MapReduce algorithm for selecting a subset of columns from a massively distributed matrix. The algorithm starts by learning a concise representation of the data matrix using random projection. It then selects columns from each sub-matrix that best approxi- mate this concise approximation. A centralized selection step is then performed on the columns selected from different sub-matrices. In order to facilitate the implementation of the proposed method, a novel algorithm for greedy generalized CSS is proposed to perform the selection from different sub- matrices. In addition, the different steps of the algorithms are carefully designed to be MapReduce-efficient. Experiments on big data sets demonstrate the effectiveness and efficiency of the proposed algorithm in comparison to other CSS methods when implemented on distributed data.
+

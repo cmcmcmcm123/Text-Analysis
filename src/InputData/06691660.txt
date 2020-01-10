@@ -1,0 +1,148 @@
+Minimum Storage BASIC Codes: A System Perspective
+
+Abstract?The explosion of big data stored in distributed file systems calls for more efficient storage paradigms. While replication is widely used to ensure data availability, erasure codes provide a much better tradeoff between storage and availability. Reed-Solomon (RS) codes are the standard design choice, however, their high repair cost is often considered an unavoidable price to pay for high storage efficiency and high reliability. BASIC codes can achieve the optimal tradeoff between storage capacity and repair bandwidth with much less complexity of regenerating codes, which is first proposed in [1].
+
+This paper integrate one construction of the minimum storage BASIC (MS-BASIC) codes [2] into a Hadoop HDFS cluster testbed with up to 22 storage nodes.  We demonstrate that MS- BASIC codes conform to the theoretical findings and achieve recovery bandwidth saving compared to the conventional recovery approach based on RS codes.
+
+Keywords-big data; distributed file systems; minimum storage BASIC codes; Hadoop
+
+I. INTRODUCTION With the development of massive storage system and its  application in complex environments, there is a big challenge in the reliability of storage systems. Distributed storage systems (e.g., [3] [4] [5]) for large clusters typically use replication to provide reliability. But it offers low storage efficiency as the amount of data becomes larger and larger.
+
+Recently, as the main technology for fault tolerance in storage systems, erasure codes (e.g., [6] [7]) are drawing more and more attention.
+
+For this reason, Facebook and many other enterprises are transitioning to erasure coding techniques (typically, classical RS codes) to introduce redundancy while saving storage [8]. Erasure codes are defined by two positive integers k and n (n>k). They are a kind of the (k, n) maximum distance separable (MDS) codes [9], which are optimal in terms of the redundancy-reliability tradeoff. In a distributed storage system, the n packets are stored at different storage nodes (e.g., disks, servers, or peers) spread over a network, and the system can tolerate any (n-k) node failures without data loss.
+
+While deploying RS codes in data centers improves storage efficiency, it however results in a significant increase in the usage of disk and network bandwidth. This phenomenon occurs due to the considerably high download requirement during recovery of any missing block. In general, under a (k, n) RS code, recovering a single block involves the download of the whole size of the original file, from which the required missing block is recovered. Thus,  repairing cost of RS codes is considered an unavoidable price to pay for high storage efficiency and high reliability.
+
+There have been extensive studies on improving the recovery performance of erase-codes-based storage systems.
+
+Huang et al. [10] propose local recovery codes that reduce the bandwidth and I/O when reconstructing a lost data fragment. They evaluate the codes atop the Windows Azure Storage system. Sathiamoorthy et al. [11] also propose local recovery codes, and evaluate the codes atop HDFS-RAID [12].Note that the codes in both studies are non-MDS codes with additional parties added to storage. Besides, much extra information is added in the system to indentify the two different kinds of parties.
+
+Regenerating codes [13] can minimize the recovery bandwidth. Li et al. [14] propose CORE, which retains existing optimal regenerating code constructions, and experiment on HDFS-RAID. Although CORE can save recovery bandwidth even in concurrent failure recovery, it is based on Galois Field GF(q) (q>2) and has to handle large multiplication operations. Therefore, it results in high computation complexity and energy costs.
+
+In this paper, we have employed MS-BASIC codes for big data storage in Hadoop HDFS [15] testbed with up to 22 nodes. Our experiments demonstrate that MS-BASIC codes conforms to the theoretical findings and achieves recovery bandwidth saving. In summary, our work makes the following contributions.
+
+Theoretical analysis. While this work builds on MS-BASIC codes [2], we give theoretically analysis and compare them with traditional erasure codes.
+
+Implementation. We implement a prototype by modifying the source code of HDFS and its erasure coding extensions HDFS-RAID. We specify three key steps: (1) file upload; (2) file download; (3) file recovery.
+
+Experiments.  We experiment on a cluster testbed with up to 22 storage nodes. Our experiments take into account a combination of several metrics, including encoding/decoding performance, recovery time and network traffic.
+
+The rest of the paper proceeds as follows. Section II first provides the basics of codes and theoretical analysis findings, then reviews the construction example of MS-BASIC codes.
+
+Section III illustrates the implementation details of our prototype. The experimental results are discussed in Section
+
+IV. We finally conclude the whole paper and present our future work in Section V.
+
+Stripe  1D  Stripe  k data nodes m parity nodes  ... ... ... ......
+
+......
+
+encode  encode  2D kD mP1P  Figure 1. An erasure-code-based distributed storage system.
+
+
+
+II. BASICS We first provide some background about erasure codes  and their employment in distributed storage system, followed by a description of MS-BASIC codes. Finally, we make a comparison between MS-BASIC and RS codes.
+
+A. MDS codes In a typical (k, n) erasure code, a file of size B is split into  k blocks and encoded to generate n blocks. Specifically, the object D = (D1, D2, ..., Dk) is a linear transformation defined by a *k n generator matrix G such that we can obtain an n-dimensional code word C= 1 2( )nC C C by applying the linear transformation C=D*G. The generator matrix G usually has the form k[ , ']G I G where kI  is the identity matrix and 'G  is a k*m matrix.
+
+Thus, the code word C becomes C= [D, P], where D is the original data and P is a parity vector.
+
+Fig. 1 shows an erasure-code-based distributed storage system [16] composed of a collection of nodes, each of which refers to a physical storage device. We assume the storage system contains n nodes, in which k nodes (called data nodes) store the original data and the remaining m=n-k nodes (called parity nodes) store parity data. A stripe is a collection of data on k data nodes and the corresponding encoded data on m parity nodes. Each stripe is independently encoded and decoded, which means erasure codes are constructed in the block of stripe. For load balancing, the identities of the data/parity nodes are rotated so that they can be distributed to different nodes.
+
+For data availability, storage systems often employ an (k, n) MDS code, meaning that the stored data of any k out of the n nodes can be used to reconstruct the original data. That is, system can tolerate m concurrent failures without data loss. MDS codes also ensure optimal storage efficiency, such that each node stores B/k per stripe. RS codes are a classical example of MDS codes and have been widely implemented in different systems.
+
+B. MS-BASIC codes Regenerating codes lie on an optimal tradeoff curve  between storage cost and recovery bandwidth [17]. BASIC codes can achieve the full benefit of regenerating codes with much less complexity. In this work, we focus on the minimum storage  BASIC codes in which each  node  stores  1D 1D4D3D2D  1P 1D4P3P2P  Figure 2. An example of (4, 8) MS-BASIC code.
+
+the minimum amount of data on the tradeoff curve. With the limited parameters of MSR, MS-BASIC codes must satisfy that k is even, n=2k. The construction is carried out as follows:  1) Fragment the file into k data blocks D=(D1, D2, ..., Dk) with each size L=B/k.
+
+2) Construct k redundancy blocks P=(P1, P2, ..., Pk) by the formula:  ( /2-1) mod  ,( ), 1,2,..., .
+
+i k k  i j i j j i  P D r i k                 (1)  where ,i jr represents the number of cyclic shift in the packet  Dj  for the parity Pi. ,i jr  is given as follows:  , , 1 , /2 1( , ,..., ) (0, ,..., ( / 2 1) )mod .i j i j i j kr r r i k i p (2) where p is the minimum prime, p k/2.
+
+3) Distribute the n packets to n different storage nodes.
+
+According to the demonstration in [1], any k nodes are able to reconstruct the original file. Besides, we can recover a single failure though k/2 nodes in the related sequence.
+
+Fig. 2 gives a simple example of (4, 8) MS-BASIC code and p=3. First, the file is fragmented into packets: D1, D2, D3, D4. Then, parity P1 can be produced though cyclic shift and addition of D1 and D2, that is P1= D1(0) D2(1). We can get P2=D2(0) D3(2), P3=D3(0) D4(0) and P4=D4(0)  D1(1) in the same way. If D1 is lost, we can recover it though D2 and P1; if both of D1 and D2 are lost, we can first recover D2 though D3 and P2, then recover D1. All of the 8 packets are stored in different nodes and we can reconstruct the original file from any 4 nodes.
+
+C. Theoretical Analysis According to the description above, we know MS-  BASIC codes are based on GF(2), thus they only need XOR operations. RS codes [6] have two kinds of generator matrix to construction. As Cauchy-based RS (CRS) codes eliminate the expensive multiplications of RS codes by converting them to extra XOR operations, we consider them as a comparison for MS-BASIC codes.
+
+Table I presents theoretical analysis of MS-BASIC and CRS codes in several metrics with B original data being stored. Note that parameter w in CRS codes is a bit-word, and the value of w must satisfy 2 1wn . The performance of these two codes is typically quantified by the number of XOR operations performed. We can get that encoding     operations of CRS codes is w times larger than that of MS- BASIC codes from the table.  To repair a failure, repairing operations of CRS codes is kw times more than that of MS- BASIC codes. As both of these two codes are (k, n) MDS codes, they suffice optimal storage efficiency, such that their storage cost in each node is B/k and the reconstruction bandwidth is B.
+
+In practical systems, network bandwidth is usually a valuable resource, which is defined as the total amount of transmitted data. CRS codes employ conventional recovery that repairing a single failed block needs to download an amount of information equivalent to the size of the file from k different nodes. The recovery bandwidth of CRS codes is k times larger than the amount of repaired block. Meanwhile, MS-BASIC codes can bring twice bandwidth reduction as they only need to contact with k/2 surviving nodes for recovery.
+
+TABLE I. THEORETICAL ANALYSIS OF MS-BASIC AND CRS CODES.
+
+Comparisons CRS MS-BASIC  Encoding Operations (( - ) / 2)O n k wB (( ) / 2)O n k B  Repairing Operations ( / 2)O kwB ( / 2)O B  Storage Cost /B k /B k  Reconstruction Bandwidth B B  Recovery Bandwidth B / 2B
+
+III. IMPLEMENTATION We complement our theoretical analysis with prototype  implementation. We modify the source code of HDFS-RAID, an open-source erasure code module developed by Facebook.
+
+A. Overview of HDFS-RAID In an HDFS-RAID cluster, there are a single NameNode  and multiple DataNodes. The NameNode stores and manages the metadata for HDFS blocks, while the DataNodes store HDFS blocks. HDFS-RAID adds a new node called the RaidNode, which performs the striping operation. It also periodically checks any lost blocks to ensure the availability of blocks. HDFS-RAID uses a distributed RAID file system (DRFS) to handle all read/write requests for the erasure-coded data stored in HDFS. If a lost block is requested, it performs degraded reads to the lost block which requires the RaidNode to perform the recovery operation.
+
+One node in the cluster is generally designed to run the daemon of the RaidNode which relies on the underlying component: ErasureCode. ErasureCode module performs the encoding/decoding operations employing CRS and XOR codes by default. To integrate MS-BASIC codes into HDFS- RAID, we implement MS-BASIC codes though the interface of the ErasureCode module. Consequently, ErasureCode module can execute our coding scheme.
+
+B. File upload Once the RaidNode detects a file which is suitable for  raiding (according to parameters set in the configuration file of raid.xml), it launches the striping operation for the file.
+
+The striping operation is carried out as follows. For a given (k, n), the RaidNode first downloads a group of k blocks (from one of the replicas for each block). It then encodes the k blocks into n blocks on a per-stripe basis using a specified coding scheme. The encoded data is spread across the cluster according to Hadoop?s configured block placement policy. We rotate node identities when we place the blocks so that the parity blocks are evenly distributed across different DataNodes to achieve load balancing. The RaidNode repeats the same process for another group of k blocks. Depending on the size of the file, the last stripe may contain fewer than k blocks. We can consider the last stripe as ?zero-padded? stripe as far as the parity calculation is concerned. Unused replicas of the k blocks will later be removed from HDFS to reduce the storage cost.
+
+C. File Download When a DRFS client wants to download a file from the  cluster, it first gets the related metadata information which contains the locations of the specified file blocks. Then it downloads all the original data from k data nodes on a per- stripe basis. Finally, it just simply merges the k original data and removes the ?zero-padded? in the last stripe if needed.
+
+Note that some of the k data nodes and the corresponding data may be unavailable, possibly because of the nodes being overloaded, network outage, or repair actions being yet to be carried out. In this case, the degraded read operation is performed by the DRFS client. Suppose that t nodes fail, where t k, we have the DRFS client request a lost HDFS block on one of the failed nodes. The lost block will be reconstructed from the data of other surviving nodes. Through the above theoretical analysis, CRS and MS-BASIC codes need k and k/2 surviving nodes, respectively. After reconstruction, we merge the k original blocks as previously described.
+
+D. File Recovery In the cluster, we manually delete some blocks to make  the RaidNode starts a repairing process. The process for recovery is similar to degraded read operation except that the reconstructed data should be uploaded to new nodes. The followings describe the steps for file recovery:  1) Inquire the NameNode to get all the data information about the lost blocks.
+
+2) Download the related information for the lost blocks from surviving nodes.
+
+3) Reconstruct the lost blocks through the decoder in the RaidNode.
+
+4) Upload the reconstructed data to new nodes. The new nodes should be different from the nodes that already store the related  blocks of the file for load balancing.
+
+5) Report the new data information to the NameNode.
+
+(k,n)  En co  di ng  sp ee  d( M  B/ s)  CRS (1.64GB) MS-BASIC (1.64GB) CRS (2.52GB) MS-BASIC (2.52GB)  Figure 3. Encoding speed.
+
+
+
+IV. PROTOTYPE EXPERIMENTS We experiment MS-BASIC codes on an HDFS testbed  with one NameNode, one RaidNode and up to 20 DataNodes. NameNode runs on a quad-core server equipped with an Intel(R) Xeon(R) E5-2609 2.40GHz CPU, 24GB RAM, and a Seagate ST31000524AS 7200RPM 1TB SATA harddisk. The others run on a quad-core PC equipped with AMD A8-5600k 3.0GHz CPU, 4GB RAM, and a 500GB SATA harddisk. All machines are equipped with a 100Mbps Ethernet card and interconnected over a gigabit Ethernet switch. They all run in the same software environment: HDFS release 0.22.0 with HDFS-RAID enabled and Centos5.5.
+
+We run two sets of experiments, one set to study MS- BASIC codes, and the other to execute CRS codes as a reference. We compare them using three different sets of coding parameters: (k, n) = {(4, 8), (6, 12), (8, 16)}, and two test files with sizes of 1.64GB and 2.52GB, respectively.
+
+The size of a block is 64MB by default and the bit-word used for CRS codes chooses w=8.
+
+Our experiments take into account a combination of several metrics, including encoding performance, download performance and recovery performance. The reported results are the average of 10 runs.
+
+A. Encoding  performance To evaluate the computational encoding overhead of  CRS and MS-BASIC codes in construction, we measure how long they take for file striping. We define the encoding speed as the original size of the file divided by the total time for the entire striping operation, including disk I/O time.
+
+From the results shown in Fig. 3, we can see that MS- BASIC codes have a little smaller encoding speed than CRS codes in all the implementations. It is not matched the analysis in table I, however, it is interesting to notice that the generator matrix of CRS codes has been optimized and the number of XOR operations is far less than the theoretical value [18]. With the increase of (k, n), both encoding speeds show a little lower. The reason is that we have to produce more parity blocks for the given file as the parameters becomes larger. In addition, the file of size 1.64GB has a higher encoding speed than the file of size 2.52GB in all cases. We can get that big files have higher encoding overhead and hence show worse performance than small files.
+
+(k,n)  D eg  ra de  d re  ad s  pe ed  (M B  /s )  CRS (1.64GB) MS-BASIC (1.64GB) CRS (2.52GB) MS-BASIC (2.52GB)  Figure 4. Degraded read speed.
+
+B. Download performance We first download a file in the case of no data loss to  evaluate the normal read speed. We compute the download speed which is defined as the amount of data being requested divided by the download time. As our machines are equipped with a 100Mbps Ethernet card, the average speed of download is 11.1MB/s. Besides, the two codes keep almost the same download time for a specified file, as they always download k original blocks.
+
+We next shut down one node to perform degraded read.
+
+The degraded read speed is shown in Fig. 4, and it has only half the normal download speed on average. MS-BASIC codes have a speed gain with respect to the reduction in XOR operations. Meanwhile, with the increase of (k, n), the speed of both codes becomes a little lower, mainly due to the need to contact with more nodes.
+
+It is different from the encoding performance that the speed of big file is higher than that of small one. Take (8,16) for example, the small file has a speed of 5.81MB/s smaller than 5.92MB/s of big file in MS-BASIC codes. Moreover, MS-BASIC codes show degraded read speed gain of 1.49? and 1.44? for the small and large file, respectively. Our experimental results show slightly less gains, mainly due to disk I/O cost in the download.
+
+C. Recovery performance We further evaluate the recovery performance in the  presence of data loss. We take the recovery speed and network traffic for comparison standards between the two codes. We define the recovery speed as the total size of lost blocks divided by the total recovery time. For simplicity, we only delete one block and observe the recovery for the single failure.
+
+As is shown in Fig. 5, the experimental data conforms to the analytical results presented in table I. Overall, MS- BASIC codes show higher recovery speed than CRS codes.
+
+The gain is nearly 1.5? in the average case for all (k, n), due to less XOR operations for recovering data. The speeds of both decrease with the increasing parameter (k, n), owing to more blocks involved. We can also get that the big file has a lower recovery speed, just because it needs to process more data in big file.
+
+As network bandwidth is usually the bottleneck of a large cluster, we now study the bandwidth saving of MS- BASIC codes over conventional recovery. We use the traffic     (k,n)  R ec  ov er  y sp  ee d(  M B  /s )  CRS (1.64GB) MS-BASIC (1.64GB) CRS (2.52GB) MS-BASIC (2.52GB)  Figure 5. Recovery speed with a failure.
+
+(k,n)  N et  wo rk  tr af  fic (M  B )  CRS MS-BASIC  Figure 6. Network traffic per block recovery.
+
+monitoring tool, iftop, to measure the network traffic during recovery. The traffic is consumed by the receiving/sending data and some other control information. As we only repair one block, the amount of sending data is just the size of the new block (64MB). On the other hand, the amount of receiving data is 64kMB and 32kMB for CRS and MS- BASIC codes, respectively.
+
+As shown in Fig. 6, MS-BASIC codes have a significantly lower network traffic than CRS codes for per block recovery and show a highest reduction of approximately 3.1? in (8,16). Besides, the reduction is 2.86? and 2.67? for (6,12) and (4,8), respectively. The traffic increases with the increasing parameter (k, n) in both implementations. As shown above, the amount of data for recovery is depending on k and the larger k leads to more data.
+
+
+
+V. CONCLUSIONS AND FUTURE WORK In this paper, we explore the use of MS-BASIC codes to  provide fault-tolerant storage and minimize the recovery bandwidth. Also, we employ MS-BASIC codes in Hadoop HDFS. We theoretically show that MS-BASIC codes not only achieve high encoding/decoding efficiency, but also minimize the recovery bandwidth. The results of experiments confirm to the theoretical analysis and demonstrate the superior performance of MS-BASIC codes for construction and maintenance.
+
+In the future, we will explore the properties of MS- BASIC codes to achieve better performance in terms of data updates and disk I/Os. Moreover, we will study and implement the minimum bandwidth BASIC codes, from both theoretical and applied perspectives.
+

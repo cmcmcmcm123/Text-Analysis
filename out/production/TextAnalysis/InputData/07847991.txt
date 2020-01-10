@@ -1,0 +1,120 @@
+Fast 1-itemset Frequency Count using CUDA  Roger Luis Uy
+
+Abstract? Frequent itemset mining is one of the main and compute-intensive operations in the field of data mining.  The said algorithm is use in finding frequent patterns in transactional databases.  The 1-itemset frequent count is used as basis for finding succeeding k-itemset mining.  Thus there is a need to speed-up this process.  One of the techniques to speed-up the process is using the Single Instruction Multiple Thread (SIMT) architecture.   This architecture allows a single instruction to be applied to multiple threads at the same time.  Current graphics processing unit (GPU), which contains multiple streaming processing units, uses SIMT architecture.  In order to abstract the GPU hardware from the programming model, NVIDIA introduces the compute unified device architecture (CUDA) as an extension to existing programming languages in order to support SIMT. This paper discusses how 1-itemset frequent count is implemented in SIMT using CUDA.
+
+Keywords?Frequent itemset mining; CUDA programming; graphics processing unit; data mining; big data
+
+I. INTRODUCTION In the last few decades, CPU processor technology has  improved by leaps and bounds.  This is due to the motivation to improve the performance of single-threaded application.
+
+The processor speed has almost breach the 4-GHz barrier if it is not due to power and thermal constraints.  Those obstacles led to the change in design philosophy of processor technology which espouses lower processor speed but with increased number of processing cores [1].
+
+The introduction of dual-core and multi-core processors provide noticeable benefits for applications with dynamic workloads that are composed of short sequences of computations operations, high data locality and unpredictable control flow.  This is typical in running multiple multimedia applications [2].   Thus, the design of CPU is focused more on having large cache memory, multiple branch predictors and complex instruction set decoders.
+
+Another improvement in the processor technology is the increase in the processing speed and the number of processing cores of the graphics processing unit (GPU).  Originally, the GPU is designed as a non-programmable 3D graphics accelerator.  But it has gradually evolved and later on become a programmable processing unit.
+
+Each GPU is composed of hundreds of processing units performing simple task.  This exhibits the characteristic of a parallel computing platform akin to single instruction multiple thread (SIMT) architecture.  Having this architectural  characteristic, GPU is suitable for high performance computing (HPC) applications that have longer sequences of computations instructions and very minimal control flow instructions [3].
+
+The compute unified device architecture (CUDA) was developed by NVIDIA as a programming model in order to abstract the GPU hardware so that programmer can focus more on application development.  CUDA provides development environment to support parallel computing extension to such programming languages as C, C++, Fortran and OpenCL as well.
+
+Frequent itemset mining (FIM) or sometimes known as frequent pattern mining (FPM) is a fundamental task in the field of data mining especially in association rule mining (ARM) [4].  FIM aims to extract hidden patterns in large volume of data by discovering frequently co-occurring groups of items in a dataset.  Once the hidden patterns are extracted and strong association are found among them, useful information can then be derived from the patterns.
+
+Generating frequent itemset is a time demanding task.  Its operation starts from finding initial frequent 1-itemset and later on generating combinations of frequent k-itemsets for a given k items. This operation leads to an exponential time complexity (i.e.,  ).  In the realm of data- intensive scientific discovery (DISD) or more commonly known as ?big data?, n is a potentially large number which can lead to a long execution time.
+
+With improvements on hardware technology to support parallel processing, much of the existing FIM works still focuses on algorithmic improvements [5] [6] [7] [8]  rather than parallelizing existing algorithms.  As of now, most of the FIM algorithms are generally serial in nature.
+
+This paper compares the speedup improvement of generating frequent 1-itemset using parallel computation via GPU as compare to its sequential processing counterpart.
+
+Section II provides an overview of the 1-itemset frequency count while section III provides an overview of CUDA and GPU.  Section IV and V respectively discuss the sequential and CUDA implementation of 1-itemset frequency count.
+
+Section VI describes the datasets used in the experiment with the result and analysis are presented in section VII.  Finally conclusion and recommendation are discussed in Section IX.
+
+
+
+II. 1-ITEMSET FREQUENCY COUNT   There have been many researches on algorithm to find frequent itemsets efficiently.  Most of the previously proposed algorithms are categorized either as candidate generation based [9] or pattern growth based [10].  The candidate generation is based on Apriori algorithm.  This algorithm introduces the concept of downward closure property known as Apriori or anti-monotone.  The property states that a k- itemset is frequent only if all of its sub-items (i.e., k-1) are frequent.  Thus, the frequent itemsets are generated by first scanning the datasets to find the initial frequent 1-itemset.
+
+From this 1-itemset, the candidate (k+1)-itemsets are generated and their corresponding support count is counted.
+
+On the other hand, the pattern growth method avoids the need for candidate generation by constructing complex structure that contains sufficient information within the dataset.  First proposed by [10], the frequent pattern (FP) growth algorithm instead generates a FP-growth tree which stores the compressed version of the database.  The frequent itemsets are then generated based on the FP-growth tree using a method known as FP-growth pattern. This algorithm scans the dataset twice to generate the FP-growth tree. During the first scan, the dataset is scanned to obtain the 1-itemset.  The 1-itemset is then sorted in frequency-descending order. During the second scan, the items in each transaction are processed based on the sorted 1-itemset order and the FP-growth tree is then built during the second pass based on the 1-itemset and the transactions of the dataset.
+
+Regardless of the type of algorithms, the generation of the 1-itemset frequency count is the building block of the respective algorithm.  Thus, it is of importance that this procedure be processed in the least amount of time.
+
+
+
+III. CUDA AND GPU CUDA was introduced by NVIDIA as a programming  model to abstract the GPU hardware [3].  It extends the C, C++, Fortran and OpenCL to support parallel processing via GPU hardware.  In CUDA, the computational element of an algorithm that is to be executed in GPU is known as a kernel.
+
+Once compiled, a kernel is composed of many threads that execute the same program in parallel.  One can view a thread as an iteration in a loop.  For example, figure 1 illustrates a sequential C program construct to perform a vector addition of one million elements of array A with array B and the result is placed in array C.
+
+01 for (int i=0; i<1000000; ++i) 02    C[i]= A[i] + B[i]; Fig. 1.  Code illustrating sequential vector addition of one million elements   The equivalent CUDA kernel function for the vector  addition is illustrated in figure 2.  Note that arrays A and B are source operands, array C is the destination operand, while integer variable n contains the number of elements to be added.
+
+1___global___void 2 vectorAdd (const float *A, const float *B, float *C, int n) 3{ 4 int i = blockDim.x * blockIdx.X + threadIdx.x; 5 if (i < n) C[i] = A[i] + B[i] 6 }   Fig. 2.  CUDA kernel function equivalent to perform vector addition of  one million elements  Once compiled, the instruction ?C[i] = A[i] + B[i]? in line 5 of figure 2 can be viewed as an unrolled loop as shown in figure 3.  Each unrolled instruction is viewed as one thread and all threads are executed at the same time in parallel by the GPU.
+
+C[0] = A[0] + B[0] C[1] = A[1] + B[1] : : C[9999999] = A[9999999] + B[9999999]  Fig. 3 Unroll loop of C[i] = A[i] + B[i]  Each thread has its own thread index as defined by the built-in variable threadIdx.x as shown in line 4 of figure 2.  It has its own private local memory and registers to store data.
+
+Multiple threads are then grouped together into thread blocks each having its own block index as defined by the built-in variable blockIdx.x as shown in line 4 of figure 2.  Threads within the thread block can share information through its own block shared memory.  They can also synchronize among themselves either sequentially or concurrently using barrier synchronization.  At the top of the hierarchy, known as grid, is a group of thread blocks..   Each grid executes one kernel function.  Blocks within the grid can share information using global memory.
+
+Data from the host computer needs to be transferred to the GPU memory before the GPU can process it.  The GPU memory should first allocate the size of the data to be transferred using the cudaMalloc instruction as illustrated in lines 3 and 5 of figure 4.   Once the memory is allocated, the data is then transferred to the GPU memory using the cudaMemcpy instruction as illustrated in line 4 and 6 of figure 4.    Once the GPU has processed the data, it is transferred back to the CPU memory using the same cudaMemcpy instruction as illustrated in line 10 of figure 4.  Note that the transferring of data between host memory and GPU memory presents a significant overhead in GPU processing  Once the data are transferred, the calling program should define the number of threads in a block before invoking the kernel function.  This is illustrated in line 7 of figure 4.  The typical value is 256 and the maximum value is 1024 as defined by the compute capability (CC) of a device.  The compute capability (CC) of a device identifies the features supported by the GPU hardware and is used by applications during runtime to determine which hardware features and instructions are available on the cuurent GPU [10].  The number of blocks per grid is then computed based from the     number of threads per block.  This is illustrated in line 8 of figure 4.  The CUDA kernel is invoked liked a typical function but with the added parameters of number of blocks per grid and the number of threads per block inside the ?<<< >>>? symbol.  This is illustrated in line 9 of figure 4.
+
+1int main (void) 2{  ? 3 cudaMalloc((void **)&d_A, size); 4 cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice); 5 cudaMalloc((void **)&d_B, size); 6 cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice); 7 int threadsPerBlock = 256; 8 blocksPerGrid = (n+threadsPerBlock-1)/threadsPerBlock; 9 vectorAdd <<<blocksPerGrid, threadsPerBlock>>> (d_A, d_B, d_C, n) 10 cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost); 11} Fig.4.  Main C program to invoke the CUDA kernel function    Inside a GPU, it is composed of at least two (2) streaming multiprocessor (SM).  Within each SM, threads are dispatch for execution in a group of 32 threads known as warp.   Up to four warps can be be dispatched per execution during each clock cycle.
+
+
+
+IV. SEQUENTIAL IMPLEMENTATION OF 1-ITEMSET FREQUENCY COUNT  The sequential implementation of 1-itemset count is implemented using C++ on a Visual Studio 2013 platform.
+
+The data in the dataset are structured as composed of having n transactions (i.e., row) and each transaction having k items.
+
+Since the purpose of the 1-itemset count is to count the frequency of each 1-itemset, there is no need to maintain the structure of the file.  Thus, the data is read in and store as linear array in the memory.
+
+Once the data are in the memory, the sequential 1-itemset count is performed.   The 1-itemset count is stored in an Item structure containing two members: index containing the item while count contains the frequency of that item in the dataset.
+
+The process loops through the linear data in the memory and performs the frequency count by updating the corresponding Item.count of Item.index.
+
+
+
+V. CUDA IMPLEMENTATION OF 1-ITEMSET FREQUENCY COUNT  The CUDA implementation of 1-itemset count is implemented using C++ on a Visual Studio 2013 platform with CUDA extension toolkit 6.5 installed.   The system is developed on a machine having a GPU hardware of  NVIDIA Geforce GT 640M with 2GB of memory and compute capability of 3.0.  The CPU handles the transfer of data from file to memory while the GPU handles the 1-itemset frequency count.  As with the sequential implementation, the data is stored as linear array in the memory frequency count is stored  as an Item structure containing two members.  In order to minimize the overhead involved in data movement, the structure is declared using CUDA?s cudaMallocHost instead of using the new instruction of C++.  This is illustrated in line 3 of figure 5.  This is to page locked that part of the memory in order to prevent the virtual memory system from swapping it out of the memory.   The direct memory access (DMA) mode can now be used to transfer data between CPU and GPU and vice versa thereby speeding up the process.  Using this method, the average memory throughput between CPU to GPU memory is 8.763GB/s or an improvement factor of 23 as compared to the traditional method which has an average throughput of  only 378.993MB/S.
+
+1int main (void) 2{  ? 3 cudaMallocHost((void **)&h_struc, tsize); 4 cudaMalloc((void **)&d_struc, tsize); 5 ?.
+
+6 int threadsPerBlock = 256; 7 blocksPerGrid = (n+threadsPerBlock-1)/threadsPerBlock; 8 vectorOneItemCount <<<blocksPerGrid, threadsPerBlock>>> (d_array, d_struc, itemcount); 9 cudaMemcpy(h_struc, d_struc, tsize, cudaMemcpyDeviceToHost); 10 ? 11 cudaFreeHost(h_struc); Fig.5.  Main calling program code snippet to illustrate hos page-locked memory is initialized  The code snippet for CUDA kernel is illustrated in figure 6.  Array A which contains n*k item is used as indexed to the B.num structure.  For example, if A[i] is 5, then B[5].num which is the counter for item 5 is incremented. Atomic operation is used since it is possible for different threads to access the same B.num structure at the same time.  This prevents race hazard to happens but at the expense of serializing the parallel operation.   This has an affect especially with dense dataset since a particular item exists more often than others.
+
+1___global___void 2 vectorOneItemCount (int *A, Item *B, int n) 3{ 4 int i = blockDim.x * blockIdx.X + threadIdx.x; 5 if (i < n) atomicAdd(&(B[A[i]].num), 1); 6 }   Fig. 6.  CUDA kernel code snippet to perform 1-itemset frequency count
+
+VI. DATASETS USED IN THE EXPERIMENT To evaluate the sequential as well as the CUDA  implementation of the 1-itemset frequency count, four real datasets and two synthetic datasets are used for the performance tests.  These datasets are often used in previous study of frequent itemset mining.  Both real and synthetic datasets are obtained from [12].  The accident dataset contains traffic accident data of Flanders, Belgium.  The pumsb dataset     contains census data.  The kosarak dataset contains click- stream data of a Hungarian on-line news portal.  The retail dataset contains the retail market basket data from an anonymous Belgian retail store.  The T10I4D100K and T40I10D100K synthetic dataset are used to simulate retail consumer basket data.  The former contains an average transaction length of 4 while the latter contains an average transaction length of 10.  Table I summarizes the characteristics of these datasets, where the average transaction length is denoted by #Avg. length, the number of items is denoted by #items, the number of transactions is denoted by #Trans and the total number of total items, which is obtained by multiplying the average length with the total number of transactions, is denoted by #Total Items.  Note that both accident and pumsb datasets are dense datasets while the rest are sparse datasets.
+
+TABLE I. SUMMARY OF DATASETS USED  Dataset #Avg.
+
+length  #Items #Trans #Total Items  Accidents 33.8 468 340,183 11.500,870 Pumsb 74 2113 49,046 3,629,404 Retail 10.31 16470 88,162 908,576  Kosarak 7.02 36831 1,001,053 7,029,013 T10I4D100K 10.1 870 100,000 1,010,228  T40I10D100K 39.6 942 100,000 3,960,507
+
+VII. RESULTS  AND ANALYSIS Table II shows the execution time, in milliseconds, of the  sequential 1-itemset frequency count process.  Each dataset is executed 10 times in order to average out the result.  The result excludes initialization and transfer time from file to memory as they are common for both sequential and CUDA implementations.  The execution time is linear to the total number of items in the dataset.   Table III shows the execution for CUDA 1-itemset frequency count.  One can note that the overhead of transferring data from CPU to GPU accounts to half of the execution time.  The improvement factor of CUDA over the sequential implementation ranges from 2.90 times for dense dataset and up to 21.67 times for sparse datasets.   The reason sparse dataset has a better speedup is due to the fact that the items are much spread apart and thus less contention for the same index counter.  This leads to less atomic operation which will cause serialization of the process.
+
+TABLE II. EXECUTION TIME OF SEQUENTIAL 1-ITEM FREQUENCY COUNT  Dataset Execution time (in msecs) Accidents 132.67  Pumsb 120.07 Retail 117.72  Kosarak 126.98 T10I4D100K 122.02  T40I10D100K 124.19   TABLE III. EXECUTION TIME OF CUDA 1-ITEM FREQUENCY COUNT Dataset Transfer  time CPU to GPU (in msecs)  GPU exec.
+
+Time (in msecs)  Transfer time GPU to  CPU (in msecs  Total time (in  msecs) Accidents 7.39 25.57 12.73 45.69  Pumsb 4.95 11.62 9.17 25.74 Retail 1.41 6.48 4.36 12.25  Kosarak 9.07 18.85 8.64 36.56 T10I4D100K 0.78 2.83 2.03 5.64  T40I10D100K 2.7 9.02 4.62 16.32
+
+VIII. CONCLUSION AND RECOMMENDATIONS From the result, it can be seen that CUDA implementation performs at least two times better than sequential implementation.  In the frequency itemset mining, the 1- itemset frequency count is just the first step.  Thus overall system improvement can further be improved by developing other modules in CUDA kernel.  Thus the overhead involved in transferring data between CPU and GPU memory can be diluted.  In this information age, the volume of data has reached exa-scale level already. Thus, there is a need to take advantage of all available computing resources.  Improvement in hardware technology and its widespread availability has made parallel processing a viable option in improving FIM algorithm.
+
+
+
+IX. BIBLIOGRAPHY [1] Roger Luis Uy, "Beyond multi-core: A survey of architectural  humanoid, nanotechnology, information technology, communication and control, environment and management (HNICEM 2014), Palawan, 2014, pp. 1-6.
+
+[2] Peter N. Glaskowsky, "NVIDIA's Fermi: The first complete GPU computing architecture," NVIDIA Corporation, White paper 2009.
+
+[3] Gerassimos Barlas, Multicore and GPU programming: An integrated approach. Waltham, Ma, USA: Morgan Kaufmann, 2015.
+
+[4] Florin Gorunescu, Data mining: Concepts, Models and Techniques, ISRL 12. Berlin, Germany: Springer-Verlag, 2011.
+
+[5] Zhihong Deng and Zhonghui Wang, "A new fast vertical method for mining frequent patterns," International Journal of Computational Intelligence Systems, vol. 3, no. 6, pp. 733-744, December 2010.
+
+[6] Zhong-Hui Wang, JiaJian Jiang, and Zhi-Hong Deng, "A new algorithm for fast mining frequent itemsets using N-lists," Science China Information Services, vol. 55, no. 9, pp. 2008-2030, 2012.
+
+[7] Zhi-Hong Deng and Sheng-Long Lv, "Fast mining frequent itemsets using Nodesets," Expert Systems with Applications, vol. 41, pp. 4505- 4512, 2014.
+
+[8] Zhi-Hong Deng, "DiffNodesets: An efficient structure for fast mining frequent itemsets," Applied Soft Computing, vol. 41, pp. 214-23, April 2016.
+
+[9] Rakesh Agrawal and Ramakrishnan Srikant, "Fast algorithms for mining on very large data bases (VLDB'94), Santiago, 1994, pp. 487-499.
+
+[10] Jiawie Han, Jian Pei, and Yiwen Yin, "Mining frequent patterns without candidate generation," in Proceedings of the 2000 ACM-SIGMOD 2000, pp. 1-12.
+
+[11] NVIDIA Corporation, "CUDA C programming guide," NVIDIA Corporation, Programming GUide PG-02829-001_v7.5, 2015.
+
+[12] Bart Goethals. (2004) Frequent itemset mining dataset repository.
+

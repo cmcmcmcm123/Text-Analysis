@@ -1,0 +1,144 @@
+Using Memcached to Promote Read Throughput in Massive Small-File Storage System
+
+Abstract?Because of the bottleneck of disk I/O, the distributed file system based on disk is limited in the performance on data throughput and latency. It is a big challenge for such a system to meet the high performance requirement of the massive small-file storage.
+
+Cache has been widely used in storage system to improve the data access performance. In order to support the storage of massive small files, we have integrated memcached into our distributed file system to optimize the storage of massive small files. However eviction problem arose from LRU replacement algorithm in memcached. It means that the non-stale objects might be replaced due to large short-lived objects. Therefore, we proposed Prioritized Cache (PC) and Prioritized Cache Management (PCM) to solve the problem. The cache of memcached is reorganized and classified into permanent cache and temporary cache. Furthermore, in order to alleviate side effects on hit rate in sequential access, temporary cache is partitioned into different parts with different priorities and managed according to the priorities. We have implemented and evaluated the integrated prototype system. The experimental results show that the improved distributed file system with distributed object cache can deliver high performance on small- file storage. Compared with the original system, the read of small files increased by a factor of 2.65 8.05, without write performance degradation.
+
+Keywords?storage, file system, prioritized cache, Carrier, memcached, replacement policy
+
+I. INTRODUCTION CPU performance has roughly doubled every 18 months for  the past decades, while disk performance has increased very little. As a result, the growing performance gap between CPU and disk makes access latency of disk the bottleneck of datacenter. Disk capacity has increased more than 10000-fold over the last 25 years and seems likely to continue increasing in the future. Unfortunately, the maximum transfer rate for large blocks has improved only 50-fold, and access latency has only improved by a factor of two. As multi-core technology develops rapidly, the gap between processor and disk is still widening. In order to make up the deficiency of disk performance, most datacenter improve system throughput by adding storage devices and using parallel I/O to deliver high aggregated throughput. It works well for massive large files  storage, but not for small-file storage. When most objects are small files, performance decline very fast because of the long seek time and rotational latency. So, the design of parallel disk I/O can?t meet the requirement of massive small-file storage system.
+
+The problem of massive small files storage is becoming increasing prominent in some fields, such as large scale web application and short message storage. In such applications, the typical file size ranges from KB to hundreds of KB. Currently, all these small files are storage in database based on disk.
+
+Generally, Web 2.0 sites use relational database system for the data storage and management, from which application servers read data and pass it to browsers. The size of data object in web site is small, but the total number of objects expands very fast.
+
+It results in a high burden of disk I/O, slows down access rate dramatically and could even make the whole system break down. It is mainly due to the long seek time and prepare time of disk. Objects in Cell phone message storage system are short message, multimedia message and calling record. Most of them are small file and the scale of system is huge (80TB data produced in every six months). In accordance with regulations, these objects must be stored for search and analysis. Search is a time consuming operation because of the high access latency for massive small data objects. In the current solution, data objects are translated into structured datasets and inserted into database. Further analysis and queries are carried out based on database. This method cannot support real-time service, so it only can provide a limited query result.
+
+Traditionally, it is an effective way to improve the throughput and access latency using cache. Memcached is a distributed memory object cache system, which has a simple and scalable architecture. It is usually used in database systems and web applications. Based on Carrier, which is the distributed file system developed by Tsinghua University, we designed a scalable distributed cache system with unified namespace to boost the access performance of small files. We modified the fuse interface to make it compatible to the programming interface of libmemcached and Carrier.
+
+Due to its cache block replacement policy, memcached may kick the short lived objects out of the cache system, even though they are not stale. This is well known as the eviction problem. In order to solve this problem, we classified the   DOI 10.1109/GCC.2010.18     distributed Memcached system into two categories, permanent cache and temporary cache. Furthermore, we assign different priorities to different areas of temporary cache. The permanent data and temporary data will be written into permanent cache and temporary cache respectively. We use a threshold value to represent the access frequency in temporary cache. If a low priority temporary cache object?s access frequency reaches the threshold, it will be moved into high priority temporary cache.
+
+We have performed performance evaluations of our cache system thoroughly. The read performance for small files increased by 2.65 8.05 times, while the write performance remained unaffected.
+
+The rest of paper is structured as follow. Section 2 introduces buffer cache and block replacement policy. Section 3 presents the design of prioritized cache, while Section 4 demonstrates system implementation in detail. Finally, we evaluate our system performance in Section 5 and summarize our contributions in Section 6.
+
+
+
+II. RELATED WORK The cache mechanism is the usual method to improve the  system performance. In this paper, we first introduced the deficiency of buffer cache and block replacement policy, we also pointed out their advantages and disadvantages. We then introduced the architecture of the Carrier distributed file system.
+
+A. Buffer Cache There are three types of cache approaches mainly used in  Distributed file system: independent cache, collaborative cache and multi-layer cache. GPFS[1] and Sprite[2] file system use independent cache, every node has private cache space and can reach high access rate. However, if every client has to read the data from the same server, the network load of the server could be much higher than others. Furthermore the overloaded server could become the bottleneck of the general file system.
+
+In order to eliminate the bottleneck, Lustre[3] adopted collaborative cache. It takes advantage of the distributed cache space in every client and makes up a collaborative cache space which is globally coherent. Multi-Layer cache has more than one cache layer between storage system and the client, such as Avere[4] and memcached. Avere uses SSD as a cache layer for NFS[5], and builds up the distributed file system based Flash.
+
+Memcached is usually used to be a cache system for database management system.
+
+In this paper, memcached is used to be the important cache layer of the multi-layer cache for the distributed file system.
+
+Therefore, the system I/O performance can be improved by the high performance in-memory operations in memcached.
+
+B. Block Replacement Policy LRU is a classical and widely used cache replacement  algorithm. It is easy to implement with little overhead. It works well in the scenarios with the high locality of data access pattern. However, it is not fit for the pattern of sequential access. If the size of the sequential accessed data is larger than the cache size, LRU dose not work at all.
+
+The simple replacement policy of LRU does meet the requirements of the diversity of data access patterns. In  distributed file systems, it is common to work with multiple access patterns, such as random and sequential. Therefore the cache space of the file system has to be designed to support multiple data access patterns. If we use the LRU policy, the highly accessed objects might be kicked out of the cache, while replaced by the lowly accessed ones.
+
+LFU (Least Frequently Used) is another classical algorithm of cache replacement policy. LRU kicks the lowly accessed objects out of the cache. There is usually a counter associated with every object in the cache. We increase the value of the associated counter by one when the cache hits. If the cached object is stale, the lowly accessed objects will be replaced by the newer objects. If the value of the counter of one object is equal with another, the LRU is used. It is obvious that if the counter of cached objects reaches a high value, the object will remain in the cache space even if it is stale. As a result, the efficiency of the overall cache will decline. Therefore, we must take into consideration both factors of locality and access patterns when implementing cache and replacement algorithm.
+
+Other replacement algorithms, such as 2Q[6], MQ[7], ARC[8], and LIRS[9], focus on the time locality. In order to achieve high performance in various environments, some work, has been done with the consideration of both data locality and time locality, such as DULO[10] and WOW[11]. Besides, other researches on two levels of cache have been carried out to improve the performance. Based on two-level cache, we can make better predictions of the accessed data, and cut down the page fault rate. With the help of these algorithms, the hit rate can be improved, but the eviction problem is inevitable.
+
+Therefore, we proposed Prioritized Cache (PC) and Prioritized Cache Management (PCM) to solve the problem. The experimental results show that the Prioritized Cache Management can deliver high performance on small-file storage.
+
+
+
+III. PRIORITIZED CACHE DESIGN  A. Architecture of Carrier with Memcahced Memcached is a distributed memory object cache system.
+
+In order to accelerate dynamic web application, memcached is usually used to be a cache system for database management system. It is an in-memory key-value store for small objects accessed frequently. Memcached has two significant features.
+
+One is that it is a distributed cache system based memory. The other is that it can highly reduce memory fragmentation and avoid the adverse effects of system performance by using simple, high efficient memory space management algorithm.
+
+Memcached uses slab-chunk memory space allocation algorithm and LRU replacement policy in slab. The allocation algorithm can short the time of the allocation operation, reduce the consumption of the functions and lower the probability  of the memory fragment.
+
+However, memcached cannot guarantee the reliability of the system and the data, because of the lack of the mechanism of error tolerance and authentication. For this reason, it is not feasible to use memcached as storage system directly. We build the data storage system by integrating memcached with carrier, which can achieve high access rate of small files to benefit from the performance dominance of memcached.
+
+MemcachedFile Interface  Distributed Storage System  Fuse  Read Cache  permanent cache  low priority temporary cache    temporary cache  high priority temporary cache  The architecture of this design is showed in figure 1. The distributed file system is based on disk which provides the persistent storage. The file interfaces are supported with the help of FUSE framework. In this way, it works as the local file system in the view of end users. As the read cache of distributed file system, memcached can improve the read performance on small files by caching the objects whose size is less than 1 MB.
+
+Figure 1.  Architecture of  Read Cache for Distributed Storage System  B. Eviction Problem The eviction variable in memcached is the number of old  items replaced out of the cache. The old items will be replaced by news items. The variable can be used to decide whether to install more memory. There are two cases that eviction problems will occur because of the simple of LRU algorithm memcached. 1) Memcache uses slab-chunk as the memory allocation strategy and LRU based on internal slab. If there is no remaining chunk in a slab, the stale chunk in a slab will be kicked out, even if there are chunks in other slabs, 2) The LRU algorithm might kick out of objects which are not stale.
+
+Memcached uses Lazy Expiration strategy. It does not keep track of the expiration of the object in memcached, but get time stamp when view records and inspection records are expired.
+
+The expired data which has not been explicitly called still takes up space. Using MD5 value instead of random string as the key to reference to a fixed space, it can avoid the possible waste of space. The LRU algorithm might kick the non-stale objects out due to large short-lived objects.
+
+The simple replacement strategy of LRU does not meet the needs of the diversity of data access patterns. It is very common that there are multiple data access patterns in distributed file system, like random and sequential. These patterns will affect the cache space of the system. LRU will kick the least recently used objects out of the cache. This policy does not support the sequential access pattern well. When the total size of accessed data is larger than the cache size, LRU will not work at all.
+
+Using LFU will lower the efficiency of cache. LFU kicks the objects which have the lowest accessed frequency out of the cache system. There is a counter associated with each cached objects. If cache fails, the counter increases by 1 once every hit happens. The objects whose counter is lowest will be replaced.
+
+If two cached objects have the same counter value, LRU will be used. When the cached objects reach a high counter value,  they will not be replaced even if there are stale. These objects will occupy the cache space, which lead to bad cache performance. This is the disadvantages of LFU.
+
+C. Design of Prioritized Cache Due to the eviction problem, when using memcached to  build a cache space, we classified the cache space of memcached into permanent cache space and temporary cache space taking both locality and accessing patterns into consideration. Further, we classified temporary space two categories: high priority temporary cache and low priority temporary cache. See Figure 2 for details.
+
+Figure 2.  Division of prioritized cache space  Permanent cache is used to storage permanent objects.
+
+Temporary cache is used to store temporary objects, which solves the kick out problems of permanent objects. Permanent object will be stored into permanent cache space and temporary objects will be stored into temporary cache space. We use LRU to implement permanent cache, low priority temporary cache and high priority temporary cache. In this way, we avoid the problem that permanent objects may be kicked out due to shorted-lived objects.
+
+We classify the temporary cache space into low and high temporary spaces in order to avoid the kicking out of highly accessed objects in the sequential access pattern. We use a threshold value to represent the access frequency in temporary cache. If the access frequency of a low priority temporary cache object reaches the threshold, it will be moved into high priority temporary cache. The threshold is decided by analyzing the user access behavior and can be adjusted dynamically. Only those objects which have a high access frequency can be moved into high priority cache. The sequential accessed objects can only be moved into low priority cache, which makes the objects in the high priority cache immune from sequential accessed objects.
+
+
+
+IV. IMPLEMENTATION Based on Carrier developed by Tsinghua University,  memcached and its libmemcached interface, we modified the Fuse development library and built a cache for Carrier. The       Data Server  data string  Data Server  Data Server  Meta Server  Backup  Client  control stringmemcached  dataservers  metaservers    Data Server  Carrier  Fuse  Data Server    permanent cache  low priority temporary cache  high priority temporary cache    cache system contains prioritized cache module, replacement algorithm and Fuse interface, etc.
+
+A. Carrier We designed Carrier according to multiple distributed file  systems[1, 12 17]. As we can see in figure 3, Carrier is composed of metaservers, dataservers and clients, which provides POSIX compatible interface. The metadata takes charge of the meta-information of all files, including namespace[18], access control information[19], the map information between file to data chunks and the location of each chunk. Metaserver is also responsible for the system level management, including the allocation and management of chunks and the management of different replica chunks on various dataservers. The reliability of metadata is guaranteed by a hot standby metaserver which always keep consistent with the main metaserver. We use local Linux file system to storage and access chunk data on dataservers. Dataservers split file into chunks of the same size. The default size 32M, which can be set according to actual needs. The client of Carrier is the interface of the distributed file system which provides methods like open, read, write, close, list, delete, mkdir, etc. The client will communicate with both metaserver and data server, and access data stored in Carrier on behalf of user applications.
+
+After requiring the metadata from metaserver, the client asks the dataservers for chunks directly, which freed the metaserver from over loaded.
+
+We modified the fuse development library, which gives the user an easy way to use. It is implemented in the user space, thus there is no need to modify the Linux kernel. The Carrier uses Fuse[20] development library to map remote directories to local directories. After that, common applications can access data in Carrier like accessing local file  transparently.
+
+B. Memcached Integration In order to improve the read and write performance on  small files, we optimized Carrier by using memcached as the cache of Carrier.
+
+Figure 3.  Architecture of Carrier with Memcached  Memcached do not communicate with Carrier, instead it communicate with Fuse directly, which greatly simplifies the design. In this way, we do not need to transmit control information and data between memcached and Carrier and do not need to change the Carrier's reading and writing process.
+
+System determines the size of the file cache to memcached based on the size of the documents on demand.
+
+We use libmemcached application program interface.
+
+Interaction with the memcached is achieved by Fuse, we changed the Fuse Development Library to meet the libmemcached programming interface. Files cached in memcached are stored as key-values. The MD5 value of the full path of the file is stored as the key and the related file is stored as the value. Instead of random string, MD5 value is used as the key to reference to a fixed space. In this way, the potential space waste problem can be avoided.
+
+When reading a file whose size is larger than 1MB, it will be accessed from Carrier directly. If the size is smaller than 1MB, we will search the cache space according to the MD5 value of the file path. If successful, we will fetch the file from cache space and return it to the user. If failed, we will read the file from Carrier and put it into memcached. Depending on expiration, we can decide to put the file in whether permanent cache space or temporary cache space. When writing a file into Carrier, we write it into Carrier directly. If the file size is smaller than 1MB, we carry out a search operation in the memcached. The file will be marked as stale, if it can be found in memcached.
+
+C. Prioritized Cache We embedded a counter in the client of memcached. If the  cache is hit, we increase this counter by one. If we found that the counter of the object is greater than the threshold value, we move the object from low priority temporary space into high priority temporary space.
+
+We decide the threshold value based on the temporary cache hit rate and the total cache size. If the value of threshold is set too high, the number of objects moved into high priority temporary space will decrease. As a result, the efficiency of cache space declines. If the value of threshold is set too low, too many objects will be moved into high priority temporary cache, taking the place of the highly accessed data in high priority temporary space.
+
+The hit rate of temporary cache is also closely related to the total cache size, the cache space division, access patterns, the size of the object, etc. We also set the threshold value according to those factors. It is reasonable to adjust the threshold value dynamically. We make our best efforts to get the optimized threshold value. In this paper, we set the threshold value based on the experiments we made on carrier and the related trace we collected.
+
+D. Fuse interface Memcached does not implement the persistent storage of  cached objects, thus, we do not use memcache as the write cache of Carrier. We set a writing buffer of size 512KB in Fuse to improve the performance of non-sequential writing. We write data into local writing buffer of Fuse first. When the     buffer is full or the writing operation is completed, we write the cached data into Carrier.
+
+
+
+V. EVALUATION We have evaluated the caching performance of the Carrier  in the same cluster by using Carrier memcached, and the evaluations are based on the same hardware and software environments. For ease of description, in this section we will use Carrier-Memcached instead of Carrier.
+
+A. Experimental Design Experimental cluster is made up of a front end and 16 nodes.
+
+The front end runs as the client, the node1 and node2 run as metaservers, node3 to node12 run as dataservers, node13 to node16 run as memcached. Each node is of the same configuration, and the details are listed in Table 1.
+
+TABLE I. TEST CLUSTER CONFIGURATION  Type configuration  Hardware Xeon 1.6GHz (4 core), 4G Memory, 160GB Disk  Operating System Ubuntu 8.04 Server  Software Platform Erlang 5.5.5 virtual machine  Network Gbit Ethernet  We evaluate the data access performance and hit rate of the system. Write and read performance of different file sizes and different number of files is calculated as:  Time  Access Total The Volume  Access DataSpeed  Access Data ?  Read hit rate refers to the random read hit ratio of memcached, which is calculated as:  Files Total ofNumber FilesHit  ofNumber   RateHit  Read ?  We have established a 512MB space in the memcached cache, including a 128MB permanent cache, a 256MB low priority temporary cache and a 128MB high priority temporary cache. The access frequency threshold value is set to 36. The average system throughput is evaluated using multiple datasets with the same aggregated file size of 2GB.  The dataset is made up of multiple equal files. In each dataset, the size of individual file ranges from 32KB to 1GB. Both Carrier and Carrier- Memcached have been evaluated based on the above- mentioned experiments. Random read and write tests have been taken 10 times and the throughput is the average. The read hit rate ratio is evaluated using the files less than 1MB.
+
+B. Random read hit rate Hit rate plays an important role in improving read  performance. It depends on cache capacity, cache space division, access method, object size and other related factors.
+
+As a result, prioritized cache, access frequency threshold value will also impact the hit rate. For the different sizes of small files ranging from 32KB to 1MB, the relationship between random read hit rate and access frequency threshold value in Carrier-Memcached is shown in Figure 4.
+
+Figure 4.  Hit Rate for Carrier-Memcached  With the decreasing of file size, the read hit rate declines gradually. Because the average visit frequency will decrease as the number of documents increasing in the same dataset. For the same access frequency threshold value, the decreasing of the average file access frequency will make the replacement of low priority temporary cache more frequently. So the read hit rate is smaller compared with large files.
+
+For the dataset with the same file size, the access frequency threshold value will make the read hit rate decrease if it is set too low or too high. As shown in Figure 4, the read hit rate is the highest when the access frequency threshold is set to 36.
+
+The access frequency threshold value will be set after cache capacity, cache space division, access method and the object size and other factors determined according to tests.
+
+C. Random read and write throughput For the files larger than 1MB, the read performance of  Carrier-Memcached and Carrier is consistent. The test results are shown in Figure 5. This is mainly because the file size in Memcached cache is no larger than 1MB. When the file is less than 1MB, read in Carrier-Memcached is faster than Carrier.
+
+The test results are shown in Figure 6. As can be seen from Figure 6, the smaller the file size, the better performance Carrier-Memcached achieved compared with Carrier. When the file size is 32KB, the reading speed in Carrier-Memcached and Carrier are 14.596MB/s and 3.679MB/s respectively.
+
+Figure 5.  Read Throughput of Large Files     The write performance of Carrier-Memcached and Carrier shows no difference. The results are shown in Figure 7. The performance dropped down dramatically when the file size is less than 1MB.  As we can see, the write performance of Carrier-Memcached is independent from cache.
+
+Figure 6.  Read Throughput of Small Files  Figure 7.  Write Throughput in Carrier-Memcached and Carrier
+
+VI. CONCLUSION AND FUTURE WORK We proposed a method of memcached buffer space  management based on prioritized cache. And we integrated the memcached into the distributed cache as part of a distributed storage system, which achieved high performance for small file reading. From the experiment, the performance of small files reading for Carrier file system has been improved 2.65 to 8.05 times by using memcached as a distributed storage system cache, while the write performance is independent from cache.
+
+Many work remains to be carried out in the future. We will focus on three aspects. 1) Files larger than 1MB should be cached. One of the proposed methods is to split the file into objects with fixed size, and store them in a memcached cache space. 2) The memcached can be used as a distributed storage system write cache. Therefore, we need to address data consistency problems in the memcached cache space and Carrier. 3) We need to design a common interface of memcached to make it available for other distributed file systems.
+

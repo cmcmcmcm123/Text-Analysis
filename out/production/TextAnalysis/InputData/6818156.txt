@@ -1,0 +1,142 @@
+
+
+Abstract?Nowadays, the volume of multimedia and unstruc- tured data has grown rapidly. More and more three-dimensional (3D) models are created for ever increasing applications. New storage and processing technologies are needed to keep pace with the continuous growth of big data. Hadoop is an attractive and open-source platform for large-scale data storage and analytics.
+
+Our previous research work has applied Hadoop distributed file system to efficiently manage 3D data for a 3D model retrieval system. To take better advantages of Hadoop, in this paper we propose two parallel strategies to improve the storing and accessing performance of 3D models. The MapReduce paradigm is adopted to provide a coarse grained parallelism for data loading, and a lightweight multithreaded algorithm is presented for data accesses. We conduct an extensive performance study on a cluster and the results show that significant performance increase can be gained for the parallel techniques.
+
+Index Terms?3D models, Hadoop, MapReduce, parallel tech- niques
+
+I. INTRODUCTION  Multimedia and unstructured data have been experiencing a rapid growth and reach sizes which are unthinkable a few years ago. IDC (International Data Corporation) study [1] predicts that world?s data will reach 40 zettabytes (ZB) by 2020, resulting in a 50-fold growth from the beginning of 2010, and unstructured data will account for 90% of all data. In the era of ?big data? where massive data sets need to be processed, system architectures as well as storage and processing techniques need to be redesigned to achieve scalable high performance.
+
+3D models are developed to be used in a wide range of fields such as virtual reality, 3D games, computer education and 3D printing. The 3D model retrieval technology is an effective approach to manage, access and share 3D objects and supports further 3D applications like modeling virtual scene in a fundamental way. Many useful research work and systems [2], [3], [4], [5] have been developed to tackle various challenges of the 3D model retrieval. For efficient and scalable data management, Hadoop [6] Distributed File System (HDFS) is utilized on 3D model storage in our related research. Files  Supported by ?the Fundamental Research Funds for the Central Universi- ties?.
+
+in 3D models are divided into two types and organized into individual large files in HDFS based on data correlations and access patterns. Serial processing approaches are used to perform input/output (I/O) operations.
+
+In this paper, we propose two kinds of parallel techniques to further leverage merits in Hadoop. A MapReduce [7] based coarse grained parallel scheme is exploited to enable the fast loading of massive 3D small files. Data are partitioned on the basis of model category and distributed across cluster nodes.
+
+The map function takes local data files as its input and finishes the job of grouping small files into large ones in HDFS. A multithreaded programming model is used to parallelize file accesses across multiple nodes of the cluster. The number of threads is determined by the distribution of the requested files.
+
+Each thread is responsible for retrieving data files from one data node. The required files are fetched when all the threads complete their tasks. We compared our parallel algorithms with non-parallel methods on a cluster with 17 nodes. The results demonstrate that our algorithms can efficiently increase I/O performance.
+
+The remainder of the paper is organized as follows. Section 2 introduces some preliminaries. The 3D model management strategy on HDFS is briefly summarized in Section 3. Section 4 presents the design and implementation of our parallel algorithms. A detailed performance study is described in Section 5. Section 6 reviews the related work. Section 7 gives a conclusion.
+
+
+
+II. PRELIMINARY  In this section, we introduce the fundamental principles of HDFS and MapReduce which are two core modules of Hadoop. Google File System (GFS) [8] and MapReduce framework [7] were originally proposed by Google and two key technologies for Google. Since the related papers were published, they have attracted wide attentions from academy and industry. Hadoop provides an open-source implementation for institutions and companies which need to tackle large data storage and processing problems, such as Yahoo! and Facebook. The core of Hadoop is composed of Hadoop     Distributed File System (HDFS) which is like GFS and the MapReduce implementation.
+
+A. HDFS  In the HDFS architecture, there exist two kinds of nodes namely NameNode and DataNode. File metadata and ap- plication data are separately stored. The NameNode server maintains all the metadata of files and useful information such as data block distribution records. Application data for example various files are placed on DataNodes. When file requests are sent to the NameNode through HDFS clients, the NameNode responds the requests by returning a list of relevant DataNode servers where the actual file data live. Then file data transfer happens between clients and DataNodes. The NameNode is the central manager of HDFS, through which clients can finish the read/write file operations.
+
+In HDFS, a typical block size is 64MB (64 megabytes), but a file does not occupy more space than required. That is if a 10MB file is stored in the block, 10MB space will actually be used. If files stored in HDFS are small and the amount of files is huge, a great deal of metadata need to be maintained in the NameNode which leads to the system overhead and performance bottleneck. Reducing the number of files by combining them into large ones is an improvement direction for applications on HDFS.
+
+B. MapReduce  MapReduce is a parallel programming framework for big data processing. The key of the MapReduce model is to allow users to focus only on data processing without paying much attention to details of parallel execution. There are two primitive functions in the MapReduce model: Map and Reduce. A list of ????1, ?????1? pairs are regarded as the input of a MapReduce job. The map function is applied to each pair to get intermediate key-value pairs. Then, the intermediate results are shuffled and grouped together according to the keys. After the grouping, a list of items in the form of ????2, ????(?????2)? are obtained. For each key2, the reduce function is applied and aggregated results are generated.
+
+In the first version of Hadoop MapReduce, there are two components working together: JobTracker and TaskTracker.
+
+The JobTracker is responsible for job scheduling/monitoring and resource management and the TaskTracker is in charge of mapper and reducer executions. In the next generation of Hadoop MapReduce, i.e. YARN (Yet Another Resource Nego- tiator), missions of the original JobTracker are accomplished by a global ResourceManager (RM) and per-application Ap- plicationMaster (AM). And on each node, there is a NodeM- anager which is used to execute and monitor tasks. The Appli- cationMaster negotiates resources from the ResourceManager and works with NodeManagers in the assignment, execution and monitoring of an application?s tasks.
+
+
+
+III. 3D MODELS ON HDFS  A 3D model in our data contains at least three files which have JPG (JPEG, Joint Photographic Experts Group), OBJ  Data  Animal Clothing Food Plant ??  Flower Leaf ??Bird Fish ??  196 197 ?? Thumbnail  OBJ file MTL file  Thumbnail OBJ file MTL file  Texture file 1 Texture file 2  Fig. 1. 3D Model Hierarchical Structure  (Object file) and MTL (Material file) extensions respectively.
+
+A JPG image file contains a thumbnail view of a 3D object.
+
+The second type of file in a 3D model is an OBJ file, which is a kind of data-format that represents 3D geometry. An OBJ file usually supports materials by referring to an or more external MTL material files, which are the third type of file in 3D models. Besides, in some MTL files, texture map statements associate image or texture files with material parameters that can be mapped. Now these files have also the JPG extension.
+
+Originally 3D models are organized in two levels of cate- gories. As shown in Fig. 1 (Fig. means Figure), they are first grouped by major categories such as ?Animal?, ?Clothing?, ?Food? and ?Plant?. Each major category is further subdivided into minor categories, for example ?Plant? is composed of ?Flower?, ?Leaf? and so on. In every small category, each 3D model contains a thumbnail image file, an OBJ file, an MTL file and zero or more texture files. Files in the same category usually have a high probability to be accessed in a consecutive manner due to similarity.
+
+In our experience of managing 3D models on HDFS, small JPG, OBJ and MTL files are merged into two types of large files, which are called TF (Thumbnail File) and OF (3D Object related File). For every minor category, a TF and an OF are generated. The TF consists of all the thumbnail files in the minor category, and the OF stores the left 3D specific OBJ, MTL and texture files. In order to find the original file in a large one, hash indexes are maintained. The name of every small file along with its categories is treated as a hash key and a hash value includes the offset in the large file as well as its length. An optimization technique is applied here: since OBJ, MTL and related texture files in one model are stored contiguously in an OF, the sum of their sizes is kept in the hash value of the OBJ file so that they can be fetched as a whole in a read operation.
+
+The sequential methods to load and access files are as follows. When merging the original files into HDFS, first the corresponding big files TF and OF are found or created.
+
+Then the small file is appended and the combined (key, value) is recorded in the index structure. For file accesses such as retrieving a single thumbnail file or OBJ, MTL and texture     files of a model, the method first identifies the corresponding TF or OF as well as the offset and file length. For a thumbnail image, it reads the file data from the large file according to the offset and file length. For an OBJ file, it reads a chunk of data from the OF which also contains MTL file and texture files, and splits the data chunk.
+
+When looking at our preliminary study results described above, we observed there is still room for improvement.
+
+Various parallel techniques can be exploited to enhance the performance of file I/O, which are detailed in the following sections.
+
+
+
+IV. THE PARALLEL ALGORITHMS  We propose two different kinds of parallel schemes to address the problem of efficient file writes and reads on a cluster. The way that data loading is adapted to the MapReduce model is first described and then the multithreaded algorithm for file accesses is presented.
+
+A. Data Loading Based on MapReduce  The main task of the data loading process is to generate a TF and an OF for every minor category. Minor categories are independent processing units, which are natural candidates for parallelization and distribution. A minor category is used as keys which will be received and handled by each mapper.
+
+A MapReduce application is split into two phases: map and reduce. In our MapReduce method, the task is accomplished by the map phase and the map function does not have any output allocated to the reduce function. Therefore the reduce phase is omitted. When all the mappers finish, data files are loaded into HDFS successfully.
+
+Algorithm 1 Map Function (???, ?????)  Input: (1) ???: a minor category (2) ?????: null  1: Create the TF and OF for ???; 2: for each model in ??? do 3: append the thumbnail JPG file to TF and record the  index information; 4: append OBJ, MTL files to OF; 5: analyze the MTL file and write texture files to OF; 6: form index records for OBJ, MTL and texture files;  The map function is shown in Algorithm 1. Each time the mapper acquires a minor category under some major category which is represented by the ??? parameter. Then it stores all the model files inside it into HDFS. The ????? parameter can be set to any arbitrary value such as ?null? since it is ignored by the function.
+
+In the MapReduce model, workload should be divided into more splits, which are the unit of work for a map task and regarded as the input of the map task. A split in our MapReduce program is a part of the original 3D data placed on the local disk of a DataNode. The individual data is organized as shown in Fig. 1 in the DataNode, which consists of multiple  minor categories. In order to control the distribution of data to map tasks, in our customized SFInputFormat implementation which extends Hadoop InputFormat, splits are obtained as shown in the following code. The number of splits i.e. the number of map tasks is decided by DataNodes that contain partitions of the 3D data (line 2). Two kinds of information are recorded in a split, one is the hostname of the DataNode (line 4) and the other is where the data reside in the DataNode (line 5). The former helps Hadoop to schedule map tasks on the same node that has the physical data. The latter indicates where to find the data.
+
+1: List???????????? splits = new ArrayList????????????(); 2: for each DataNode where data is located do 3: SFInputSplit split = new SFInputSplit(); 4: split.setLocation (hostName of DataNode); 5: split.setData (pathName of data); 6: splits.add (split);  Each split is further divided into records. The map task processes each record belonging to its split in turn. A record is passed to the map function in the form of a ????, ?????? pair. The following code demonstrates how we can get the next ????, ?????? pair in a split.
+
+1: String data = split.getData(); 2: if the first time to get ????, ?????? then 3: for each major category in data do 4: for each minor category in major category do 5: remember the pathName of the minor category; 6: ??? = pathName of the ??????? minor category; 7: ????? = null; 8: ???????++;  The data is obtained from the split (line 1), and if it is the first time to analyze the data (line 2), all the minor categories are collected and their locations are recorded (lines 3 to 5).
+
+The current minor category is returned as ??? (line 6) and the value of ??????? is increased to prepare for the next call (line 8).
+
+At the end of a map task, that is, when the processing of all the records is complete, index information generated in the task is stored into HDFS files before the program exits.
+
+Every map task produces individual index files named after index types and its hostname. All the files need to be visited in order to rebuild in-memory index structures.
+
+B. Multithreaded File Access  There are two possible scenarios where many files need to be accessed, one case of which is a number of files are matching for a query and caching techniques are used to provide a rapid response. The other is that throughput not single response time is the main focus for some applications as stated in [9], thus queries can be processed in a batch.
+
+Small files involved in satisfying user requests may scatter in different HDFS blocks even large files. These files or blocks are in multiple DataNodes. Hadoop returns data from DataNodes one by one. If these nodes can run simultaneously, performance benefits from parallel execution can be gained.
+
+Since the overhead of launching and ending MapReduce jobs is not trivial when not too many data need to be processed, our algorithm adopts a lightweight multithreading paradigm to try to obtain good execution time. We first present a straightforward parallel method which is shown in Algorithm 2. Then two optimization strategies are developed.
+
+Algorithm 2 Parallel Access (?????)  Input: ?????: all the files to be accessed  1: for each ???? in ????? do 2: identify the TF/OF, offset and length; 3: get the hostname of ????; 4: add ???? to a file list; 5: CreateThreads (Worker);  Subroutine Worker( ) 6: for each ???? in file list do 7: if ???? is local then 8: if the TF/OF is not open, open it; 9: read the file via the offset and length;  The basic idea is to launch a reading thread for each node that includes files to be returned. Before fetching any data file, the algorithm analyzes and records the metadata of all files to form a list. First, the corresponding large file TF or OF is identified and the offset as well as file length is acquired from the hash index (line 2). The node name where the requested file lives is obtained by calling a Hadoop function (line 3). This information determines which thread to use for file reading. Then multiple threads are created, each of which works independently and runs the same routine (line 5). The worker thread traverses the file list to find its own file requests (lines 6 and 7). Whether the TF or OF has been opened is judged, and if not it will be opened. Then the data is read via the offset and length (lines 8 and 9).
+
+Acquiring node names by calling a Hadoop function is a time consuming operation. The default block size in HDFS is 64MB, which means some small files fall in the same block i.e. the same data node. Thus parts of the function calls can be saved, which optimizes the above straightforward method.
+
+In addition, file requests can be reordered based on the large file and offset to form as many sequential access patterns as possible to accelerate the reading speed. The optimized algorithm is shown in Algorithm 3.
+
+In the phase of generating a file list, no function calls happen. When a file is inserted into the file list, files are sorted according to the large file name and offset (line 3). In this way, files contained in the same block are kept continuously in the list. Then the hostname for every file is set (lines 4 to 8).
+
+If the current file is in the same block as its previous one,  Algorithm 3 Optimized Parallel Access (?????)  Input: ?????: all the files to be accessed  1: for each ???? in ????? do 2: identify the TF/OF, offset and length; 3: add ???? to a file list based on the large file name and  offset; 4: for each ???? in the sorted file list do 5: if ???? is in the same block as the previous file then 6: set the hostname of ???? with the previous hostname; 7: else 8: get the hostname of ???? via a function call; 9: CreateThreads (Worker);  Subroutine Worker( ) 10: for each ???? in the sorted file list do 11: if ???? is local then 12: if the TF/OF is not open, open it; 13: read the file via the offset and length;  its hostname is set to that of the previous file (lines 5 and 6), otherwise, a function call occurs (line 8). The cost of a function call is amortized among multiple file requests. The next job is to create threads. The work of each thread is similar to that in Algorithm 2.
+
+
+
+V. PERFORMANCE STUDY  A comprehensive performance study is conducted to com- pare our parallel algorithms with non-parallel ones. Our plat- form runs Linux operating system with 2.6.32 kernel and contains 17 server nodes. One node acts as the NameNode, and the other 16 nodes are DataNodes. Each node is equipped with two 2.93GHz (2.93 gigahertz) Intel CPUs (Central Processing Units) with 12 cores and has 48G memory and 3.5T disk.
+
+A. Data Set  File Type  File Size  min max avg  Size Distribution  range % range % range % range % range % range %  Thumbnail  OBJ  MTL  Texture  13K 223K  1K  33K  49M 2M  80B 95K 1.3K  60K 5.6M 46K  <= 20K 22.6 20-40K 53.0 40-60K 17.0 60-80K 4.7 80-100K 1.5 > 100K 1.2  <= 1M 54.3 1-2M 14.6 2-3M 7.9 3-4M 5.5 4-5M 4.3 > 5M 13.4  <= 1K 62.3 1-2K 22.3 2-3K 7.7 3-4K 3.2 4-5K 1.6 > 5K 2.9  <= 10K 53.6 10-20K 17.6 20-30K 7.3 30-40K 3.6 40-50K 2.4 > 50K 15.5  Fig. 2. File Size Distribution  The data set we used in our experiments has a distribution of file sizes shown in Fig. 2. OBJ files have a larger size compared to other types of files with an average size of 2M.
+
+Files that are smaller than 2M account for 68.9% of all OBJ files and the maximum file length reaches 49M. MTL files have a smaller size since they do not contain much information and 97.1% of files have fewer than 5K bytes. Both thumbnail and texture files have now the JPG extension and their average sizes are several tens of kilobytes.
+
+0%  10%  20%  30%  40%  2 5 10 15 20 > 20  Number of files  P er  ce nt  Fig. 3. Number of Files   100 200 400 800  Data size (GB)  Ti m  e (S  ec on  d)  MR NP  Fig. 4. Loading Time w.r.t Data Size  In each model, there are one thumbnail image, one OBJ file, one MTL file and zero or more texture files. The distribution of the number of 3D specific OBJ, MTL and texture files in a 3D model is given in Fig. 3. We can see that in our data set 33% of models have no texture files and models which contain three to ten texture files contribute to 51.8%. In the extreme, there are 789 texture files.
+
+B. Data Loading  The first set of experiments compares our data loading method based on MapReduce with the non-parallel file storing strategy.
+
+Fig. 4 shows the execution time of two methods with respect to the data size. The algorithms are represented by ?MR? and ?NP? in the figure respectively. The number of map tasks is 16. When the data size is varied from 100GB (100 gigabytes) to 800GB, both algorithms spend more time on data loading, while our parallel method achieves a speedup between 7.8 and 12.7. When 800GB data are written into HDFS, the proposed MapReduce based algorithm decreases the storing time from 8,391 seconds to 658 seconds.
+
+2 4 8 16  The number of map tasks  Ti m  e (S  ec on  d)  Fig. 5. Loading Time w.r.t Number of Map Tasks        2000 4000 6000 8000 10000  The number of reads  Ti m  e (M  ill iS  ec on  d)  A3 A2 NP  Fig. 6. Accessing Time w.r.t Number of Models   2000 4000 6000 8000 10000  The number of reads  Th e  nu m  be r  of th  re ad  s  Fig. 7. Number of Threads  Fig. 5 shows the performance when the number of map tasks is varied. The data size is set to 100GB. The execution time with 16 map tasks is faster than that with 2 tasks by a factor of 5.8.
+
+C. File Access  The second set of experiments compares the algorithms on file accesses.
+
+The execution time of accessing OBJ, MTL and texture files of 2,000 to 10,000 models randomly is shown in Fig. 6.
+
+?NP? represents the non-parallel file accessing method. ?A2? and ?A3? refer to Algorithm 2 and Algorithm 3 respectively.
+
+As can be seen from the figure, Algorithm 3 runs always faster than the others and affords an improvement up to 43% compared to Algorithm 2. Algorithm 3 and Algorithm 2 show similar performance trends as the number of reads is increased.
+
+But the gap between the non-parallel algorithm and them is gradually increasing. Algorithm 3 is 7.2 times faster than the non-parallel algorithm when 10,000 models are accessed.
+
+The number of threads that are created in the above exper- iment is shown in Fig. 7. This figure explains why Algorithm    2000 4000 6000 8000 10000  The number of reads  TI m  e (M  ill iS  ec on  d)  A3 A2  Fig. 8. Time for Creating and Filling the File List           2000 4000 6000 8000 10000  The number of reads  Ti m  e (M  ill iS  ec on  d)  A3 A2 NP  Fig. 9. Accessing Time for 2,000 to 10,000 Reads    12000 14000 16000 18000 20000  The number of reads  Ti m  e (M  ill iS  ec on  d)  A3 A2 NP  Fig. 10. Accessing Time for 12,000 to 20,000 Reads  3 and Algorithm 2 behave in a much more stable manner than the NP algorithm in Fig. 6. When the number of files becomes larger, the number of data nodes that contain the required files is also increased. More threads are created to work simultaneously for parallel algorithms. Thus their curves do not show large variation.
+
+In order to test the contribution of two optimization mea- sures in Algorithm 3 to the performance gains, the time of creating and filling a file list with complete information is shown in Fig. 8. It is obvious that Algorithm 3 spends less time than Algorithm 2 due to the decrease of function calls.
+
+Combining with Fig. 6, it can be found that sorting file requests makes a great contribution to the performance improvement.
+
+The performance of reading thumbnail files is displayed in Fig. 9 and 10, which respectively show the reading time of three methods when accessing 2,000 to 10,000 and 12,000 to 20,000 files randomly on 100G data. Algorithm 3 is the best and provides a speedup up to 12.5-fold over the non-parallel algorithm.
+
+
+
+VI. RELATED WORK  Merging small files into large files is a solution to Hadoop when it is used to support massive data sets. [10] and [11] are two research work that use HDFS for the data storage. The former is specific to WebGIS, the latter is using PowerPoint Files as a case study. They focus on the storage structure and non-parallel file operations and do not adopt parallel techniques to increase performance. MapReduce has been used in many fields since it was proposed. [9] implements a MapReduce based high-dimensional indexing approach that uses clustering to build small groups of data. [12] is a research study that leverages the MapReduce framework in the closed cube computation. A high performance spatial query system  for querying massive spatial data on MapReduce is developed in [13]. [14] applies MapReduce to solve bulk-construction of R-Trees and aerial image quality computation problems.
+
+Encouraged by the success of the MapReduce framework and its applications, we decided to develop a MapReduce based data loading approach to reduce the file storing time.
+
+
+
+VII. CONCLUSION  In this paper, we presented two kinds of parallel techniques to solve file storing and accessing problems. The first algo- rithm is designed to take advantage of the MapReduce model.
+
+A customized SFInputFormat is implemented to effectively get splits and records. The basic task is fulfilled in the map function to merge model files in a minor category into HDFS.
+
+The second strategy is to use multiple threads to get files from data nodes simultaneously. Efficient improvement measures are employed to decrease the number of function calls and to produce possible sequential accesses. A thorough experimental study was conducted to test the performance gains and the results demonstrate that our methods are efficient.
+

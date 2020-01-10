@@ -1,0 +1,242 @@
+Data Allocation in Scalable Distributed Database Systems Based on Time Series Forecasting
+
+Abstract?In cloud computing environments, database systems have to serve a large number of tenants instantaneously and handle applications with different load characteristics. To provide a high quality of services, scalable distributed database systems with self-provisioning are required. The number of working nodes is adjusted dynamically based on user demand. Data fragments are reallocated frequently for node number adjustment and load balancing. The problem of data allocation is different from that in traditional distributed database systems, and therefore existing algorithms may not be applicable. In this paper, we first formally define the problem of data allocation in scalable distributed database systems. Then, we propose an algorithm for the problem.
+
+The algorithm makes use of time series models to perform short-term load forecasting such that node number adjustment and fragment reallocation can be performed in advance to avoid node overloadings and performance degradation due to fragment migrations. In addition, excessive working nodes can be minimized for resource-saving.
+
+
+
+I. INTRODUCTION  In traditional distributed database systems, the problem of data allocation has been well-defined [1]. Designing a distributed database system is said to be an optimization prob- lem on data fragmentation (also known as data partitioning) and data allocation. To ensure all nodes work independently, fragmentation is performed such that data fragments can be stored in different nodes. Then, allocation of the fragments is considered as to distribute the workload and reduce the data transfer cost. Since there is no query router and it is assumed that fragments can be accessed through any node, an extra transfer cost is required if the fragment is not located in the current node. The problem of data allocation is focused on storing the fragments at the nodes in which the fragments are most frequently accessed. Fragment reallocation is performed only when there is a change in access patterns [2]. However, the problem becomes complicated in scalable distributed database systems [3].
+
+In [4], [5], two scalable distributed database systems were proposed for cloud platforms. From their designs, we found that assumptions for traditional distributed database systems are no longer valid. Instead of having a fixed number of nodes, the number of working nodes in scalable distributed database systems is adjusted dynamically based on user demand. Frag- ments are reallocated frequently for node number adjustment and load balancing. A master node is present and it plays an important role for managing and monitoring the whole system.
+
+Due to these changes, data allocation algorithms for traditional distributed database systems may not be applicable. Our goal is changed to minimize performance degradation from node  number adjustment and fragment reallocation while achieving load balancing and resource-saving.
+
+In this paper, we first formally define the problem of data allocation in scalable distributed database systems. Then, we propose an algorithm for the problem. The algorithm makes use of time series models to perform short-term load forecasting (STLF) and dynamically reallocate data fragments to balance the workload to the system. STLF is a technique adopted in practice and its importance has been reviewed in [6]. The time series model used in this paper is the autoregressive integrated moving average (ARIMA) model, which can be computed in runtime without human tuning [7].
+
+The advantages of using time series models are: (i) future workloads can be easily estimated; (ii) overloadings of any nodes can be predicted and avoided; (iii) fragment reallocation and node number adjustment can be performed in advance; (iv) performance degradation due to fragment migrations can be minimized. Specifically, this paper makes the following contributions:  ? We give a formal definition of data allocation problem in scalable distributed database systems.
+
+? We propose an efficient data allocation algorithm, which gives a good performance with accurate load forecastings.
+
+? We show that the proposed algorithm is a generaliza- tion of threshold-based algorithms. It can be reduced to a general threshold-based algorithm.
+
+The rest of this paper is organized as follows. Section II gives a general model of scalable distributed database sys- tems. Section III formulates the problem. Section IV presents the methodologies used. Section V describes the proposed algorithm and proves the correctness. Section VI reports our experimental results. Section VII presents related works and Section VIII contains our conclusion.
+
+
+
+II. MODEL  To generalize the problem, we regard a scalable distributed database system as an abstract model with three layers (See Fig. 1). The bottom layer consists of a set of data fragments, which store the data of different applications. The middle layer consists of a set of database nodes that are independent database servers for storing data fragments and processing user queries. Lastly, the upper layer is a master node for routing user requests to the corresponding database nodes. When there is a request sent from an application for retrieving data stored in  2013 IEEE International Congress on Big Data  DOI 10.1109/BigData.Congress.2013.12     ????????? ? ????????? ? ????????? ?  ???????????????  ????????	???  ????  ???	???  ????????? ??? ???  ??? ??? ? ?  ????  ???	???  ???  ?????????	????  ??????????? ???  ??????? ?  Fig. 1. An abstract model of scalable distributed database systems  a particular fragment, the master node first finds the database node that owns the required fragment. Then, it provides the location of the node to the application such that the application can communicate with the node directly for further query processing. In addition, the master node monitors the health and proper working of database nodes within the system.
+
+New nodes will be added if there are too many requests.
+
+Excessive nodes will be removed if the workload to systems is decreasing.
+
+
+
+III. PROBLEM FORMULATION  Based on the model described in the previous section, we formalize the problem of data allocation in this section.
+
+We let the set of database nodes and the set of data frag- ments as ?N = {N1, N2, ..., Nn} and ?F = {F1, F2, ..., Fm} respectively, where n denotes the size of ?N and m denotes the size of ?F . The relationship between ?N and ?F is defined by the fragment allocation matrix A, as described below.
+
+Definition 1 (Fragment Allocation Matrix) A is an n ?m matrix, where n denotes the size of ?N and m denotes the size of ?F . n and m are not fixed values and may vary with time. An element aij = 1 if fragment Fj is owned by node Ni; otherwise, aij = 0. ? Example 1 The matrix shown in Fig. 2(a) represents the allocation of a set of fragments {F1, F2, F3, F4, F5} over a set of nodes {N1, N2, N3}. We say fragment F1 is owned by node N1 as a11 = 1.
+
+Definition 2 (Fragment Workload) The workload of a frag- ment is the number of requests for the fragment in a unit of time. ?  A unit of time is the period between two time points. It can be a second, a minute, an hour, or a week. The workload of fragment Fj at time t, denoted by WFj ,t, represents the number of requests for Fj between time points t? 1 to t. Since each node may contain more than one fragment, the workload of node Ni at time t, denoted by WNi,t, is the sum of workloads of its fragments at time t.
+
+WNi,t = m?  j=1  WFj ,t ? aij  Intuitively, the workload to the database system is the sum of workloads of its nodes.
+
+? ?  F1 F2 F3 F4 F5 N1 1 0 1 0 0 N2 0 0 0 1 0 N3 0 1 0 0 1  ? ?  ? ?  F1 F2 F3 F4 F5 N1 1 0 1 0 0 N2 0 1 0 1 0 N3 0 0 0 0 1  ? ?  (a) original fragment allocation (b) after fragment migrations  (F1 F2 F3 F4 F5 N1 1 1 0 1 0 N2 0 0 1 0 1  ) ?? F1 F2 F3 F4 F5  N1 1 1 0 0 0 N2 0 0 1 1 0 N3 0 0 0 0 1  ? ?  (c) after removing a node (d) alternative fragment allocation  Fig. 2. Fragment allocation matrix  TABLE I. SAMPLE WORKLOADS  t WF1,t WF2,t WF3,t WF4,t WF5,t 1 2 5 3 5 6 2 2 4 5 4 5 3 5 4 6 2 6 4 5 3 4 4 7 5 7 1 2 6 6  Example 2 Table I shows the workloads of F1, F2, ..., F5 from time t = 1 to t = 5. Since F1 and F3 are owned by N1 (See Fig. 2(a)), WN1,1 = WF1,1 +WF3,1 = 5.
+
+In reality, a node can only handle a limited number of requests within a unit of time. It is referred to be the maximum throughput of the node. We say a node is overloaded at time t if the workload at time t is greater than its maximum throughput. To avoid node overloadings, fragment migrations are performed. However, frequent migrations may result in a high cost.
+
+Definition 3 (Migration Cost) The cost for migrating a fragment from a node to another node is the number of requests suspended during the migration. ? Example 3 Suppose the maximum throughput of a node is 10.
+
+At time t = 1, N3 is overloaded, i.e. WN3,1 = 11 (See Fig. 2(a) and Table I). To reduce the workload of N3, either F2 or F5 has to be migrated to another node. We say the migration cost of F2 is less than that of F5 since WF2,1 < WF5,1. Therefore, F2 is migrated to N2, and the fragment allocation matrix is updated accordingly, as shown in Fig. 2(b).
+
+Besides node overloadings, migration costs may result from increasing or decreasing the number of working nodes. We generalize the process as node number adjustment.
+
+Example 4 Suppose the maximum throughput of a node is 10.
+
+At time t = 2, the workload to the system is 20 (See Table I). Two nodes are able to handle all requests. Therefore, N3 is removed. Fragments are reallocated, as shown Fig. 2(c).
+
+In our design, node number adjustment and fragment reallocation are performed at time t for load balancing and resource-saving at time t + 1. The problem we are going to solve is then defined as follows.
+
+Problem Definition Given a set of nodes ?N and a set of fragments ?F distributed over ?N , the problem is to reallocate the fragments and adjust the number of working nodes at any time t with minimum migration costs such that there is no overloaded or excessive working node at time t+ 1. ?
+
+IV. METHODOLOGY  Before going into the details of the proposed algorithm, methodologies for the problem are described in this section.
+
+A. General Approach  In reality, we do not know the things that have not yet happened. The simplest solution adapted by traditional approaches is to use threshold testing. When the workload of a node is greater than a threshold value, some fragments belonged to the node will be migrated to other nodes to reduce the workload. Namely, fragment migrations are performed only when a node is already overloaded. The migration cost can be very high and an unnecessary migration cost may be generated, as shown in the following scenarios.
+
+Scenario 1 Suppose the maximum throughput of a node is 10. At time t = 1, N3 is overloaded, i.e. WN3,1 = 11 (See Fig. 2(a) and Table I). F2 has to be migrated to either N1 or N2. If F2 is migrated to N1, N1 will become overloaded at time t = 2, and therefore further migrations are required.
+
+However, no node will become overloaded at time t = 2 if F2 is migrated to N2.
+
+Scenario 2 Suppose the maximum throughput of a node is 10.
+
+At time t = 2, the workload to the system is 20 (See Table I).
+
+Since two nodes are able to handle all requests, N3 is removed (See Fig. 2(c)). However, at time t = 3, the workload to the system increases to 23. A node has to be added back and fragments need to be reallocated.
+
+In [5], an observation period is required in a threshold- based algorithm for checking whether a node keeps over- loading. Since a node will only be added or removed if the change in workloads is observed over a period of time, the algorithm results in a longer overloading time and may not be proper if the trend changes just after the observation period.
+
+In our design, we reduce the chance of generating unnecessary migration costs by applying forecasting techniques.
+
+B. STLF and ARIMA model  Short term load forecasting (STLF) refers to the prediction of the system load over an interval ranging from one hour to one week. For classical approaches, STLF is mainly based on time series models. In this paper, the auto regression integrated moving average (ARIMA) model is used. It takes three parameters, p, d and q, which refer to the orders of AR, integrated and MA parts of the series. By definition [8], a series {Zt} with an ARIMA(p, d, q) model is expressed as:  ?(B)(1?B)dZt = ?(B)at B is a backshift operator, which operates on a term to produce the previous term.
+
+BkZt = Zt?k  at, at?1, ... are white noise error terms, which are independent and identically distributed (i.i.d.). The AR operator ?(B) and the MA operator ?(B) share no common terms and are expressed as:  ?(B) = 1? ?1B ? ...? ?pBp ?(B) = 1? ?1B ? ...? ?qBq  The parameter p refers to the dependence on the past terms. An ARIMA(p, 0, 0) is a pure AR(p) model in which the current term is a linear combination of the previous terms.
+
+Zt = ?1Zt?1 + ?2Zt?2 + ...+ ?pZt?p + at  The parameter q refers to the dependence on the white noise error terms. An ARIMA(0, 0, q) is a pure MA(q) model in which the current term is a linear combination of white noise error terms.
+
+Zt = at ? ?1at?1 ? ?2at?2 ? ...? ?qat?q The parameter d refers to the degree of differencing. By differencing, a non-stationary series can be transformed into a stationary series and becomes predictable.
+
+Sometimes a seasonal effect is suspected in the series and it is better to use a seasonal ARIMA (SARIMA) model to represent the series. An ARIMA(p, d, q) ? (P,D,Q)s model is a SARIMA model with non-seasonal orders p, d, q, seasonal order P,D,Q and seasonal period s. It is expressed as:  ?(B)?(B)(1?B)d(1?Bs)DZt = ?(B)?(B)at where ?(B) and ?(B) are seasonal AR and MA operators, which take s as the time lag and are expressed as:  ?(B) = 1? ?1Bs ? ...? ?pBsP ?(B) = 1??1Bs ? ...??qBsQ  Interested readers may refer to [8] for a more detail description of the model.
+
+C. Design Rationale  We assume that workloads can be modeled as observed time series. For each fragment, we model its workloads as an ARIMA model and estimate the future workloads by the k-step ahead forecasting method.
+
+Definition 4 (k-step Ahead Forecasting Workload) The k- step ahead forecasting workload of Fj , denoted by W?Fj ,t(k), is the estimated value of WFj ,t+k at time t. ? Example 5 Suppose the series {WF1,t} in Table I follows an ARIMA(2,0,0) model with ?1 = 0.4 and ?2 = 2:  WF1,t = 0.4WF1,t?1 + 2WF1,t?2 + at  At time t = 2, we estimate the values of WF1,3 and WF1,4 as follows:  W?F1,2(1) = 0.4WF1,2 + 2WF1,1 = 4.8  W?F1,2(2) = 0.4W?F1,2(1) + 2WF1,2 = 5.92  From the above example, we can see that future workloads are obtained from a linear equation. Once we have the model, the computation is straightforward and can be completed in linear time.
+
+Definition 5 (k-step Ahead Forecasting Error) The k-step ahead forecasting error of fragment Fj , denoted by eFj ,t(k) is the difference between the actual value WFj ,t+k and the estimated value W?Fj ,t(k). ?     TABLE II. WORKLOADS UNDER DIFFERENT ALLOCATION SCHEMAS  t allocation based on Fig. 2(a) allocation based on Fig. 2(d) WN1,t WN2,t WN3,t WN1,t WN2,t WN3,t  1 5 5 11 7 8 6 2 7 4 9 6 9 5 3 11 2 10 9 8 6 4 9 4 10 8 8 7 5 9 6 8 8 8 7  GNi,t 1 0.2 -0.5 0.4 -0.1 -0.4  Example 6 Consider the estimated values shown in the previ- ous example and the exact values shown in Table I.
+
+eF1,2(1) = |5? 4.8| = 0.2 eF1,2(2) = |5? 5.92| = 0.92  For k-step ahead forecasting, the accuracy decreases when k goes up. Hence, k should not be too large. We denote the maximum value of k as a user-defined constant ?. Based on the estimated workloads, our first goal is to reduce the unnecessary migration costs generated within the time interval t+1 to t+?.
+
+If an action is intended to generate an unnecessary migration cost within the time interval, the action will be forbidden and not be performed. Secondly, we want to stabilize the nodes during fragment reallocation.
+
+Definition 6 (Stable Node) A node is stable if the workload of the node keeps constant with time. ?  To measure the stableness, we transform the estimated workloads into load trends, as defined below.
+
+Definition 7 (Load Trend) The load trend of fragment Fj at time t, denoted by G?Fj ,t, is the gradient of the regression line of W?Fj ,t+k for 1 ? k ? ?. ?  In mathematics, given a set of points, the gradient can be obtained by the ordinary least squares method. Therefore, we express the estimated load trend of fragment Fj as follows:  G?Fj ,t =  ??  l=1  [(l? 1? ??  v=1 v)(W?Fj,t(l)? 1?  ??  v=1 W?Fj,t(v))]  ??  l=1  (l? 1? ??  v=1 v)2  Intuitively, the estimated load trend of node Ni is the sum of the estimated load trends of all fragments owned by Ni.
+
+G?Ni,t = m?  j=1  G?Fj ,t ? aij  We say Ni is more stable than Nl if |G?Ni,t|<|G?Nl,t|. In other words, a node is stable if its load trend is close to zero.
+
+Example 7 Table II summarizes the workloads of N1, N2 and N3 based on Table I and the fragment allocation matrices shown in Fig. 2(a) and Fig. 2(d). For the allocation based on Fig. 2(d), the load trends are closer to zero. Therefore, we say the nodes are more stable.
+
+During fragment reallocation, fragments are removed from the overloaded nodes. Besides reducing the workload, sta- bilization can be achieved by removing specific fragments.
+
+Suppose the load trend of an overloaded node is negative, i.e.
+
+the workload of the node is decreasing. Properly, removing fragments with negative trend may make the load trend of the node closer to 0. Therefore, we select fragment Fj from overloaded node Ni based on the following constraint:  |G?Ni,t ? G?Fj ,t| ? |G?Ni,t| (1)  On the other hand, we can avoid generating unnecessary migration costs by migrating fragments to the nodes with a non-postive load trend. Suppose node Ni will work at a rate near to the maximum throughput at time t+ 1 after receiving fragment Fj . We denote the resulted load trend of Ni by G??Ni,t, i.e. G??Ni,t = G?Ni,t + G?Fj ,t. If G?  ? Ni,t  > 0, there will be a high chance that Ni becomes overloaded within the time interval t+2 to t+?. Therefore, a non-positive load trend is preferred, and we select destination node Ni for fragment Fj based on the following constraint:  G?Ni,t + G?Fj ,t ? 0 (2)  Recall that excessive working nodes have to be removed for saving resources. We further define an upper bound ?u and a lower bound ?l for the workload of a node. For flexible fragment reallocation, it is assumed that the gap between ?u and ?l is large enough such that ?u ? ?l ? WFj ,t for any fragment Fj at any time t. We say there is no excessive working node if all nodes are working at a rate within ?u and ?l.
+
+In practice, the values of ?u and ?l can be determined by queueing theory [9]. Suppose a node is represented by an M/M/1 queue, which assumes that the request rate (workload per unit of time) follows a Poisson distribution with mean ? and the service time (unit of time over maximum throughput) follows an exponential distribution with mean 1/?. A node is said to be stable if ? = ?/? < 1, i.e. the workload of the node is less than the maximum throughput. Given the measured service rate ?? (maximum throughput) and the desired ?, we compute the confidence interval ?u and ?l by F -test [10].
+
+Then, ?u and ?l are obtained as follows:  ?u =?u = ?u??  ?l =?l = ?l??  The minimum number of working nodes required for time point t, denoted by nt, is calculated as follows:  nt = ? m?  j=1  WFj ,t/?l?
+
+V. ALGORITHM  In this section, details of the proposed algorithm are mentioned. We assume that the algorithm is hourly based and a hourly time series model (a seasonal ARIMA model with 24 hours as the seasonal period) is built for each fragment.
+
+A. Data Reallocation  The algorithm consists of 4 phases. In phase 1, k-step ahead forecasting is performed to estimate the workloads and load trends in the coming hours. In phase 2, node number adjust- ment is performed to add extra nodes or remove excessive     Algorithm 1 Node number adjustment phase 1: for k = 1 : ? do 2: n?t+k ? ?  ?m j=1 W?Fj ,t(k)/?l?;  3: end for 4: if n < n?t+1 then 5: n? n?t+1; 6: add (n?t+1 ? n) nodes; 7: else if n > max1?k??(n?t+k) then 8: nd ? max1?k??(n?t+k); 9: while nd < n do  10: Nr ? {Ni : Ni ? ?N , ?Nl ? ?N such that W?Ni,t(1) > W?Nl,t(1)};  11: for each Fj ? ?F such that arj = 1 do 12: ?M ? ?M ? {Fj}; 13: arj ? 0; 14: end for 15: n? n? 1; 16: ?N ? ?N ? {Nr}; 17: end while 18: end if  nodes. In phase 3, fragments with low migration costs are selected for indispensable migrations. In phase 4, fragment migrations are performed for load balancing. We elaborate Phases 2-4 in the following paragraphs.
+
+We outline the node number adjustment phase (Phase 2) in Algorithm 1. The algorithm first estimates the required numbers of working nodes for the coming ? time points, i.e.
+
+n?t+1, n?t+2, ..., n?t+? (Alg.1 Steps 1-3). New nodes are added if existing working nodes are not enough for the next time point, i.e. n < n?t+1 (Alg.1 Steps 4-6). Some nodes are removed if there are excessive working nodes for all ? time points, i.e.
+
+n > max1?k??(n?t+k) (Alg.1 Step 7). In case of adding nodes, only the workloads in the coming time point are considered as to ensure there are sufficient working nodes for the coming time point. But for removing nodes, all ? time points are taken into account as to ensure no unnecessary migration cost will be generated within the next ? time points.
+
+Suppose some nodes have to be removed. The algorithm iteratively selects a node with the lowest workload at time point t+ 1 for removal (Alg.1 Steps 8-16). In [11], it is stated that migrating a fragment takes several seconds to several minutes.
+
+Since the migration of any fragment can be completed within a unit of time (an hour), we denote the migration cost of a fragment by its workload at time t + 1, and minimize the overall migration cost by selecting nodes with low workloads at time point t+ 1 for removal.
+
+After the node number adjustment phase, the algorithm checks if there are nodes that are going to be overloaded in the coming time point. If the nodes exist, some fragments belonged to the nodes are selected for migrations. We outline the fragment selection phase (Phase 3) in Algorithm 2. Suppose a node will work at a rate greater than the upper bound at time t+1, i.e. W?Ni(1) > ?u. The algorithm iteratively selects a fragment to be removed from the node until the workload drops below ?u. If possible, the selected fragments have to satisfy Constraint 1 (See Section IV-C) (Alg.2 Steps 3-5) as to stabilize the node after removing fragments from the node. In case no fragment satisfying Constraint 1 is found, the algorithm applies the general rule, that is, selecting fragments with low workloads at time t+ 1 (Alg.2 Step 7) as to reduce the migration cost.
+
+Algorithm 2 Fragment selection phase 1: for each Ni ? ?N do 2: while W?Ni,t(1) > ?u do 3: let ?T = {Fj : Fj ? ?F , aij = 1,  such that |G?Ni,t ? G?Fj ,t| ? |G?Ni,t|}; 4: if ?T ?= ? then 5: Fr ? {Fj : Fj ? ?T ,  ?Fl ? ?T such that W?Fj ,t(1) > W?Fl,t(1)}; 6: else 7: Fr ? {Fj : Fj ? ?F , aij = 1,  ?Fl ? ?F , ail = 1 such that W?Fj ,t(1) > W?Fl,t(1)}; 8: end if 9: W?Ni,t(1)? W?Ni,t(1)? W?Fr,t(1);  10: G?Ni,t ? G?Ni,t ? G?Fr,t; 11: ?M ? ?M ? {Fr}; 12: end while 13: end for  Algorithm 3 Fragment migration phase 1: sort all Fj ? ?M in descending order of W?Fj ,t(1); 2: while ?M ?= ? do 3: let Fr be Fj ? ?M with the lowest W?Fj ,t(1); 4: let ?S = {Ni : Ni ? ?N such that W?Ni,t(1) + W?Fr,t(1) ? ?u}; 5: let ?T = {Ni : Ni ? ?S such that G?Ni,t + G?Fr,t ? 0}; 6: if ?T ?= ? then 7: Nd ? {Ni : Ni ? ?T ,  ?Nl ? ?T such that W?Ni,t(1) > W?Nl,t(1)}; 8: else 9: Nd ? {Ni : Ni ? ?S ,  ?Nl ? ?S such that W?Ni,t(1) > W?Nl,t(1)}; 10: end if 11: ?M ? ?M ? {Fr}; 12: adr ? 1 13: migrate Fr to Nd; 14: end while 15: remove all empty nodes;  Finally, fragment migrations are performed. We outline the fragment migration phase (Phase 4) in Algorithm 3. Suppose some fragments have to be migrated from their original nodes.
+
+After sorting the fragments in descending order of their esti- mated workloads at time t + 1 (Alg.3 Step 1), the algorithm iteratively selects a destination node for each fragment. To avoid generating unnecessary migration costs, the selected nodes are checked not to become overloaded after receiving the fragments, i.e. W?Ni,t(1) + W?Fr,t(1) ? ?u (Alg.3 Step 4).
+
+If possible, the selected nodes also have to satisfy Constraint 2 (See Section IV-C) (Alg.3 Steps 5-7) as to further reduce the chance of generating unnecessary migration costs.
+
+B. Correctness  We prove the correctness of the proposed algorithm under the assumption that workloads can be modeled as observed time series, and show that, with accurate forecastings, the propose algorithm correctly adjusts the number of working nodes and reallocates fragments.
+
+For the proposed algorithm, if it is found that a node has a high chance of being overloaded at the coming time point, some fragments belonged to the node will be removed during the fragment selection phase. Therefore, to prove that there is no overloaded node, we only have to show that no node will work at a rate greater than ?u after receiving fragments during the fragment migration phase.
+
+Lemma 1 Given that ?u ? ?l ? WFj ,t for any fragment Fj at any time t. During the fragment migration phase, there exists a node Ni for receiving fragment Fj such that W?Ni,t(1) + W?Fj ,t(1) ? ?u.
+
+Proof: We prove by contradiction. Suppose the algorithm is looking for a node for receiving fragment Fl during the fragment migration phase but there does not exist a node Ni such that W?Ni,t(1) + W?Fl,t(1) ? ?u. For any node Ni,  W?Ni,t(1) + W?Fl,t(1) > ?u  W?Ni,t(1) + W?Fl,t(1) > W?Fl,t(1) + ?l  W?Ni,t(1) > ?l  Consequently, the sum of the workloads of all nodes is greater than multiplying ?l by the number of working nodes n.
+
+?n i=1  W?Ni,t(1) > ?l ? n However, according to Algorithm 1, after the node number adjustment phase, the number of working nodes n ? n?t+1.
+
+Namely,  n ? ?m  j=1 W?Fj ,t(1)/?l  n? ?l ? ?n  i=1 W?Ni,t(1)  It is contradicted.
+
+As mentioned in Section IV-A, under two scenarios, un- necessary migration costs will be generated. In Section IV-C, we described that, by applying Constraint 2, unnecessary migration costs generated from fragment migrations can be reduced. Here we further show that unnecessary migration costs resulted from node removal can be reduced, that is, no node will be removed if some nodes have to be added back within the time interval t+ 1 to t+ ?.
+
+Lemma 2 Suppose a node is removed at time t. No node is intended to be added back within the time interval t + 1 to t+ ?.
+
+Proof: We prove by contradiction. Suppose a node is removed at time t but some nodes are intended to be added back with the time interval t + 1 to t + ?. Before removing the node, the number of working nodes n should be less than or equal to the estimated numbers of working nodes for the coming ? point times, i.e. n ? max1?k??(n?t+k). However, according to Algorithm 1, node removal will be performed only when n > max1?k??(n?t+k) (Alg.1 Steps 7-17). It is contradicted.
+
+Theorem 1 The proposed algorithm reallocates fragments and adjusts the number of working nodes at any time t with minimum migration costs such that there is no overloaded or excessive working node at time t+ 1.
+
+Proof: In Lemma 1, we proved that no node will work at a rate greater than the upper bound ?u after receiving fragments during the fragment migration phase. In Algorithm 1, it is explicitly showed that excessive working nodes will be removed in the case that no additional migration cost will be resulted in the near future. Hence, we can argue that there is no overloaded or excessive working node at time t + 1 after  performing the algorithm at time t, and what remains to be proved is that the migration cost is minimized.
+
+To simplify the proof, we consider the cost minimization problem as an optimization problem and express the opti- mum solution of the problem as the combination of optimum solutions of its sub-problems [12]. Namely, to prove that the overall migration cost is minimized, we have to show that the migration cost generated from each single step is minimized. For the proposed algorithm, migration costs will be generated in two situations, when excessive nodes have to be removed and when fragments have to be migrated from overloaded nodes. For the former situation, the proposed algorithm iteratively selects a node with the lowest workload at time t + 1 for removal (Alg.1 Steps 8-16). For the latter situation, the proposed algorithm iteratively selects a fragment with the lowest workload at time t+1 for migration (Alg.2 Step 7). Clearly, in both situations, the migration cost generated in each iteration is minimized.
+
+In Section I, we claimed that the proposed algorithm is a generalization of threshold-based algorithms. Here we prove the claim by showing that the proposed algorithm will give the same functionality when the best time series model for representing fragment workloads is an ARIMA(1,0,0) model with ?1 = 1.
+
+Lemma 3 The proposed algorithm will be reduced to a threshold-based algorithm when fragment workloads are mod- eled as an ARIMA(1,0,0) model with ?1 = 1.
+
+Proof: Suppose the best time series model for representing fragment workloads is an ARIMA(1,0,0) model with ?1 = 1.
+
+For any fragment Fj , the workload at time t is expressed as:  WFj ,t = WFj ,t?1 + at  The workloads for the coming ? time points are estimated as follows:  W?Fj ,t(1) = WFj ,t  W?Fj ,t(2) = W?Fj ,t(1)  ...
+
+W?Fj ,t(?) = W?Fj ,t(? ? 1) At any time t, the estimated workloads for the coming ? time points are the same and equal to the measured workload at time t. Therefore, during the node number adjustment phase, we can regard the proposed algorithm adds or removes nodes simply based on the current workload to the database system since there is no difference between taking the current workloads or the estimated future workloads as the adjustment criteria. It is the same as a threshold-based algorithm that performs actions based on the current workloads.
+
+Similarly, during the fragment selection phase and the frag- ment migration phase, the proposed algorithm also performs actions like a threshold-based algorithm. Since the workloads for the coming ? time points are the same, at any time t, the estimated load trends of all fragments and all nodes become 0.
+
+Constraint 1 and Constraint 2 (See Section IV-C) are always satisfied and can be neglected. Therefore, with the same reason, we can regard that the proposed algorithm performs fragment reallocation simply based on the current workloads.
+
+TABLE III. COEFFICIENTS OF THE ARIMA(1,1,1)?(2,0,2)24 MODEL  AR1 (?1) MA1 (?1) SAR1 (?1) SAR2 (?2) SMA1 (?1) SMA2 (?2)  Coefficient 0.0368 -0.5244 0.6645 0.3928 -0.5288 -0.4424 Standard error 0.0692 0.0580 0.1805 0.1854 0.1623 0.1576  Time (hour)  N o.
+
+o f r  eq ue  st s  (k )  Mon Tue Wed Thu Fri Sat Sun    Time (hour)  N o.
+
+o f r  eq ue  st s  (k )  Mon Tue Wed Thu Fri Sat Sun   45 Exact values  Estimated values  Time (hour)  N o.
+
+o f r  eq ue  st s  (k )  Mon Tue Wed Thu Fri Sat Sun   45 Exact values  Estimated values  (a) sample access logs (b) 1-step ahead forcasting (c) 2-step ahead forecasting  Time (hour)  N o.
+
+o f r  eq ue  st s  (k )  Mon Tue Wed Thu Fri Sat Sun   45 Exact values  Estimated values  Time (hour)  N o.
+
+o f r  eq ue  st s  (k )  Mon Tue Wed Thu Fri Sat Sun   45 Exact values  Estimated values  Time (hour)  N o.
+
+o f r  eq ue  st s  (k )  Mon Tue Wed Thu Fri Sat Sun   45 Exact values  Estimated values  (d) 3-step ahead forcasting (e) 4-step ahead forcasting (f) 5-step ahead forecasting  Fig. 3. Hourly access logs and k-step ahead forecasting results
+
+VI. EVALUATION  There are two experiments. The first experiment analyzes real server logs and evaluates the accuracy of ARIMA models in load forecasting. The second experiment simulates the dynamic changing in a scalable distributed database system and compares the proposed algorithm with a threshold-based algorithm.
+
+A. Time Series Analysis  For the proposed algorithm, the performance is highly de- pendent on the accuracy of time series forecasting. Therefore, we analyze real access logs in the first experiment in order to show that observed time series can be found in the workload of an online application. The access logs we used are from 1998 World Cup Website [13]. The access logs include all requests made to the website from April 30, 1998 to July 26, 1998.
+
+In the analysis, we use the hourly counts from May 1, 1998 to May 31, 1998 as the training set for building the ARIMA model. The model and related parameters are generated by a statistical software called R [14]. To see if there is a daily factor in the model, we set 24 hours as the seasonal period.
+
+From the output of R, an ARIMA(1,1,1)x(2, 0, 2)24 model is found and the coefficients are shown in Table III. Compare the orders and the coefficients, we find that the seasonal AR part contributes most to the series. It implies that there is truly a daily factor in the model.
+
+In the next step, we verify the correctness of the model by performing k-step ahead forecasting. We take the hourly counts from June 1, 1998 to June 7, 1998 as the validation set. There are totally 168 sample data points (See Fig. 3(a)).
+
+For each data point, we perform 1-step ahead forecasting to estimate the number of accesses in the next hour. From the result, we find that the estimated values are very close to the exact values (See Fig. 3(b)) and the percentage error is around  5%. Similarly, we perform forecasting up to 5-step ahead for each data point. From the results, we find that the estimated values become less accurate (See Fig. 3(c)-3(f)). But still, the change in load trend is clearly shown.
+
+B. Simulation  Due to the lack of real data, in the second experiment, syn- thetic workloads are used to simulate the dynamic changing in a scalable distributed database system. We assume workloads can be modeled as observed time series and generate fragment workloads by the following seasonal ARIMA model:  WFj ,t = ?1WFj ,t?1 +?1WFj ,t?24 ? ?1?1WFj ,t?25 + at ?1 and ?1 are coefficients, which are unique for each series of fragment workloads. {at} is a series of white noise error terms generated from R. We restrict the mean values of {WFj ,t} to be around 100 and introduce different levels of noise into {WFj ,t} by changing the variance of {at}. There are three sets of synthetic data generated. Each set consists of 100 series and each series contains 96 data points representing fragment workloads in four days. The variances of {at} used for generating the datasets with low, moderate and high levels of noise are 5, 15 and 30 respectively.
+
+In the simulation, we assume that each node can handle maximally 1800 requests in a unit of time and the cost for migrating a fragment at a particular time point is the workload of the fragment at that time point. With the goal of keeping all nodes working at a rate around 95% throughput, the proposed algorithm is compared with a simple threshold-based algorithm, which performs actions based on the workloads measured at the current time point. For the proposed algorithm, we set the lower bound ?l and the upper bound ?u by ? 2.5% to the expected working rate. Forecasting is performed up to 5-step. For the threshold-based algorithm, we set the threshold value to be ?u for the purpose of comparison.
+
+1 2 3 4     1 2 3 4 Time(day)  N o.
+
+o f n  od e  ov er  lo ad  in gs     Proposed Algorithm Threshold?Based Algorithm  1 2 3 4     1 2 3 4 Time(day)  N o.
+
+o f s  us pe  nd ed  r eq  ue st  s (k  )     Proposed Algorithm Threshold?Based Algorithm  (a) node overloading (b) migration cost  N o.
+
+o f n  od es    Proposed Algorithm  Time (hour)  N o.
+
+o f n  od es    0 24 48 72 96  Threshold?Based Algorithm  (c) node number adjustment  Fig. 4. Simulation result of the dataset with a low level of noise  1 2 3 4     1 2 3 4 Time(day)  N o.
+
+o f n  od e  ov er  lo ad  in gs     Proposed Algorithm Threshold?Based Algorithm  1 2 3 4     1 2 3 4 Time(day)  N o.
+
+o f s  us pe  nd ed  r eq  ue st  s (k  )     Proposed Algorithm Threshold?Based Algorithm  (a) node overloading (b) migration cost  N o.
+
+o f n  od es    Proposed Algorithm  Time (hour) N  o.
+
+o  f n od  es   0 24 48 72 96  Threshold?Based Algorithm  (c) node number adjustment  Fig. 5. Simulation result of the dataset with a moderate level of noise  1 2 3 4     1 2 3 4 Time(day)  N o.
+
+o f n  od e  ov er  lo ad  in gs     Proposed Algorithm Threshold?Based Algorithm  1 2 3 4     1 2 3 4 Time(day)  N o.
+
+o f s  us pe  nd ed  r eq  ue st  s (k  )     Proposed Algorithm Threshold?Based Algorithm  (a) node overloading (b) migration cost  N o.
+
+o f n  od es   10 Proposed Algorithm  Time (hour)  N o.
+
+o f n  od es    0 24 48 72 96  Threshold?Based Algorithm  (c) node number adjustment  Fig. 6. Simulation result of the dataset with a high level of noise  Fig. 4-6 show the simulation results of using the proposed algorithm and the threshold-based algorithm to perform node number adjustment and fragment reallocation. For all datasets, the proposed algorithm gives a better performance. It is rare to have node overloadings (See Fig. 4(a)-6(a)). The migration cost generated is lower than that of the threshold-based algo- rithm (See Fig. 4(b)-6(b)). When there are suddenly drops in the workload, the proposed algorithm does not remove exces- sive nodes (See Fig. 4(c)-6(c)), and therefore no unnecessary migration cost is generated.
+
+
+
+VII. RELATED WORKS  To the best of our knowledge, there is no previous work formally addressing the problem of data allocation in scalable distributed database systems. But still, there are studies on scalable database systems in which techniques for load bal- ancing and resource-saving are discussed and proposed. In [5], a threshold-based algorithm is used to reallocate data fragments. Live migration techniques are proposed in [11], [15] to lighten the influence due to fragment migrations. In [4], non-linear optimization techniques are used to reallocate resources. An engine for monitoring and consolidation is proposed in [16], which measures the hardware requirements of database workloads and predicts the resource utilization such that resource allocation can be performed accurately. In [17], a multi-resource allocator is introduced to dynamically allocate resources for database servers running on virtual storage, which give an idea on how to configure the resources in an elastic environment.
+
+
+
+VIII. CONCLUSION  In this paper, we defined the problem of data allocation in scalable distributed database systems and presented an efficient algorithm, which makes use of time series models to perform node number adjustment and fragment reallocation. From the simulation, we saw that data allocation is performed in a reasonable way. Load balancing and resource-saving can be achieved under the assumption that future workloads can be modeled as observed time series. With accurate forecastings, the performance of the proposed algorithm is much better than that of a threshold-based algorithm.
+

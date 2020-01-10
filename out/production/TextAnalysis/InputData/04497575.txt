@@ -1,0 +1,80 @@
+Adaptive Bitmap Indexes for Space-Constrained Systems Rishi Rakesh Sinhal, Marianne Winslett2, Kesheng Wu3, Kurt Stockinger3, Arie Shoshani3
+
+Abstract - Data management systems for "big science" often have tight memory and disk space constraints. In this paper, we introduce adaptive bitmap indexes, which conform to both space limits while dynamically adapting to the query load and offering excellent performance. So that adaptive bitmap indexes can use optimal bin boundaries, we show how to improve the scalability of optimal binning algorithms so that they can be used with real- world workloads. As the removal of false positives is the largest component of lookup time for a small-footprint bitmap index, we propose a novel way to materialize and drop auxiliary projection indexes, to eliminate the need to visit the data store to check for false positives. Our experiments with real-world data and queries show that adaptive bitmap indexes offer approximately 100- 300% performance improvement (compared to standard binned bitmap indexes) at a cost of 5 MB of dedicated memory, under disk storage constraints that would cripple other indexes.
+
+
+
+I. INTRODUCTION Bitmap indexing for business data was proposed in the  1980s [1] and analysed extensively in the 1990s; it is included today in data warehousing products. Several research groups have examined bitmap indexes for scientific data. Both application areas are a good fit for bitmap indexes, as they involve high-dimensionality queries over very large data sets in a read-and-append-only environment.
+
+When we tried to convince scientists to use bitmap indexes  in their projects, we quickly learned that "big science" is not willing to accept the space over heads traditionally associated with indexing. Bitmap indexes have roughly a 100-150% space overhead for indexed data, which is much smaller than most high-performance indexes [5], but is not currently acceptable for big science. A typical reaction:  Ifwe can allow efficient access to the raw data at around 20-30% additional [storage] cost, then we can help science a lot. [Joseph Mohr, Dark Energy Survey data system designer] Scientists are reluctant to invest in more storage because  their data sizes are so large: their new instruments can generate in one day as much data as is in a typical business data warehouse. Doubling the amount of storage is not an option under current funding priorities.
+
+In this paper, we introduce adaptive bitmap indexes, which combine the strengths of today's leading approaches to bitmap indexes while greatly reducing their size and retaining excellent performance. In the full version of this paper [4]:  * We extend current methods to calculate optimal bin boundaries, to create locally optimal bin boundaries in a cost effective manner.
+
+* We materialize and drop auxiliary projection indexes, without ever exceeding predefined memory and disk limits, to greatly reduce data lookup costs.
+
+* We use large synthetic and real workloads to show that for a given space limit, adaptive bitmap indexes are much faster than standard binned indexes, and are comparable to large multi-resolution bitmap indexes.
+
+Figure 1. Answering queries with an unbinned (center), binned (left), or multiresolution (right) bitmap index.
+
+
+
+II. RELATED WORK Figure 1 shows the simplest possible bitmap index (BI) for  attribute A, where we store one bit vector (bitmap) for each possible value of A. The length of the bitmap is equal to the number of objects or tuples in the database. The objects are numbered serially, and if object k has value v for attribute A, then the bitmap for value v has a 1 as its kth bit. The bitmaps for all other values of A have 0 as their kth bit. The resulting set of bitmaps is the BI for A, and the total number of Is in all its bitmaps is the total number of objects. If more objects are added to the database, we append more bits to the bitmaps.
+
+To find all objects whose value for A is in [10,12], we fetch the bitmaps for values 10 and 11 into memory, perform a bitwise OR on them, then OR the result with the bitmap for 12.
+
+For a query that restricts 20 attributes, we compute the bitmaps resulting from each individual attribute restriction, then AND together those 20 bitmaps to get the final result.
+
+We can reduce the BI size by partitioning the domain ofA  into bins (ranges), and keeping only one bitmap per bin. Then queries will fetch fewer bitmaps, but can have false positives whenever the bin boundaries do not align exactly with the query restrictions. Researchers have tried to combine the advantages of binned BIs (fast bitmap lookups, but slow false positive removal) and unbinned BIs (no false positives, but slower lookups due to having to AND and OR so many bit vectors). The resulting approach, called multi-resolution BIs (MBIs), uses a hierarchy of bitmaps [3]. At the highest level     (k) of an MBI are WAH-compressed bitmaps whose bins are individual values. At the next lowest level, each bin contains several adjacent bins from the level above, and so on down to level 1, which has the widest bins (see Figure 1). To find all objects whose value for A is in [1I0,12], we start at level 1 of the MBI. Any bins there lying entirely inside the query range have their bitmaps fetched and ORed together. If the query range partially overlaps a bin, we go to level 2 of the MBI to answer that part of the query; and so on until, if necessary, we have reached the highest level of the MBI. MBIs incur no false positives and fetch few bitmaps, but do require about twice as much space as when there is exactly one WAH- compressed bitmap for each value in the domain.
+
+
+
+III. LocALLY OPTimAL BINS  Rotem et al. use dynamic programming to place bin boundaries to minimize total query processing time for a particular workload [2]. They observe that only the endpoints of the range restrictions in queries (query endpoints) must be considered to find optimal boundaries. They use dynamic programming to find optimal bins for a query workload and data distribution in O(n 2) time, where n is the number of endpoints. Their approach does not scale to large workloads.
+
+In the full version of the paper, we solve the scale-up problem by first using a fast heuristic approach to choose the number of bins and assign their boundaries. The resulting structure is the lowest level of a new MBI. Then for each bin at the lowest level, we compute a set of bin boundaries that are optimal within that bin, to serve as bins at the next highest level. We can do this efficiently because only a small fraction of the workload will have query endpoints in that particular bin, so n is small. We repeat the process with the other bins at the first level of the index, then generate additional levels in the same manner. This is the locally optimal NMIB, or LOMBI.
+
+
+
+IV. EXPLOITING QUjERY LOCALITY Even with a LOMBI, the cost of removing false positives is  still extremely high, as shown by experiments presented later.
+
+Fortunately, scientific workloads exhibit spatial and/or temporal locality, with respect to the time an observation was made. We exploit this locality to reduce workload cost.
+
+The Sloan Digital Sky Survey (SDSS) is an astronomy survey collecting images of the sky and generating a map of a million galaxies and quasars. In SDSS, spatial locality takes the form of similar values for the right ascension (RA) and declination (DEC) coordinates used to describe the location of objects in the sky. Figure 2 shows a graph of the RA values used as query endpoints (Y axis) during 18 months of SDSS queries (X axis). Left endpoints are shown in dark blue, and are mostly obscured by the magenta-colored right endpoints.
+
+The graph shows that consecutive queries tend to request very similar values of RA, except for brief periods. We exploit this locality to reduce the cost of false positive removal.
+
+When we go to the data to check for false positives, we  create an auxiliary projection index (PI) for that particular bin, consisting of a <objectID, attributeValue> pair for each object in the bin, and sorted on attributeValue. A subsequent query  whose endpoint e falls in the same bin can do binary search for e in the PI; all objects in the PI beyond e are false positives and can be eliminated without visiting the data. Scanning a PI is much quicker than parsing a data file and searching for the objects belonging to a particular bin.
+
+Lower Bound 400 ~~~~~~~~~~~~~UpperBound  30500-00 100 00 50 00    Lo eolto 800 2 0 00 5 00 50 00  21ue.Spta 23alt ofySDSSfqnueries wt Aedons  BitmapIndex~ ~ ~ ~ ~ Mlmor  Fiue .Achtcur fa w-evladpie0imp ne-(B)  Asshw i igre3 a datiebimp3ndx(AI cosit o LMI ls mal e o Is s6nAB ano ever exed h ds spc1 etitosipsdb cetss we craete 2OB o htii1lgtl4mlerta h spcelii. heletve ds sac1i5urdik1ahe(D) con Rsoltrans ecnmtraieol ml rion o h I  Westoredithe RAevalueso asitgrsfion[0,3,0000].Th  with re1.6 108cobjects.o FworlveadrepriesentmativdexwoklAd,Iwe  thehowbinnngFagorithm, and thereapineingm15 quderie forI tenssting We useaOB dlusalsalcoreP2.4GAsmachne wBIt 1anGB mvemryanced 2t50 GBs dskaers,twicthibndwidthseuptb10Mscetsts The creat LOMB hadB 2olevel withi 1000tlbismatlleve1ha (27 MB)and 15,000 binsaetolvel2is (120eMB). isace(D)  Csdonsilde the effect ofeMClasizelonatheruGimen four RAtorag cnthe a5,00tetqris,wea aeithlthe ABIysmlmte tac250oof thePl  dataelesizt11M) igr hw hresultuedPs foro6MCsizCo aes.oo     For each MC size, one X axis entry is for a configuration with both MC and DC, and the other has just MC. The Y axis for the bar graph shows the time to answer the queries. The Y axis for the line graph shows the percent of queries answered from MC and, if present, DC. DC size is 15 MB, the amount of disk space left after creating the LOMBI.
+
+readFP time to read data file to create PIs not already cached.
+
+writePI time to move overflow PIs from MC to DC.
+
+readPI time spent moving PIs from DC to MC, as needed.
+
+checkPI time to parse PIs in MC, to filter out false positives.
+
+readBV time to read bit vectors from disk (entirely IPO).
+
+calcBV time spent ORing and ANDing bitmaps (no 11O).
+
+Memrory iUthe Onhl MarnoCryor Di k [ache  E  30 420  L  ~4it P1B  ireadPi    i:  r-  0 5 10 25 50 1X 0 5 S 25 50 1X  Mem ory ache (MC) Size - 100 MB)  Figure 4. Time to run all RA queries in the 15,000 test query log, with a 2- level ABI and 25% space limit. The line shows the percent of queries answered without visiting the data.
+
+The Figure 4 workload times are completely dominated by the time spent visiting the data to find false positives (readFP); any increase in readFP also increases total run time. Such visits are unavoidable when the index has no single-value bins.
+
+Query locality gives much faster answers once PIs are cached.
+
+Figure 4 run times improve a lot as MC increases from 0 to 5 MB, regardless of DC size. As MC grows beyond 5 MB, performance continues to improve if there is no DC, but plateaus if there is DC. This is because the second largest component in MC-without-DC run times is computeBV, while in the MC+DC version it is writePI and readBV, whose contention for the disk arm and space in the file system cache slows down both components. In the full version of the paper, we present additional experiments showing that this DC is too small to benefit performance, and that any extra disk space available for DC is better spent increasing the LOMBI size.
+
+With no DC and no MC, the average time to answer one query in Figure 4 is .4 seconds. From experiments in the full version of the paper, we know it takes 7.1 seconds on average to answer a query with a cold file system cache, so the .4 second response time reflects very positively on the file system caching algorithms. The file system cache would be much less effective in a production run, however, because this experiment only involves 644 MB ofRA on a machine with 1  GB memory. A production SDSS run devotes file cache space to many other less popular attributes fetched by concurrent queries, with memory orders of magnitude smaller than the recently-accessed data. Thus MC and even DC will be very important in production runs.
+
+For a clearer picture of the expected file system cache behavior in a production system, consider the following analysis. The first check of a bin for false positives must read the corresponding objects from disk. If the file system cache does not already have those objects cached (as expected in production runs), the average query execution time will be close to 7 seconds. For queries whose PIs are already in MC, the query time will be .1 second. Thus even with 5 MB MC and no DC, we can answer 4500 of the queries in .1 second and 5500 of the queries in 7 seconds. This means that ABI provides a considerable advantage for the 4500 of queries answered from the MC.
+
+
+
+VI. CONCLUSIONS  In this paper, we introduced adaptive bitmap indexes (ABIs) as a way to satisfy scientists' demands for a high performance index with a tiny footprint. An ABI includes a locally-optimal multi-resolution bitmap index and a set of auxiliary projection indexes (PIs) that are materialized while removing false positives from current query answers, then kept in an LRU cache in memory and/or disk for use in answering subsequent queries. The PIs greatly reduce the cost of false positive removal, which is the dominant factor in query performance.
+
+The full version of this paper [4] includes much material omitted here. In particular, we present the algorithms for building adaptive bitmap indexes and include a complete set of experiments: explorations of query performance with both RA and DEC for a variety of space limits, and with synthetic queries and/or data as well as the SDSS workload. We also show that an adaptive bitmap index for RA with a 5000 space limit performs 32% faster on the SDSS workload than an ordinary multi-resolution bitmap index twice its size. In other words, space limits need not harm lookup performance and can actually improve it by reducing CPU costs, which are high for bitmap index lookups.
+
+Acknowledgements. This work was done while R Sinha was at the University of Illinois. This research was supported by a Computational Science Fellowship, by the Department of Energy under subcontracts B341494, DOE DEFC02- 01ER25508, and DE-AC03-76SF00098, and by NSF grant NSF ACI 02-05611.
+

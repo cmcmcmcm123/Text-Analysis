@@ -1,0 +1,190 @@
+Hardware acceleration of Hadoop MapReduce
+
+Abstract?MapReduce is widely used for BigData processing. It was originally designed to overcome the I/O bottleneck of commodity servers. However, several high speed storage and network devices have recently emerged, and speeds continue to increase. Employing such brand new devices will solve the I/O bottleneck, making the CPU the next serious bottleneck in the MapReduce framework. In this paper, we conduct a performance study of Hadoop MapReduce by using a server cluster built on state-of-the-art devices. We show the CPU is the bottleneck in such an environment. To overcome the CPU bottleneck, we propose hardware acceleration for MapReduce.
+
+We implement a prototype using a many core processor board developed by Tilera and show the feasibility of our proposal.
+
+Keywords-MapReduce; Benchmark; Hardware offload; Many-core processor;
+
+I. INTRODUCTION MapReduce is a distributed data processing framework  for large clusters built of commodity servers, and is widely used for BigData processing. Google originally proposed and developed the MapReduce framework to process their own BigData; it was a propriety product and not open to the public [1]. Apache Hadoop is open source software derived from their published papers,  and has emerged as the de facto standard of MapReduce for big data processing [2].
+
+MapReduce was designed to process BigData efficiently on large clusters built of commodity servers. The use of commodity servers meant that the storage devices and networks were assumed to be much slower than CPU data processing. Hard disk drives (HDDs) were taken to be the slowest of the components. In BigData processing, we necessarily have to retrieve a large amount of data from HDDs, which takes a very long time. By reading the data simultaneously from a lot of servers, MapReduce achieves high data bandwidth, which solves this issue.
+
+The original situation is changing however. Several kinds of high speed storage devices and networks have emerged, such as Solid State Device (SSD) and Infiniband. The throughputs of SATA-based SSD or PCI Express-Based SSD are at least one order faster than those of conventional HDDs. These devices will be employed in commodity servers in near future. Considering this change, it might be advantageous to redesign the MapReduce framework itself.
+
+The first part of this paper conducts a performance study of Hadoop MapReduce. Using state-of-the-art storage and network devices, we benchmark Hadoop MapReduce. We  decompose the map task and reduce task, and evaluate the throughput of each function, such as serialization, deserialization, parse, sort and merge. We clarify which part is the bottleneck, and how much bandwidth we can achieve by using current host CPUs, and clarify the upper bound.
+
+In the second part of this paper, we propose hardware acceleration for Hadoop MapReduce to overcome the CPU bottleneck. We offload serialization, deserialization, parse and sort in the map task to an acceleration board equipped with a many-core processor. We implement a prototype using the commercially-available many-core processor, Tilera TILEncore-Gx36, and show the feasibility of our proposal.
+
+
+
+II. PERFORMANCE ISSUES IN MAPREDUCE  A. MapReduce Background We start by briefly introducing the MapReduce  framework itself [3]. As shown in Fig.1, MapReduce consists of two functions, map and reduce. The former transforms the input data into key-value pairs, and latter is applied to each list of values that correspond to the same key.
+
+Figure 1. MapReduce framework.
+
+Figure 2 shows the sequence of data processing in  Hadoop MapReduce. Several map tasks (mapper) and reduce tasks (reducers) are run concurrently on each node.
+
+Each mapper reads a chunk of input data from Hadoop Distributed File System (HDFS). Mapper deserializes and parses it to extract key-value pairs, which are set in memory.
+
+The mapper sorts these items by key, and then serializes and writes the output (spill files) to disk. Mapper repeats this sequence until it processes all assigned data. In the last stage, mapper merges all spill files (which are sorted by key), and generates a map output file (MOF). Mapper?s outputs are then shuffled to the reducers. Each reducer retrieves the map output file from the mapper node. Reducer merges the MOF files by key, and applies reduce function to each group of      values that share the same key. Reducer writes the output to HDFS. By using this very simple data processing framework, we can process BigData on a large cluster built of commodity servers.
+
+Figure 2. Sequence of data processing in Hadoop MapReduce.
+
+B. Performace Issues MapReduce was original proposed by Google in 2004,  and the Apache Hadoop project was launched in 2005. The designing and implementation MapReduce implicitly assumed the use of commodity servers. The HDDs were very slow compared to CPU data processing. The solution was to extract information in parallel from many HDDs.
+
+Now, however, several kinds of high speed storage and network devices have emerged, such as Solid State Device (SSD) and Infiniband. The conventional HDD has a transfer rate of about 100MB/s. However, SATA-based SSD offers 500MB/s, and PCI Express-based SSD offers several GB/s.
+
+In addition, it is possible to install a number of these devices, so that each node can realistically offer the storage bandwidth of ~10GB/s. As for the network, 10 gigabit Ethernet is now widely used, and 40 gigabit Ethernet is available in the market. 100 Gigabit Ethernet will become common in the near future. Infiniband is another fascinating high speed network. Infiniband was widely applied to super computers. Vendors are now offering Infiniband interface cards for commodity servers. Current Infiniband network bandwidths are of the order of 56Gbit/s. In near future, these high speed devices will be found in commodity servers.
+
+As described above, these new devices will eliminate the I/O bottleneck that was assumed in the design of MapReduce. We need to clarify what the new bottleneck is by carefully determining how much each processing operation affects the performance of MapReduce.
+
+
+
+III. HADOOP BENCHMARK USING HIGH SPEED STORAGE AND NETWORK DEVICES  In this section, we benchmark Hadoop MapReduce, and analyze the throughput of each part of MapReduce in depth.
+
+A. Hadoop Benchmark First of all, we benchmarked Hadoop MapReduce using  TeraSort and Grep, which are typical benchmark programs and part of the Hadoop Distribution. Table 1 shows the  specification of our experimental setup. 6 servers were used in this experiment; one master and 5 workers.
+
+TABLE I.  SPECIFICATION OF THE SERVERS  CPU Intel Xeon E5-2695 (2.9GHz, 8-cores, HT) x 2  Memory 128GB (DDR3-1600, 16GBx8)  HDD(SATA) 7200rpm (1TB)  SSD(SATA) Intel SSD 520 (480GB)  SSD(PCIe) Intel SSD 910 (800GB)  Network(eth) 1000Base-T (On board)  Netowork(ib) Mellanox ConnectX-3 (FDR Infiniband)  OS CentOS 6.3 (x86_64)  Java VM Oracle JDK 6 Update 38  Hadoop CDH 4.1.2   A 400GB (4 billion records) input data set was generated  by TeraGen. Figure 3 shows the experimental results. The SATA (ssd) and PCI Express(pci) based SSD setup was about 8 times faster than the HDD(sata) based setup.
+
+Although PCI Express based SSD has 4 times higher read performance than SATA based SSD, there was little difference between these two setups. While Infiniband is more than 10 times faster than 1 gigabit Ethernet, it yielded an insignificant improvement in the SSD setup.
+
+Figure 3. TeraSort benchmark results.
+
+We also measured the resource utilization while performing TeraSort. Figure 4-6 shows the CPU utilization of one of the workers. Figure 4 shows the HDD setup case. As shown in Fig. 4, CPU utilization was very low due to I/O wait, which means HDD was the bottleneck in this case. On the other hand, in the SSD case, Fig. 5 and 6, CPU load (average) was more than 90% in the map phase. CPU was more lightly loaded in the reduce phase because there were fewer reduce tasks was less than the number of CPU cores. From Fig.6, the map phase took about 6 minutes, so the throughput was about 228MB/s per node. This value is one order slower than the throughput of PCI Express based SSD. From these TeraSort based benchmark results, we observed that the CPU was the bottleneck in the SSD setup.
+
+Next we ran the Grep benchmark using the 400GB data set. We used a regular expression that matched only one line, which means that all mappers output just one key-value pair.
+
+Figure 7 shows the CPU utilization of one of the workers.
+
+Figure 4. TeraSort: CPU utilization (HDD+eth)          Figure 5. TeraSort: CPU utilization (SSD(SATA)+eth)           Figure 6. TeraSort: CPU utilization (SSD(PCIe)+eth)            Figure 7. Grep: CPU utilization (SSD(PCIe)+eth)   From Fig.7, the map phase took about 3 minutes, so the throughput was about 450MB/s per node. PCI Express based SSD offered the bandwidth of 2GB/s. However, even for Grep, a very simple data processing operation, we could not fully utilize storage bandwidth.
+
+Before doing these benchmark experiments, we thought that sorting by keys in map task would be a CPU intensive task, and thus TeraSort would not fully utilize storage bandwidth. By comparison, Grep has no CPU intensive sort task so storage bandwidth would be fully used. However, our assumption was incorrect. To better understand the results, we thoroughly investigated the CPU loads created by each MapReduce processing operation and the performance of current host CPUs.
+
+B. Read Benchmark First, we benchmarked the performance of file read. We  compared the following three native access calls to the two  calls typical in Hadoop. i) is a native system call. ii) and iii) are standard Java calls. iv) and v) are Hadoop calls.
+
+i) System call (cat) ii) Java.io.FileInputStream Class iii) Java.nio.FileInputStream Class (NIO) iv) org.apache.hadoop.fs.local.LocalFs Class v) org.apache.hadoop.fs.local.Hdfs Class In order to eliminate the effect of the I/O bottleneck, we put the data on the memory file system (tmpfs). In the HDFS case, DataNode, whose storage was set to tmpfs, was launched on the local node to eliminate the network effect.
+
+Figure 8 shows the results. Although hardware level bandwidth was 12.8GB/s, i) achieved only 5.5GB/s. This must be due to the overhead of tmpfs. HDFS case, (v), was 1.5GB/s, which is very low compared with the other four cases. This must be due to the overhead of memory copy in Java and data transfer via local loopback network. These results were gained for a single CPU core so that in terms if data reads, we can achieve more than 10GB/s by using all cores.
+
+Figure 8. Read benchmark results  C. Serialization and Deserialization Benchmark Next, we benchmarked the throughputs of serialization  and deserialization. The MapReduce application does not directly manipulate binary data. The binary data is usually converted into primitive data types such as string or integer.
+
+Hadoop provides a basic serializable class. We evaluated its performance in isolation by benchmarking the serialization and deserialization of 1GB of data. For the string type, we evaluated two encoding formats, ASCII and UTF-8. For variable length binary data, we changed the length from 8B to 1024B. Figures 9, 10, and 11 show the results. As shown in Fig. 9, more than 40M items per second was achieved. As one example, the bandwidth was just 150MB for the integer format. As for the encoding performance, Java internally supports the UTF-16 encoding format so that ASCII and UTF-8 are necessarily converted into UTF-16 format. Due to this conversion, we can achieve the throughput of only 1.0 to 1.5 GB/s. When we use the string type in MapReduce application, the low data is first converted into variable binary type (text) and then converted into string type. Based on the above results, we can achieve about 800MB/s per CPU core in the case of Key and Value in 64B type format.
+
+In the multi-byte string case, we can achieve only 200MB/s or so per CPU core.
+
+Figure 9. Serialization and deserialization benchmark             Figure 10. Serialization and deserialization benchmark             Figure 11. Encoding and Decoding benchmark  D. Parse Benchmark Next, we benchmarked the performance of data parse.
+
+Analyzing a large amount of system logs is a typical operation in MapReduce. Map task reads one line, and separates it into items according the separator, and then performs some filtering operation.
+
+We evaluated the following six cases. i) ,ii) and iii) examine the performance of reading text. iv) gathers the performance of the tokenizer. v) and vi) are combinations of the above.
+
+i) Java.io.BufferedReader Class ii) Hadoop TextInputFormat Class (Binary) iii) Hadoop TextInputFormat Class (Text) iv) Java.util.StringTokenizer v) Java.io.BufferedReader Class + StringTokenizer vi) Hadoop TextInputFormat Class + StringTokenizer  We used 4GB of text data downloaded from Wikipedia, that was formatted to yield fewer than 256 bytes per line.
+
+Figure 12 shows the results. Even for cases i) and ii), we can achieve only 400MB/s per CPU core. This is very low  compared to the read performance mentioned in B.
+
+Searching for end of line and copying each line must be the main overheads. Moreover, separating a line into items by using StringTokenizer was also a CPU intensive task.  We could achieve only 125MB/s. The total throughput was only 80MB/s per CPU core, a serious restriction on the data processing speed.
+
+Figure 12. Parse benchmark  E. Sort and Merge Benchmark Finally, we benchmarked the performance of sort and  merge class as implemented in Hadoop (MapOutputBuffer).
+
+Everyone can easily imagine that these are CPU intensive tasks. We used 8GB of input data, and evaluated several combinations of key and value length.
+
+Figure 13 shows the results. As predicted, the throughput was very low, less than 10MB/s, especially in the case of small key and value lengths. Even for the case of 10B key and 90B value, the same as the TeraSort case, we attained only 60MB/s sort and 105MB/s merge.
+
+Figure 13. Sort and merge benchmark  F. Summary We analyze TeraSort based on the benchmark results of  each part. TeraSort mainly consists of the following phases.
+
+i) Mapper reads data from HDFS ii) Mapper deserializes static length data (100B) to text,  and sets Key(10B) and Value(90B) pair.
+
+iii) Mapper performs sort by key in memory.
+
+iv) Mapper serializes the sorted key and value pairs.
+
+v) Mapper merges the sorted files.
+
+vi) Reducer retrieves the merged file from Mapper node,  and writes them down to local file system.
+
+vii) Reducer merges the sorted files, and writes the output  to HDFS.
+
+The throughput of each phase is estimated to be (i) 1490MB/s, (ii) 342MB/s, (iii) 60MB/s (iv) 280MB/s (v) 105MB/s (vi) 3600MB/s (vii) 105MB/s (viii) 1490MB/s.
+
+Figure 14 breaks down Map and Reduce, and compares measured to estimated data. As thought before this experiment, sort and merge is the heaviest task. Surprisingly, however, the other tasks such as deserialization or merge were not trivial and non-CPU resources were not fully utilized.
+
+Figure 14. Summary of benchmark results.
+
+
+
+IV. HARDWARE ACCELERATION IN MAPREDUCE CPUs had been becoming faster due to increases in the  clock frequency but these improvement is becoming saturated and advances now consist of increasing the number of cores. However, it seems unlikely that  number of host CPU cores will reach levels sufficient to fully utilize the state-of-the-art storage and network devices. Some improvement in MapReduce performance is possible by increasing the number of servers but this is not efficient in terms of power consumption.
+
+Our solution is to extend the MapReduce framework with a hardware accelerator board equipped with a special processor such as FPGA or many core processor. This allows us to seamlessly increase the number of boards to keep up with performance demands. A key point is to keep as much of the MapReduce framework as original as possible.
+
+As mentioned in Section II, MapReduce consists of relatively simple data processing operations that are isolated from each other which logically implies the use of parallelization. We propose three kinds of hardware acceleration for MapReduce.
+
+i) Key-value pair generation, and sort by key in map task.
+
+ii) Merging sorted files in Map and Reduce tasks.
+
+iii) Numerical calculation in Map and Reduce tasks.
+
+i) and ii) are related to the previous investigation and are thus known to be suitable. iii) is slightly different from the others. For example, when MapReduce is used to perform some kind of numerical calculation such as matrix calculation or machine learning, it is important to use special hardware suitable for the calculation such as  GPGPU or many core processor. In this paper, we first try to implement a hardware accelerator that performs i) key- value pair generation, and sort by key in Map task.
+
+
+
+V. PROTOTYPE IMPLEMENTATION We offloaded key-value pair generation and sort by key  on memory onto a prototype implemented on a many core processor board developed by Tilera [4]. We used TILEncore-Gx36, which consists of a cache-coherent mesh network of 36 tiles, where each tile houses a general purpose processor, cache and a non-blocking router. Low power consumption is exciting feature of this processor. The power consumption of TILEncore-Gx36 is around 35W.
+
+One 1-GHz clocked CPU (36cores) and 8GB RAM were implemented on the acceleration board used in this experiment. The board has a PCI Express interface, and communicates with its host via this interface. The board runs SMP Linux so that we can easily develop several applications in user mode.
+
+Figure 15 shows an overview of the prototype. Our implementation consists of three parts, Hadoop map task, host process, and on-board process. When MapReduce is executed, these offloaded tasks are launched on this node.
+
+We implemented a hook in Map of Hadoop MapReduce such that calling it dispatches the tasks to the outside host process. This host process reads the data assigned to the tasks, splits them into chunks, and transfers them to the on- board process by using DMA transfer. The on-board process uses multi-thread processing, and performs key-value pair generation and sort by key in 30 parallel streams. The output data is transferred back to the host process, and merged into one sorted file (MOF). When all data assigned this map task is completely processed, control is returned to the Map task, and the MapReduce job is resumed.
+
+Figure 15. Prototype of hardware accelerated MapReduce.
+
+
+
+VI. EVALUATION We evaluated the prototype implementation using a single  node environment. Cloudera Hadoop Distribution (CHD3 update 4) was used, and run in pseudo distributed mode.
+
+Table II shows the specification of the server used in this     evaluation. We performed two types of Hadoop benchmark, grep and wordcount. We compared Hadoop original version, which run only on host CPU, and accelerated version.
+
+TABLE II.  SPECIFICATION OF OUR SERVER  CPU Intel Xeon E5-1660 (3.3GHz, 6-cores, HT)  Memory 128GB (DDR3-1600, 16GBx8)  HDD(SATA) 7200rpm (1TB)  Network(eth) 1000Base-T (On board)  OS CentOS 6.3 (x86_64)  Java VM Oracle JDK 6 Update 38  Hadoop CDH3 update4    A. Grep First we performed the Grep benchmark. We used a  50GB randomly generated dictionary, and searched for words that matched the regular expression /^a{4}/. Only one word matched this regular expression in the 50GB dictionary, which means that this is a Map task heavy benchmark.  To fairly compare the two methods, we did not use Grep sample implementation included in the Hadoop distribution. We implemented a very simple grep mapreduce program using the java standard tokenizer to split words, and regex to check the regular expression. The 50GB data was loaded on the memory file system to eliminate the I/O bottleneck of storage. Figure 16 shows the results. The execution time of the original version was 211 seconds, which corresponds to 242MB/s per node. This means that even for the SATA based SSD, we cannot fully utilize the I/O. On the other hand, the hardware accelerated version took 44 seconds, which corresponds to 1163 MB/s.  This means that we can fully utilize the I/O of at least two SATA based SSDs.
+
+Figure 16. Grep benchmark results.
+
+B. Wordcount The next benchmark used the Wordcount program. We used a 20GB random text file generated from a small dictionary, and counted the number of occurrences of each word. We enabled the combiner in Map Task in the following all measurements. The size of output file was 3.6MB and the number of keys was 235,834. This means that the combiner was effective, and the size of the Map output file was relatively small so that this was also Map task heavy  benchmark. As for the hardware accelerated version, we performed two types of experiments; host side merge was enabled and disabled. Figure 17 shows the results. The execution time of the original version was 1050 seconds, which corresponds to 19MB/s per node. The hardware accelerated version with host side merge took 163 seconds, which corresponds to 125 MB/s. And, the hardware accelerated version without host side merge took 200 seconds, which corresponds to 102 MB/s.
+
+Figure 17. Wordcount benchmark results.
+
+C. Discussion The results of the above benchmark experiment show the  feasibility of our proposal. In this experiment, we used only one acceleration board which implemented one CPU with has 36 cores. We can seamlessly increase the performance by increasing the number of boards depending on the performance needed.
+
+Note that the SPECint benchmark score of the host CPU (Intel Xeon E5-1660 3.3GHz 6core, 12HT) and the many- core CPU (Tilera TILEncore-GX36 1.0GHz 36core) are comparable, so that the MapReduce benchmark results should be also comparable. However, hardware accelerated version overwhelmed the original version. This must be due to the overhead of Java. If we implement a C version of MapReduce, we can achieve performance comparable to the hardware accelerated results given above.
+
+In terms of power consumption, our approach is superior.
+
+Power consumption of the host CPU used in this experiment was 130W. On the other hand, TILEncore-Gx36 used only 35W. Of course, our prototype implementation used both the acceleration board and that host CPU, so this comparison is not exactly fair.  However, as for Grep, the original version had throughput of 1.86MB/W while the hardware accelerated version achieved 46.5MB/W.
+
+As for the wordcount experimental results, we could not realize the situation where the bandwidth of the storage devices was fully utilized. Though the throughput of the tasks implemented on the Tilera board was relatively fast, merging the sorted file in the map and reduce task was slow.
+
+Thus the total throughput was not high enough to fully utilize the storage devices. To fully eliminate the CPU bottleneck in MapReduce, we also have to solve this problem. This is our future work, and we are going to improve the merge part by implementing a new hardware accelerator.
+
+
+
+VII. RELATED WORK Hadoop MapReduce has been benchmarked by many  researchers. For example, Dawei Jang et al. investigated the performance bottleneck of Hadoop MapReduce, and pointed out five design factors that affect the performance of Hadoop [5].  One of them is data parsing. They pointed out that immutable decoding incurred high performance overhead. Edward Mazur et al. proposed a platform for scalable one-pass analytics using MapReduce [3]. In their study, which concentrated on CPU utilization, they performed a benchmark test of Hadoop MapReduce. They observed that the sorting step incurs high CPU cost.
+
+Moreover, they also pointed out that the CPUs are busy even for the simple map task, which simply extracts user id from each click record and emits key-value pairs. Matei Zahria et al. proposed the use of distributed shared memory, called RDD, to accelerate MapReduce. In their paper, they pointed out data load (deserialization) was a CPU heavy task [6].
+
+As for hardware acceleration, several studies are known.
+
+Most offload the numerical calculations of the map and reduce task. Yolanda Becerra et al. offload CPU intensive calculations to an acceleration board implemented as an IBM Cell BE processor [7]. They showed that CPU intensive operations such as data encryption were improved.
+
+However, they could not improve the throughput of data intensive operations due to the communication and synchronization overhead. Bingsheng He et al. proposed Mars, which uses a GPGPU to accelerate MapReduce [8].
+
+They also improved the CPU intensive operations by using a GPGPU. The last one is slightly different from others.
+
+Exar Corp. has developed a hardware acceleration board that supports data compression and decompression [9]. The purpose of their product is to reduce the I/O bottleneck, and lower CPU utilization.
+
+Another type of benchmark study was done by Sayantan Sur et al. [10]. By using Infiniband as a high speed network, they could improve the performance of HDFS. However, they also noticed that SSD can improve the performance of MapReduce. Yondong Wang et al. proposed an efficient merge approach by using RDMA of Infiniband [11].
+
+
+
+VIII. SUMMARY In this paper, we conducted a performance study of  Hadoop MapReduce. We showed that the CPU will become  the bottleneck given the adoption of state-of-the-art storage and networking devices. To overcome the anticipated CPU bottleneck without significantly altering the MapReduce framework, we proposed a hardware acceleration approach.
+
+We implemented a prototype using a many core processor board developed by Tilera, and showed the feasibility of our proposal.
+

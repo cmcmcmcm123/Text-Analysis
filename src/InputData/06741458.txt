@@ -1,0 +1,110 @@
+Burstiness-aware I/O Scheduler for MapReduce  Framework on Virtualized Environments
+
+Abstract? Recently, virtualized environments such as cloud computing and a virtual cluster are used popularly by lots of MapReduce applications to reap the benefits of low cost and flexibility. However, the I/O bottleneck of the virtualization software gives a burden especially for processing big data. To relieve the burden, we propose a novel burstiness-aware I/O scheduler. Our analysis has revealed that the I/O bottleneck is caused by I/O interferences among the bursty I/Os triggered by different virtual machines, especially when they execute the map and/or reduce tasks. The I/O interferences result in frequent context switches in the virtualization software and long seek distances in a disk. Our proposed I/O scheduler first detects I/O burstiness of a virtual machine on-line. Then, it schedules bursty virtual machines in a round-robin fashion so that a scheduled virtual machine utilizes most of I/O bandwidth without interferences. Real implementation based experiments have shown that our scheduler can enhance the I/O performance up to 23% with an average of 20%.
+
+Keywords?MapReduce; Virtual machine; I/O interference; Burstiness-aware; I/O Scheduler; Implementation
+
+I.  INTRODUCTION Big data processing has become a fundamental issue in  modern information technology. After Dean and Ghemawat have introduced the MapReduce framework in 2004 [1], it has been employed popularly both in industries [2, 3] and in open source communities [4]. It supports a simple but powerful programming model, and an infrastructure that distributes data into multiple chucks and processes them in parallel by managing numerous map and reduce tasks.
+
+Traditionally, the MapReduce framework works on a large physical cluster that consists of physical machines such as commodity PCs and servers [1]. Recently, as the virtualization technology and cloud computing become prevalent, the framework also makes use of virtualized environments that consist of virtual machines [5, 6, 7, 8]. For instance, we can rent large numbers of virtual machines from Amazon?s EC2 (Elastic Compute Cloud) at low cost (around $0.10 per CPU hour [7]) and use them to execute the map and reduce tasks.
+
+Also, we can scale up and down flexibly according to change of workloads.
+
+Virtual machines are created and managed by the virtualization software, also known as hypervisor or VMM (Virtual Machine Monitor) [9, 10]. The hypervisor abstracts physical resources such as CPU, DRAM, and devices into  multiple virtual resources by employing several partitioning and scheduling techniques so that each virtual machine utilizes its own virtual resources independently. The advent of multicore and the usage of huge main memory make it feasible for the CPU and memory virtualization to work efficiently.
+
+However, the I/O virtualization suffers from the performance degradation [11, 12, 13]. Shafer has reported that storage bandwidth is reduced to 51% and 77% of a non-virtualized disk for reads and writes, respectively [11]. This degradation gives a great concern for big data processing.
+
+Our analysis has revealed that, in virtualized environments, each virtual machine has a tendency to issue I/Os in a bursty manner, especially when the map and reduce tasks perform the spill and merge operations [8]. Also, several virtual machines trigger the bursty I/Os concurrently due to the characteristics of the MapReduce programming model [1]. These concurrent and bursty I/Os triggered by different virtual machines incur I/O interferences, resulting in considerable context switch overhead among virtual machines and long seek distances in a disk.
+
+To alleviate the I/O interferences, we propose a novel burstiness-aware I/O scheduler. The key idea of our scheduler is identifying bursty virtual machines on-line and scheduling them in a round-robin fashion with relatively large time quantum. During the time quantum, a scheduled virtual machine can exploit most of disk bandwidth in an isolated manner, leading to decrease the I/O interferences greatly. In addition, to avoid a starvation situation, we reserve minimum I/O bandwidth for the non-bursty virtual machines.
+
+We have implemented the proposed scheduler in the XEN hypervisor using the control group mechanism [14].
+
+Performance evaluation results with two benchmarks have shown that the scheduler can improve the I/O bandwidth up to 23% with an average of 20%, compared with the original I/O scheduler. Sensitivity analysis have shown that the proposed scheduler can reduce the seek distance 52% on average.
+
+This paper is organized as follows. In Section 2, we describe the motivation of our work. Then, the burstiness- aware I/O scheduler is discussed in Section 3. In Section 4, we present the performance evaluation results. Finally, conclusion and future work are summarized in Section 5.
+
+
+
+II. MOTIVATION In this section, we describe the motivation of our work. We  first explain our MapReduce framework that is based on     virtualized environments. Then, we present our observation and discuss the reasons of the I/O performance degradation.
+
+Figure 1 shows our experimental MapReduce framework based on a virtual cluster consists of virtual machines. Our system is composed of four cores AMD Phenom processor, 8GB DDR3 DRAM, and 500GB SATA disk as shown at the bottom layer. On top of the physical hardware, we install the XEN hypervisor that abstracts physical resources into multiple virtual resources. On these virtual resources, we create 1 control machine and 4 virtual machines. Each virtual machine executes a GuestOS such as Microsoft windows and Linux, supporting an independent computing platform. The control domain is in charge of managing I/O devices and actually carries out I/O accesses on behalf of GuestOSes.
+
+Fig. 1. MapReduce framework based on a virtual cluster.
+
+On these virtual machines, we install the Hadoop, which is the open source MapReduce framework [4]. Hadoop consists of a name node and several data nodes. When a MapReduce application is delivered to the name node, it creates map and reduce tasks, and assigns them into the data nodes. Each data node executes its assigned map and reduce tasks. In our experimental system, we use the control domain as the name node while using virtual machines as data nodes.
+
+Now let us discuss the I/O behaviors of Hadoop in virtualized environments. The input data of a MapReduce application is divided into multiple chucks, whose size is typically 128MB or 256MB. Each map task reads its chuck, performs the map operation, and writes intermediate files by carrying out the spill and merge operations [8]. Each reduce task performs the shuffle, merge and reduce operations in sequence, and finally generates output files.
+
+Note that the spill and merge operations make use of the buffer mechanism. They keep data in the DRAM buffer and flush out all data when buffer is almost full (specifically, when the size of the buffered data becomes larger than a threshold called io.sort.spill.percent in Hadoop [8]). Considering the large size of intermediate and output files, and the flushing out effect of the spill and merge operations, I/Os triggered by a virtual machine tend to be bursty. This tendency has also been observed in [15]. In addition, the name node dispatches and schedules the map tasks on virtual machines at the same time.
+
+It implies that the bursty I/Os are triggered by multiple virtual machines at the same time.
+
+Since the virtual machines locate on a single physical machine, the bursty I/Os generated by multiple virtual machines concurrently have a potential to cause the I/O performance degradation. To estimate this effect quantitatively, we measure the I/O bandwidth under the two different cases.
+
+One is the case where a single virtual machine issues bursty I/Os alone, while the other is the case where 4 virtual machines issue bursty I/Os concurrently. For emulating bursty I/Os, we run the UNIX ?DD? command on each virtual machine that accesses a file whose size is 1GB.
+
+Fig. 2. Performance degradation due to the I/O interferences among virtual machines.
+
+Figure 2 presents the measurement results. In the single virtual machine case, the I/O bandwidth is reported as 140MB/s, which is close to the upper bound supported by our experimental disk. On the contrary, in the 4 virtual machines case, the I/O bandwidth drops to the 96.7MB/s, which is the 31% reduction compared with the singe virtual machine case.
+
+Our sensitivity analysis has uncovered that the performance degradation is due to the I/O interferences among virtual machines. The control domain in XEN uses the CFQ (Complete Fairness Queuing) I/O scheduler for supporting fair I/O services to virtual machines [16]. It schedules I/Os in a interleaved manner among virtual machines, handling a I/O from one virtual machine and the next I/O from the other virtual machine. In other words, I/Os triggered by a virtual machine is interfered by other I/Os triggered by different virtual machines.
+
+In the control domain, I/Os triggered by a virtual machine are managed by a corresponding task, called Blkback, which will be described in detail in Figure 3. Therefore, the I/O interferences among virtual machines incur frequent context switches among the Blkback tasks. Besides, I/Os requested by different virtual machines usually have sector numbers whose gap is quite large. As a result, the I/O interferences cause long seek distances in a disk, which will be further discussed in Table 2. These two overheads result in the performance degradation observed in Figure 2. Note that the degradation becomes more serious as the I/Os become bursty.
+
+
+
+III. BURSTINESS-AWARE I/O SCHEDULER To alleviate the performance degradation observed in  Figure 2, we propose a new burstiness-aware I/O scheduler.
+
+The key ideas of our proposed scheduler are as follows; 1) allows a bursty virtual machine to consume most of disk     bandwidth for a given period exclusively to reduce the I/O interferences, 2) when there are several bursty virtual machines, schedules them in a round-robin fashion to support fairness at the coarse-grained level, and 3) reserves minimal disk bandwidth for non-bursty virtual machines to avoid a starvation situation.
+
+Figure 3 illustrates the overall structure of our proposed scheduler. It consists of three components, namely, Burstiness Detector, Coarse-Grained Dispatcher, and Starvation Handler.
+
+Also, it has three control parameters, namely, B_threshold, S_quantum, and M_reserved.
+
+Fig. 3. Structure of the burstiness-aware I/O scheduler.
+
+When a virtual machine requests I/Os, it delivers them to the corresponding Blkback task in the control domain. The Blkback task is a kind of daemon process, actually performs I/Os on a disk on behalf of the related virtual machine. It sends the requested I/Os to the Block I/O layer that consists of the CFQ I/O scheduler and native device drivers. Our proposed scheduler locates between the Blkback tasks and the Block I/O layer, orchestrating the I/O flow between them.
+
+At first, the Burstiness Detector examines I/Os managed by each Blkback task and determines whether the I/Os are bursty or not. For this purpose, we introduce the control parameter, B_threshold. When the total bandwidth required by a Blkback task is larger than the B_threshold, the task is treated as bursty.
+
+When there are several bursty Blkback tasks, the Coarse- Grained Dispatcher schedules them in a round-robin fashion.
+
+The scheduled task is allowed to consume most of disk bandwidth during a given time quantum, namely S_quantum, which is our second control parameter. In Figure 3, we assume that the Blkback 1, 2 and 3 are determined as bursty and scheduled by the Coarse-Grained Dispatcher, as shown the scheduling flow.
+
+Finally, the Starvation Handler monitors the non-bursty tasks and handles their I/Os if they are read requests. But, the total I/Os handled are restricted under the M_reserved, minimal reserved bandwidth, to decrease the I/O interferences caused by non-bursty tasks. This mechanism is devised to avoid the starvation of the non-bursty tasks. Note that a task may suffer from delayed services due to the restriction. However, the delayed requests enlarge the required disk bandwidth, which  eventually leads the task to be determined as bursty and managed by the Coarse-Grained Dispatcher. If there is no bursty task, all I/Os are processed like the way as the original I/O scheduler does.
+
+
+
+IV. EXPERIMENTS We have implemented the burstiness-aware I/O scheduler  in our experimental system depicted in Figure 1. We use the XEN hypervisor 4.1.4 as the virtualization software, Linux kernel 3.5.5 as GuestOS both for control domain and virtual machines. The Hadoop 1.1.0 is used as the MapReduce framework. Our proposed scheduler is implemented in the control domain, using the blkio subsystem supported by the control group mechanism [14]. This mechanism allows us to configure tasks as several groups and allocates I/O bandwidth to each group independently.
+
+Physical resources and virtual resources per each virtual machine are summarized in Table 1. This table also shows how we set the control parameters of the proposed scheduler in this experiment.
+
+TABLE I.  EXPERIMENTAL ENVIRONMENT  Virtualization software XEN-4.1.4 GuestOS Linux-3.5.5  MapReduce framework Hadoop-1.1.0  Workload 1GB Read/Write using ?DD? command and ?FIO benchmark  Physical resources  CPU AMD Phenom? II x4 Memory 8 GB  Disk 500 GB  Virtual resources per  virtual machine  CPU Based on Credit scheduler  (same credit) Memory 1 GB  Disk 100 GB Type Full-Virtualization  Control Parameters  B_threshold 2 MB/s S_quantum 1 second M_reserved 2 MB/s    Figure 4 presents the performance evaluation results. We run a benchmark (DD or FIO) on four virtual machines concurrently under the two different conditions. One is based on the original I/O scheduler (denoted as 4VMs in the figure) and the other is based on our proposed I/O scheduler (denoted as 4VMs-BA).
+
+Fig. 4. I/O bandwidth comparison.
+
+The results show that our proposal yields better performance, improving 17% for the DD benchmark and 23%     for the FIO benchmark. The figure also reveals that four virtual machines obtain similar I/O bandwidth. It implies that, even though our scheduler allows a virtual machine to monopolize most of Disk bandwidth during the time quantum, it supports fairness at a coarse-grained viewpoint.
+
+We expect that the performance improvements observed in Figure 4 are owing to two reasons, one is reducing context switch overheads among Blkback tasks and the other is decreasing the seek distances in a disk. To validate the latter reason, we measure the sector distance that is the sector number gap between two consecutive processed I/Os. In modern disks, the seek distance is proportional to the sector distance [17].
+
+TABLE II.  SECTOR DISTANCE AND ELAPSED TIME COMPARISONS  Total sector distance Elapsed time DD FIO DD FIO  4VMs 12.2516E+11 8.91754E+11 49.3 48.6 4VMs-BA 4.8461E+11 5.01637E+11 40.2 41.7 Reduction Percentage 60.4% 43.7% 18.4% 14.1%    Table 2 presents the total sector distance during the execution of each benchmark. The results show that, by reducing the I/O interferences, the proposed scheduler indeed reduce the overall sector distances. The table also presents the elapsed time of each benchmark. The improvement of the I/O bandwidth leads to boost the response time.
+
+
+
+V. CONCLUSION In this paper, we explore the feasibility of the MapReduce  framework on virtualized environments. One concern is the I/O bottleneck, which is caused by the I/O interferences among virtual machines, especially during the processing of big data.
+
+To mitigate this problem, we proposed a new I/O scheduler that can identify bursty virtual machines and give a chance for them to use most of disk bandwidth without violating fairness.
+
+We are considering two research directions as future work.
+
+The first direction is experimenting our proposal with real MapReduce applications such as terasort and distributed grep.
+
+In current experiments, we emulate the big data processing using the DD and FIO benchmark with a large input file. Even though we conjecture that the I/O interferences are also observed in real MapReduce applications, we want to verify it and extend our proposal if there are any distinct I/O behaviors.
+
+The second direction is analyzing the sensitivity of the control parameters used in the proposed scheduler.
+
+
+
+VI. ACKNOWLEDGE This work was supported by the Industrial Strategic  technology development program(10039143, Multi-Gbps Parallel I/O Virtualization and DB Performance Optimization for the Data-centric Computing on Many-core System) funded by the Ministry of Knowledge Economy, Korea.
+

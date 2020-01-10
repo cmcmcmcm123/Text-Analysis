@@ -1,0 +1,116 @@
+Elastic Allocator: An Adaptive Task Scheduler for Streaming Query in the Cloud
+
+Abstract?Many big data applications receive and process data in real time. These data, also known as data streams, are generated continuously and processed online in a low latency manner. Data stream is prone to change dramatically in volume, since its workload may have a variation of several orders between peak and valley periods. Fully provisioning resources for stream processing to handle the peak load is costly, while over- provisioning is wasteful when to deal with lightweight workload.
+
+Cloud computing emphasizes that resource should be utilized economically and elastically. An open question is how to allocate query task adaptively to keeping up the input rate of the data stream. Previous work focuses on using either local or global capacity information to improve the cluster CPU resource utilization, while the bandwidth utilization which is also critical to the system throughput is ignored or simplified. In this paper, we formalize the operator placement problem considering both the CPU and bandwidth usage, and introduce the Elastic Allocator.
+
+The Elastic Allocator uses a quantitative method to evaluate a nodes capacity and bandwidth usage, and exploit both the local and global resource information to allocate the query task in a graceful manner to achieve high resource utilization. The experimental results and a simple prototype built on top of Storm finally demonstrate that Elastic Allocator is adaptive and feasible in cloud computing environment, and has an advantage of improving and balancing system resource utilization.
+
+Index Terms?data stream; stream query;elastic;task alloca- tion
+
+I. INTRODUCTION  Many big data applications receive and process data in real time [1]. For example, Twitter users may want to get the latest trend topics as soon as possible; or a online-shopping website would take statistics to analyze its revenue based on transaction logs; or an environment monitoring system would detect the possible disasters in seconds using the data collected by distributed sensors, etc. All these applications require low latency processing of large-volume data which shows the limits of traditional store-then-process paradigm. Many stream processing engines have emerged to help address the challenges in processing high-volume real time data, including Borealis, Spark, S4 and Storm.
+
+A data stream is a real-time, continuous, ordered sequence of tuples. Sometimes, it may pour in unexpectedly. It is time- varying and unpredictable [2]. And lots of applications exhibit sudden, dramatic changes in the workload that result in a variation of several orders of magnitude between peak and valley periods. For instance, in Asian cellular phone networks,  streams of CDRs reach peaks of hundreds of thousands of records, while valley loads are in the range of thousands of records per second [2].
+
+Many factors can affect a stream-processing system perfor- mance. Among them, one key issue is the operator placement problem [3], which focuses on how to optimally distribute stream processing task composed of operators onto a set of distributed nodes.
+
+An operator placement algorithm assigns operators to the processing nodes while satisfying a set of resource constraints.
+
+The objective function, such as resource utilization, or system throughput, is the target to evaluate different allocation meth- ods. Existing research work pays more attention to maximize CPU utilization, such as [4] [5]. Moreover, most of them solve this problem on assumption that the network has fixed communication patterns or static bandwidth usage. In many practical applications, the bandwidth is usually changeable especially when the workload varies remarkably (e.g., in IP-network monitoring system, where the massive amounts of traffic logs may flow into the stream processing engine which could exhaust the available band width resources in an uncertain manner).
+
+To figure out this problem, we first formalize the elas- tic operator allocation problem and employ a quantitative method to evaluate node capacity and bandwidth usage in the cluster. Based on our quantitative model, the operator allocation problem can be transformed into a linear objective optimization problem with resource constraints. Then a greedy matching algorithm is proposed to find the possible optimal solution. This method, named Elastic Allocator, is adaptive to the variable workloads while increase the resource utilization at the same time. The contribution of this paper can be summarized as follows:  ? The elastic operator allocation problem for streaming query is formalized, where both the load capacity and bandwidth usage can be expressed as a linear function of operator capacity and bandwidth usage. And the op- timum solution for operator allocation problem can be transformed into a linear objective optimization problem with constrains.
+
+? A Greedy Matching Algorithm GMA is presented to solve the elastic operator allocation problem. GMA can allocate tasks in an exhaustive and graceful manner to  2014 IEEE 8th International Symposium on Service Oriented System Engineering  DOI 10.1109/SOSE.2014.40     increase CPU and bandwidth resource utilization while have lowest deviation under changeable workloads.
+
+? The efficiency of Elastic Allocator is verified in the experiments section. And a simulation prototype also shows the feasibility of Elastics Allocator on modern data stream processing platform.
+
+The remainder of this paper is organized as follows. Section 2 introduces the elastic operator allocation problem and basic models used in this paper. Section 3 proposes the design of Elastic Allocator and the GMA algorithm. Section 4 provides a detail evaluation of Elastic Allocator, and section 5 concludes the paper.
+
+
+
+II. RELATED WORK  Task allocation in stream processing has been widely stud- ied from early centralized system to today?s popular distributed platform. The related work can be categorized into centralized and distributed as follows.
+
+A. Centralized  Centralized strategy can be classified as two categories: load shedding and resource sharing. Since early stream processing system was designed in a centralized mode, they have limit resource and computation capabilities. Load shedding refers to a solution to hold spikes in the system when input load exceeds available computation resources. The system has no choice but to discard some unnecessary data or information at the cost of losing accuracy when massive data burst into. And the essence of resource sharing is to share the intermediate results between queries with similar data structure. Naidu [6] uses this method to compute multiple aggregation queries in memory-constrained condition.
+
+B. Distributed  When stream processing system evolved into a distributed engine, load balancing become a critical issue to tackle the asymmetry problem between workload and resources. Several load balancing methods have been proposed for data streaming applications. Abadi [7] and Xing [8] propose to execute place- ment decisions in a centralized controller. The coordinator can access and collect variable state in the cluster and adjust the placement accordingly. Xing?s technique which balances the average load among processing nodes is suitable when the workload is highly unpredictable. And if the workload is relatively uniform, the placement can be maintained with load shedding and operator migration methods. Cloud computing has also inspired several researchers in data stream domain to improve the performance of stream processing engine to be scalable and elastic. [9] discusses elasticity in the context of a streaming as a service architecture where user can register queries in a multi-tenant manner.
+
+Although all these allocation algorithms are intended for stream processing systems, they differ from each other on their own assumptions. And most work pay more on computation resources while ignoring or simplifying the bandwidth usage in the cluster, for instance , [10] only consider the CPU usage  O2  O1  Source A O3  O4  O5  Source B  O6  Output C  Fig. 1. A task topology composed of six operators, where rectangular represents the source operator receiving the tuples, triangle represents the intermediate process operators, and the circle represents the output operator.
+
+as the metric while [8] treat each link in the network has the same per-tuple data communication cost. In this paper, we consider both CPU and bandwidth constraint in a fine-grained level to provide a more accurate view for the task scheduler to allocate the tasks with purpose of improving the system resource utilization.
+
+
+
+III. SYSTEM MODEL AND PROBLEM STATEMENT  A. Data Stream Processing Model  Consider a data stream S as an unbounded sequence of tu- ples, S = {t1, t2, ..., tn, ...}. All these tuples share a predefined schema with a set of attributes, denoted as t(a1, a2, ..., an).
+
+Besides, each tuple also has a time stamp which reveals its order in time. Due to the unbounded nature of data streams, sliding windows are used to maintain the most recent tuples in memory. Data stream query Q is composed of operator set Q = {o1, o2, , om}. Query operators are similar to relational algebra operators, such as Map, Filter, Join, Aggregate and Union. And the operator is the basic unit to receive, process and output tuples, as illustrated in Fig.1.
+
+B. Problem Statement  The Elastic Operator Allocation (EOA) problem can be denoted as a vector set < W,D,F 0, Q,A, T >, where W = {w1, w2, ..., wn} refers to the workload set with different input rates. D = {D1, D2, ..., Dn} denotes resource constraint in the cluster. F 0 = {C0, B0} defines the initial resource usage state before the task assignment, including CPU and bandwidth usage. Let T be the objective function, such as resource utilization, or throughput, Q is the query task to be allocated. And A is the operator allocation matrix which indicates the location of each operator in the cluster. Fig.2 illustrates an operator placement plan in a cluster composed of 7 nodes.
+
+EOA Problem: The operator placement problem refers to a possible optimal selection of cluster nodes that contains the operator in a stream query task. Given the workload set X , the resource constraint D, and the initial resource usage state F 0, find an allocation plan Aopt that achieves the possible optimal value of T .
+
+O2  O1  O3  O4  O5  O6  n1  n2  n5  n4  n7  n3 n6 Cluster  Fig. 2. A operator placement plan in a cluster composed of 7 nodes.
+
+TABLE I NOTATIONS  Parameter Definition  n number of nodes  m number of operators  Q = {o1, o2, ..., om} query task Q is composed of m operators P = {p1, p2, ..., pL} links in cluster network W = {w1, w2, ..., wk} workload set with k inputs(t/s)  ej a weighted coefficient indicating operator j?s resource requirement on node i  CSi available CPU resource for stream pro- cessing on node i  C0i preserved CPU resource for system and other background processes on node i  A = {aij}m?n task allocation matrix  U = {uij}m?n operator js relative bandwidth utilizationrate at node i  B0 = {bi}p?1 the initial bandwidth usage before theoperator assignment B? = {bi}p?1 bandwidth usage after operator allocation  bi = Bconi +B i  The ith link bandwidth usage bi equal to the sum of bandwidth Bconi consumed by the running task and bandwidth Bprei preserved by other applications  C. Definitions and Notations  Assume there are n nodes {Ni, i = 1, 2, ..., n}, m op- erators {oj , j = 1, 2, ...,m}, and workload set is W = {w1, w2, ..., wn}. The workload wk is the input stream rate defined as the number of tuples that arrive per unit time. In general, there have been some streaming query tasks already running in the cluster before the query task Q is allocated.
+
+The distribution plan of operators in the cluster can be represented by A = {aij}n?m, where aij = 1 if operator oj is allocated on node Ni, and aij = 0 denotes that oj is not on Ni.
+
+
+
+IV. ELASTIC ALLOCATOR Usually, CPU, Memory, Bandwidth and disk I/O utilization  are considered the most significant resource factors in ?big data? applications. We do not consider all these factors here, since stream processing pay more attention on computation, memory and network resources. We assume memory resource is sufficient, and the bottlenecks of streaming query are the CPU and bandwidth resources. The quantitative model of evaluating the load capacity and bandwidth utilization of working nodes are presented as follows.
+
+A. Load Capacity Evaluation  The load capacity of a node is defined as the average load of the operators assigned at that node denoted as:  load(ni) = z?  j=1  ejrj/sj ? CSi + C0i  Before operator assignment, there could be z existing running operators requiring the resources on node ni. Thus, we com- pute a node load by the sum of CPU consumption of all the running task operators and reservation CPU resource as the final node load.
+
+CSi refers to the available CPU resource for stream process- ing, while C0i denotes the preserved CPU resource for system and other background processes. And ej is a weighted coeffi- cient indicating operator resource requirement quantitatively.
+
+If the ratio of the input stream rate rj to the output stream rate sj is above 1, it shows that the operator j on node i is in an overloaded state.
+
+B. Bandwidth Evaluation  Given the operator allocation plan A, the bandwidth usage vector B? = [b1, b2, ..., bL]T can be represented by:  B? = Bremainp (AnmUmn?nnen1) +B  where vector Bremainp refers to the available bandwidth on each link in the cluster, and B0p denotes the initial bandwidth usage before the operator assignment on each link. Umn = {uij}m?n denotes the operator relative bandwidth utilization matrix, where uij refers to operator j?s relative bandwidth utilization rate at node i. Also, Umn satisfies the condition that  ?m j=1 uij = 1. ?nn is a diagonal matrix with ?ii = 1  and ?ij = 0(i ?= j). And enl is an identity matrix, enl = [1, 1, ..., 1]T .
+
+C. Constraint & Objective Function  The cluster resource constraint refers to the upper threshold of the resource utilization. The allocation plan A is only feasi- ble under the constrains if {B? ? DBW , Load(N) ? DCPU}.
+
+Both CPU and bandwidth resource constraints are considered in our problem.
+
+The objective function can be either resource utilization (%) Rutl =  ? ui/Rtotal, or the resource usage deviation  Rdev = ??  (Ri ?Rav). All these metrics can be employed to evaluate the system resource utilization and resource distri- bution balance.
+
+vm vm vm  Physical Node  vm vm vm vm vm vm  Task  Queue  Elastic  Scheduler  Physical Node Physical Node  LightLoad Level: Moderate Heavy  Task Allocated SlotTask & Slot: Available  Slot  Incoming Stream  Fig. 3. The elastic allocator architecture.
+
+D. Architecture  We assume all the cluster nodes are distributed in a cloud computing environment where multiple nodes may coexist on a same physical machine. Elastic Allocator (EA) is designed in master-slaver manner so that EA can collect slaver nodes? resource information. We design EA on top of the popular data stream processing platform, Storm, which is embedded with Ganglia which is a open-source distributed resource monitoring tool.
+
+Before stream query task Q is submitted to the EA, EA would collect the latest resource information periodically. The EA collects the load and bandwidth usage every 5 ? 10 seconds. Then EA will evaluates the load and bandwidth usage of all available nodes according to the capacity and bandwidth model described above. The stream processing load metrics can be obtained through the Storm metric API, and the bandwidth usage is reported by Ganglia continuously.
+
+Collecting each worker node?s CPU and bandwidth usage has a very low cost with little interference with other system and application processes. Fig.3 presents the architecture of EA in detail.
+
+In Fig.3, the cluster is composed of one master and nine workers. Each worker has three slots for running the streaming query tasks. A slot is a basic resource unit for executing operator tasks. Operator assignment is equivalent to find the possible available slots to accept these operators. Moreover, all workers are classified into three categories, light (0%- 40%), moderate (40%-80%) and heavy (80% or above), based on workers? capacity and bandwidth usage. Why we choose three instead of other numbers lies in that it facilitates the following computation. In fact, these nodes can be clustered in four or five categories. However, too much categories brings more computation cost of enumerating the possible operator assignment plan.
+
+E. Operator Allocation Algorithm  In order to solve this problem efficiently, a Greedy Matching Algorithm (GMA) is employed. The pseudo-code of GMA is  shown in Algorithm 1.
+
+The GMA algorithm consists of two phases: the first phase  clusters the nodes into 3 levels based their node capacity and link bandwidth usage and the second phase greedily place the operators on appropriate nodes considering the resource constraints.
+
+Phase 1: Node Clustering. We can compute each node capacity and bandwidth usage based on the qualitative model described in section 3. These nodes are classified into three levels: light, moderate and heavy. This provides a latest resource view for the scheduler to find the optimal task allocation plan in a predefined tolerated time range.
+
+Phase 2: Operator Assignment. After clustering the node by load and bandwidth. We can try to assign the operator to the possible node by evaluating the benefits the assignment bring under resource constraints. The task will only be ter- minated either if the whole operators have been allocated in a predefined time range or the computation time cost exceed a predefined value. If the latter case happens, the allocator will allocate the remained operators in a best-effort manner to finish the task assignment.
+
+Algorithm 1: Greedy Matching Algorithm 1 Initialization, C0 ? F 0, B0 ? F 0 2 while t ? tmax do 3 for i = 1, 2, ...,m do 4 cluster nodes into 3 levels based on CPU capacity  and BW usage 5 for j = 1, 2, ..., n do 6 if operator i satisfies the resource constrain  on node j then 7 try to assign oi to nj and compute the  objective function 8 if aij improve the objective function then 9 assign oi to nj ;  10 nallc++;  11 if the allocated operators nallc < m then 12 for k = 1, 2, ...,m? nallc do 13 Allocate ok on light-weighted subcluster evenly
+
+V. EVALUATION A. Experiment Setup  We evaluate our algorithms on a private cloud composed of one master and ten slave nodes, each of which has one Intel Xeon 1.24GHZ CPU with four cores and 2GB RAM. The data stream dataset is downloaded from the Internet Traffic Archive and contains HTTP requests sent to the servers hosting the World Cup 1998 web site (totaling approximately 1.35 billion requests over a three-month period). Input tuples are generated according to preset input rates.
+
+We choose three most used query tasks as our query applications, Top-K, Word Count, and Join query. Join query     Fig. 4. CPU (a) and Bandwidth (b) resource utilization in cluster under variable workloads  and word count are the running tasks in the cluster. Top- k is the task prepared to be allocated. Then we implement the prototype of EA on top of Storm for gathering resource information.
+
+We experimented with EA method on a storm platform installed with Ganglia to collect resource usage from all slaver nodes. And then evaluate EA under variable workloads com- pared with traditional Random method and Even Scheduler employed in Storm.
+
+B. Results  Fig. 4 presents the resource usage of EA, Even Scheduler and Random when the workload varies. The resource usage utilization is computed by Rutl =  ? ui/Rtotal. When we  change the workload from 200 tuples/s to 1200 tuples/s, the EA method has both the maximum resource utilization compared with random and even scheduler. Random shows much more fluctuations than others since it assign the task in a shuffle manner without any resource constraint. Although even scheduler tries to allocate the operators evenly to the dis- tributed nodes, it is still not aware of the resource consumption of the running task, which may lead to some nodes holding heavy tasks while others could have light weighted task.
+
+In addition, the resource usage deviations of CPU and Bandwidth are also computed to evaluate the balance of the algorithm. The resource usage deviations is computed by Rdev =  ?? (Ri ?Rav). Fig. 5 shows that EA is much more  stable that the other two methods under changeable workload, especially when the workload increase to a high level. This shows that EA can allocate the operator wisely according to the resource usage in the cluster. And a greedy policy is also adopted to accelerate the computation and improve the objective function.
+
+
+
+VI. CONCLUSIONS AND FUTURE WORK  Task schedule is one of the critical issues in data stream processing, especially in cloud computing environment where resource usage should be cost effective. The quality of the  Fig. 5. CPU (a) and Bandwidth (b) usage deviation in cluster under variable workloads  allocation policy directly affects the execution latency of the query task and resource utilization in the cluster.
+
+This paper aims at the operator placement problem, and proposes an elastic allocator scheduler to adaptively assign the task operators onto the appropriate nodes with proportional resources. First, EA can periodically collect resource infor- mation from local cluster based on master-salver architecture.
+
+Second, EA evaluates the node capacity according to a quanti- tative resource model and transfers the task assignment prob- lem into an objective optimization problem with constrains.
+
+Third, an efficient GMA algorithm is presented to figure out this problem. Finally the trace simulations experiments have shown EA strategy can improve the cluster resource utilization while balance the resource usage between the nodes. A simple prototype built on top of Storm also shows the feasibility of Elastics Allocator on modern data stream processing platform.
+
+As future work, we plan to do extended experiments in wide range of other streaming query tasks, such as K-Nearest Neighbor query, rang query, and Skyline, to complement our cost model since different queries have distinct resource demand under certain circumstance. Also, how to allocate multiple query tasks is another interesting issue requiring further investigation.
+

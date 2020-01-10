@@ -1,0 +1,216 @@
+Agglomerative Co-Clustering for Synonymous Phrases Based on Common Effects and Influences
+
+Abstract?This paper proposes an approach to clustering synonymous noun phrases focusing on two types of predicate argument relations extracted from potentially big textual data.
+
+One is associated with common effects, the other with common influences. Based on the context represented by those relations, a matrix is constructed with rows being noun phrases and columns being a pair of a noun phrase and a verb phrase. Following the distribution hypothesis often adopted in the literature, it is assumed that rows (i.e., noun phrases) with similar distributions share similar meanings. Due to the inherent sparsity of the matrix, however, two strategies are taken to group noun phrases having similar distributions. One strategy is to simply use a large-scale corpus, which however results in an even larger matrix. To handle the large matrix, a parallel distributed programming model, MapReduce, is employed. The other is to adopt hierarchical agglomerative co-clustering and approximates its computation in a way suited to the MapReduce programming model. The proposed approach is evaluated based on a series of experiments in terms of the validity of our underlying assumptions, processing time, quality of the resulting clusters, and effect of parallelization.
+
+Keywords?Distributional similarity, Parallel distributed pro- cessing, Hadoop/MapReduce
+
+I. INTRODUCTION  With the advances of information technology, the amount of digitized documents, including academic articles, clinical records, and consumer generated contents (e.g., customer re- views and microblog posts) is rapidly growing. In the large collection of documents, there exists much valuable informa- tion and extracting such information has been attracting much attention in the natural language processing (NLP) and data mining communities. However, extracted information from uncontrolled natural language is not readily usable due to synonymous expressions, such as a ?car? and an ?automobile?.
+
+The same concept can be often referred to by different ex- pressions and the superficial difference between words makes it difficult for computers to identify their synonymy without the help of external knowledge sources, such as a thesaurus.
+
+Identifying the synonymy or similarity between two phrases is even harder because phrases are composed of multiple words, which result in increased superficial difference.
+
+A well-known approach to identifying semantic similarity between two expressions is to use distributional similarity [1].
+
+Distributional similarity is based on the idea of distributional hypothesis [2] that two expressions often appearing in the same context tend to be semantically similar. The context is typically  represented by word occurrences around the expressions in question. Using the distributional similarity, various methods for estimating similar expressions have been proposed [3]?[7].
+
+In this paper, our aim is to identify synonymous phrasal expressions through hierarchical co-clustering [8], [9]. Our approach also adopts the idea of the distributional hypothesis and proposes how to generate a relation matrix to represent noun phrases. Specifically, we focus on two particular types of predicate-argument relations as matrix attributes (columns), which however makes the resulting matrix larger and sparser than the one encoding mere word occurrences. To alleviate the problem, a large-scale corpus should be used as a knowl- edge source from which a predicate-argument relations are extracted. Since handling a larger data requires a scalable framework, we propose an efficient approximation for hierar- chical co-clustering using a parallel distributed programming model?MapReduce.
+
+The remainder of the paper is organized as follows: Sec- tion II summarizes the related work. Section III describes our proposed approach in detail. Section IV reports on the evaluation of our approach using real-world data. Section V concludes this paper with a brief summary and possible directions for future work.
+
+
+
+II. RELATED WORK  There are roughly two bodies of work related to the present study. One is to identify semantically similar words/phrases based on the distributional theory, and the other is clustering or co-clustering, some of which use MapReduce for paral- lelization. This section summarizes each category of the related work in turn.
+
+There has been much work to identify synonymous words/phrases by using distributional similarity [4], [5], [7], [10]?[12], where the basic assumption is that words that appear in similar contexts tend to have similar meanings.
+
+There are many definitions of contexts and, for example, Lin and Wu [6] used a fixed-sized window centered on the occurrence of a phrase to represent the phrase?s contexts.
+
+Based on the representation, similar phrases were identified by the k-means clustering algorithm. The resulting clusters were used as features in discriminative classifiers. Bollegala et al. [3] focused on two views of a relation between two entities (phrases), that is, a relation can be expressed extensionally by stating all the instances of that relation or intensionally by defining all the paraphrases of that relation. Based on the       idea, they generated a relation matrix with rows being pair of entities and columns being word sequences between the two entities. By applying co-clustering to the resulting matrix, they identified different patterns describing the same or similar relation. It should be mentioned that their goal (i.e., identifying similar relations) is different from our goal which is to identify synonymous noun phrases.
+
+Clustering/co-clustering is also an active area of research.
+
+One of the widely used algorithms for clustering is k-means, for which there exist modified/improved variants adapted to large data [13], [14]. A downside of k-means is that it generates only a fixed number (k) of clusters. This property is not desirable for some applications including phrase clustering since we do not know in advance how many synonymous phrases would exist in the data at hand. This study adopts hierarchical agglomerative clustering which would form more natural clusters of phrases although it is less efficient than k-means in terms of the computational cost [15]. For par- allelization, Dong et al. [16] proposed an approximation of k-nearest neighbor graph (k-NNG) construction implemented in OpenMP. Ene et al. [17] developed modified k-center and k-median algorithms with constant factor approximation guarantees tailored to the MapReduce programming model.
+
+Papadimitriou and Sun [18] discussed in detail the use of MapReduce for co-clustering adopting the checkerboard de- composition algorithm, where each row and column is assigned a group label r ? {1, 2, . . . , k} and c ? {1, 2, . . . , l}, respec- tively. Sun [19] proposed an efficient hierarchical clustering with MapReduce. The method includes two optimization tech- niques: batch updating to reduce the computational time and communication costs among cluster nodes, and co-occurrence based feature selection to decrease the dimension of feature vectors and eliminate noise features.
+
+It should be also mentioned that, for clustering, an essential process is to compute the pairwise similarity between two rows (or columns) of a matrix, which does not scale to large data when executed straightforwardly. There are several studies to enable more efficient algorithms using MapReduce [20]?[22] for computing pairwise similarities. We adopt and modify Lin?s approach [20] for the present work.
+
+
+
+III. PROPOSED APPROACH  In this section, we describe our proposed approach to clustering synonymous noun phrases. The approach consists of extraction of relations in the form of predicate-argument structure, construction of a relation matrix with rows repre- senting extracted noun phrases by two types of relations, and parallelized hierarchical co-clustering.
+
+A. Relations for Common Effects and Influences  To estimate the similarity between two noun phrases pi and pj , we follow the distribution hypothesis and take advantage of the context of pi and pj represented by their co-occurring expressions. We focus on two particular types of relationship: common effects and common influences. For illustration, con- sider the following two relations.
+
+? Doxazosin enhances APT.
+
+? Cardenalin enhances APT.
+
+Both relations have the same predicate (i.e., enhance) and the same object (i.e., APT) with only the subject being different.
+
+Judging from the two relations, the subjects, ?Doxazosin? and ?Cardenalin?, are thought to have a common effect with respect to the object. In other words, the two subjective phrases are likely to share a certain functional property in common.
+
+Henceforth, we denote this property by the combination of the predicate and object (e.g., ?enhance+APT? for this example).
+
+Let us consider another example illustrated by the follow- ing relations.
+
+? Monocyte depletes lipoprotein lipase.
+
+? Monocyte depletes diglyceride lipase.
+
+Similarly, the two relations share the same components, namely, the subjects and predicates, with only the objects being different. Based on the commonalities, the two phrases, ?lipoprotein lipase? and ?diglyceride lipase?, are considered to receive a common influence from the subjective entity (i.e., ?to be depleted by monocyte?). In other words, the two objective phrases have a certain receptive property in common.
+
+Hereafter, we denote this property by the combination of the predicate and subject (i.e., ?deplete+monocyte?).
+
+Focusing on these two types of relations extracted from a large corpus of natural language texts, we identify semantically similar phrases as described shortly. Our assumption is that noun phrases sharing more common effects and common influences are semantically more similar.
+
+B. Predicate-Argument Relation Extraction  To extract predicate-argument relations stated in natural language texts, this study relies on publicly available NLP tools, specifically, a shallow syntactic parser and a named en- tity (NE) recognizer. Based on the former?s output, predicate- argument structure is identified. For example, from a sentence ?the guideline is being reexamined currently by the NCRP committee?, a relation ?the guideline, is being reexamined currently by, the NCRP committee? is initially extracted. In addition, the following preprocessing is applied in this order to normalize the representation.
+
+? Transform all the terms to their base forms.
+
+? Remove all articles.
+
+? Replace negative adverbs (e.g., barely) with ?not? ? Remove all adverbs except for ?not?.
+
+? Remove the relation itself if auxiliary verb is uncertain  (?may? or ?might?).
+
+? Remove auxiliary verbs.
+
+? Remove present/past/future tense.
+
+? Transform passive voice to active.
+
+For the above example, the extracted relation is normal- ized to ?NCRP committee, reexamine, guideline?, which fi- nally yields ?NCRP committee, reexamine+guideline? and ?reexamine+NCRP committee, guideline? corresponding to a common effect and a common influence, respectively.
+
+C. Relation Matrix Construction  Taking advantage of the predicate-argument relations ex- tracted from the corpus as described in the previous section, we construct a relation matrix, where the rows and columns are defined as noun phrases and properties representing common effects or influences, respectively. Note that a property is represented by a combination of a predicate and an entity (see Section III-B). For instance, suppose that the following relations are extracted from a given texts, where A, B, C, D, and E denote subjective or objective phrases.
+
+? ?A, activate, B? ? ?C, activate, B? ? ?A, activate, D? ? ?E, create, C? ? ?A, create, C?  From each of the relations, two types of relations are gener- ated. For example, ?A, activate+B? and ?A+activate, B? are generated for the first relation ?A, activate, B?. Based on the relations, the relation matrix M is constructed as follows, where ?activate? and ?create? are denoted by V1 and V2, respectively, for compactness. Also, predicate V appearing in the relations associated with common influences are indicated as V in order to distinguish it from those with common effects.
+
+The element of the matrix is the number of occurrences of the respective combination of a noun phrase and a property.
+
+? ???  V1+B V1+D V2+C A+V 1 C+V 1 E+V 2 A+V 2 A 1 1 1 0 0 0 0 B 0 0 0 1 1 0 0 C 1 0 0 0 0 1 1 D 0 0 0 1 0 0 0 E 0 0 1 0 0 0 0  ? ???  In the relation matrix, it is considered that noun phrases having similar patterns of occurrences (many common non- zero elements in the same columns) are similar in terms of their properties.
+
+D. Hierarchical Co-Clustering in MapReduce  Given the relation matrix constructed in the previous step, we identify similar phrases by applying a clustering algorithm.
+
+Specifically, hierarchical co-clustering is adopted because of the expected sparsity of the relation matrix. The sparsity is higher than a typical word-document matrix due to the fact that the columns of the relation matrix are combinations of a subjective/objective phrase and a predicate defining their relation. A co-clustering algorithm clusters rows and columns iteratively and is generally more effective for such sparser data.
+
+For clustering rows or columns, one could use any clus- tering algorithm. A popular choice in data mining is k- means, which however requires the number of clusters k to be specified and the results are not stable depending on the choice of the initial k clusters. To avoid these issues, we utilize a hierarchical agglomerative clustering algorithm, which iteratively combines the most similar rows/columns. A shortcoming of the Agglomerative clustering approach is that it computes pairwise similarities for all pairs of rows/columns and thus does not scale to a large matrix. We will parallelize  Algorithm 1 Hierarchical co-clustering Input: Matrix M ; Threshold ?  1: repeat 2: S ? Sim(M, ?) 3: F ? Select(S) 4: M ? Merge(M,F ) 5: M ?MT 6: F ? Combine(M,F ) 7: M ? Merge(M,F ) 8: S ? Sim(M, ?) 9: F ? Select(S)  10: M ? Merge(M,F ) 11: M ?MT 12: until M does not change  and approximate the clustering procedure to speed up the process as discussed later.
+
+The outline of our co-clustering is presented in Algo- rithm 1, where Sim(M, ? ) is a function to compute similarity between rows of M . The output of the Sim function is a sim- ilarity matrix with elements sij being the similarity between i and jth rows. When the similarity is smaller than a predefined threshold ? , sij is set to 0. In this study, we adopt the PCP al- gorithm [20] to compute the similarity matrix, which is briefly summarized in Section III-D1. Our co-clustering algorithm is a bottom-up hierarchical clustering and continues merging rows/columns until the size of the matrix M does not change.
+
+A shortcoming of a general hierarchical clustering is that it merges only the most similar pair of instances (rows/columns) at once, which is computationally expensive and not suitable to process a large data matrix. We incorporate simple but effective heuristics into the clustering procedure mainly by the Select(?) and Merge(?) functions to merge multiple pairs of instances at once. More details are described in Section III-D2. Also, Combine(?) function applies the previous merger of rows to columns as described in Section III-D3.
+
+Moreover, we utilize the MapReduce programming model to parallelize the procedure for dealing with large data, which provides an abstraction isolating us from system-level details [23]. One simply needs to describe data processing procedure in map and reduce functions to run parallelized, distributed data processing. The map and reduce functions in MapReduce are defined to operate on a key-value structure for any data to be processed. A mapper, carrying out the map function, receives key-value pairs as input and produces output also in a key-value structure. Each key of the mapper?s output is assigned to a particular reducer, which processes the values associated with the key to produce another output, again, in key-value pairs. The keys do not need to be the same across map and reduce functions and are often different at different stages of the processing. The mapper and reducer are always used in sequence and together provide the answer to the original problem, although some problems may need to be divided into multiple cycles of map and reduce processes to suit to the MapReduce framework.
+
+1) Similarity Function: The computational complexity of obtaining a similarity matrix S for a given matrix M is O(dn2) where d is the dimension (the number of columns) and n is the number of rows, which does not scale to large data. To handle     a potentially large matrix, we employ the PCP algorithm [20] developed in the framework of the MapReduce programming model, namely, a map function (mapper) and a reduce function (reducer). For completeness, the summary of the algorithm is presented below.
+
+First, a mapper receives the kth column of the matrix M and calculates the local similarity with respect to the particular column between every pair of rows. The output key of the mapper is a row index i. The output value is an associative array, in which the key is a row index j ?= i, and the value is the product of the matrix elements, mik?mjk. For approximation, only ? largest mjk are considered in this process. The rationale behind this approximation is that smaller values of m make less difference in the resulting global similarity computed in the next process. This limit, ?, is called the accumulator limit.
+
+Then, a reducer collects the outputs of the mappers for the same key i and takes the sum of the local similarities to compute the global similarity sij between ith and jth rows.
+
+Collectively, the global similarities forms a similarity matrix S for the input matrix M . Note that this procedure computes a dot product as the global similarity but a cosine similarity can be also easily obtained by normalizing each row of M beforehand.
+
+2) Selection of Mutually Similar Rows: A general hier- archical clustering algorithms merges only the most similar rows at once, which is inefficient in handling a large matrix.
+
+Thus, we devise heuristics which selects multiple pairs of rows to merge at once and is suited for implementation in the MapReduce framework. The heuristics is composed of two steps and the first step is incorporated into the PCP algorithm [20] described above. The PCP algorithm generates a similarity matrix S with its elements sij being the similarity between the ith and jth rows. Because clustering needs only a limited number of similar pairs, we put an additional limit, called select limit, on the reducer such that it emits only the t highest similarities for each i. This limit reduces the amount of output data and hence the disk writing/reading time.
+
+The second step is implemented as the additional Select function as shown in Algorithm 2. The basic idea is to identify mutually similar rows. Suppose that a row mi is similar to another row mj (meaning that mi is among the t most similar rows of mj), but the opposite may not hold. If these rows are mutually similar for the select limit t, we assume that they are good candidates to be clustered. Based on the idea, only pairs of rows?both contained in the list of t most similar rows each other?are added to an associative array C as candidates (lines 3?9). Then, Sort(C) function sorts the array C in descending order of similarity values. The pairs to be combined are determined according to the sorted order (lines 11?17). Starting from the top of the list, if none of rows mi and mj of a candidate pair has been selected to be clustered (i.e., i, j /? A), the pair is added to a set F of pairs fixed to be clustered. (The set A records already selected rows.) If either ith or jth rows have been already selected to be clustered with another row (i.e., i ? A or j ? A), they are not clustered.
+
+The resulting F provides a list of similar entity pairs to be clustered. Each pair of rows mi and mj in the list are combined and are replaced with a new row defined as their average, (mi +mj)/2.
+
+Algorithm 2 Select(S) Input: Similarity matrix S Output: Line pairs to be clustered F  1: INITIALIZE.ASSOCIATIVEARRAY(C,H) 2: INITIALIZE.SET(F,A) 3: for each sij ? S do 4: if H has key ?j, i? then 5: C{i, j} ? sij 6: else 7: H{i, j} ? sij 8: end if 9: end for  10: C ? Sort(C) 11: for each key ?i, j? ? C do 12: if i ?? A and j ?? A then 13: F ? ?i, j? 14: A? i 15: A? j 16: end if 17: end for 18: Return(F )  3) Updating Columns by Clustered Rows: The information of the clustered pairs of rows is transferred to the columns of the matrix M for more efficient and effective co-clustering.
+
+We present an illustrative example to give an intuitive idea of the approach. Suppose that we have extracted the following relations as triplets.
+
+? ?MT, bind, copper? ? ?metallothionein, bind, copper ion? ? ?copper, oxidize, LDL? ? ?copper ion, oxidize, LDL? Focusing only on the common effects for simplicity, these  relations generate the following matrix:  ? ?  bind+copper bind+copper ion oxidize+ldl MT 1 0 0 metallothionein 0 1 0 copper 0 0 1 copper ion 0 0 1  ? ?  where ?MT? and ?metallothionein? are synonyms and their similarity should be ideally identified. However, there is no common elements between their rows. Note that the first two columns ?bind+copper? and ?bind+copper ion? are se- mantically similar but treated as different columns due to their superficial difference. On the other hand, ?copper? and ?copper ion? (the bottom two rows) have a common element (?oxidize+ldl?) and could be identified as similar phrases.
+
+If they are selected to be clustered, the following matrix is generated, where the two rows are combined.
+
+( bind+copper bind+copper ion oxidize+ldl MT 1 0 0 metallothionein 0 1 0 copper, copper ion 0 0 1  )  Then, the information of the clustered rows is used to update the columns. We look for columns containing the clustered phrases as well as the same predicate. In this example, the columns ?bind+copper? and ?bind+copper ion? satisfy the conditions. Because the phrases are merged for rows, it is     logical to merge these columns as well. This resulted in the following matrix:  ( bind+copper, bind+copper ion oxidize+ldl MT 0.5 0 metallothionein 0.5 0 copper, copper ion 0 1  )  where the similarity between ?MT? and ?metallothionein? can now be identified through the non-zero elements in the new column.
+
+The above procedure is depicted in Algorithm 3 as map and reduce functions. The mapper receives the column labels, Vi+Nj , and outputs Vi and Nj as keys and values, respectively.
+
+Then, a reducer aggregates the outputs for each key Vi and identifies entity pairs ? F merged in the previous row cluster- ing (lines 3?9). If identified, the column IDs are recorded in F ? and are combined afterwards.
+
+Algorithm 3 Combine 1: Mapper(Vi+Nj) 2: Emit(Vi,Nj) 1: Reducer(Vi,[Nj , ? ? ? ]) 2: INITIALIZE.SET(F ?) 3: for all Nx ? [Nj , ? ? ? ] do 4: for all Ny ? [Nj , ? ? ? ] do 5: if ?x, y? ? F then 6: F ? ? ??i, x?, ?i, y?? 7: end if 8: end for 9: end for  10: Emit(?, F ?)
+
+IV. EVALUATION  A. Experimental Settings  For implementation of our proposed approach, we used the Hadoop1 version 1.0.3. Experiments were carried out on four machines, each equipped with two Xeon 3.47 GHz (six cores) and 96 GB memory, running OS Arch Linux x86 64. As an input corpus, we used 10 years? worth of biomedical literature (titles and abstracts) taken from Medline. From the corpus, we acquired 17,607,812 predicate-argument relations by applying a morphological analyzer, specifically, Genia tagger [24].
+
+For reference, Table II in Appendix provides some exam- ples of clustered noun phrases, where the threshold for Sim function was set to 0.7.
+
+B. Validity of Common Effects and Influences  First, we investigated the validity of our assumptions that two types of predicate-argument relations describing common effects and influences are useful clues for identifying semanti- cally similar noun phrases. For this experiment, we identified the 100 most frequent noun phrases in the extracted relations, and for each unique phrase, we replaced a half of their mentions with additional symbols to make them superficially different from the originals. For example, if a noun phrase  1http://hadoop.apache.org/  TABLE I. AVERAGE SIMILARITY VALUES COMPUTED FOR DIFFERENT RELATION MATRICES.
+
+Relation matrix Size of matrix Average Sim.
+
+Word (bag-of-words) 443,340?169,408 0.0782 Common effects 150,727?362,075 0.1865 Common influences 187,516?312,946 0.1440 Common effects and influences 256,530?643,820 0.3764  ?TNF alpha? appeared 300 times in the extracted relations, we randomly chose a half (150) and replaced each with an ?@TNF alpha@?. Although ?TNF alpha? and ?@TNF alpha@? are dif- ferent strings for computers, they should be clustered together because they are originally the same entity and would appear in the same or similar context. We constructed a relation matrix from the modified predicate-argument relations and evaluated how many of the 100 pairs divided from the same phrases were estimated to be similar.
+
+For comparison, four alternative relation matrices were constructed by the following settings.
+
+? Used Individual words in the extracted relations. This corresponds to the bag-of-words representation.
+
+? Used only common effects.
+
+? Used only common influences.
+
+? Used both common effects and influences. (Proposed  approach)  In constructing the relation matrices, noun phrases, predicates, or words which appear in less than five relations were removed for efficiency assuming that they do not have much impact on clustering.
+
+For each matrix, we used the PCP algorithm [20] to compute the similarity between each pair of original and mod- ified phrases (i.e., ?PHRASE? and ?@PHRASE@?), where the accumulator limit was set to 100 by consulting Lin?s report [20]. The select and combine functions were not used as only similarity values were needed for this experiment. Table I reports the average similarity value for the 100 pairs of phrases for each relation matrix.
+
+As shown in the result, the highest similarity was achieved when both common effects and influences were utilized to construct a relation matrix, followed by common effects, com- mon influences, and lastly individual words (bag-of-words).
+
+These results do indicate that the predicate-argument structures describing common effects and common influences are useful to determine the similarity between noun phrases and that using the both properties works complementarily and is more effective.
+
+C. Effectiveness of Combine Function  To evaluate the effectiveness of the combine function, we compared the proposed co-clustering algorithm with/without the combine function. For measuring the effectiveness, we again used the 100 pairs of phrases as in Section IV-B and looked at how many of them were re-coupled together through co-clustering. When a pair was grouped in the same cluster, it was counted as a correct case. Accuracy was computed based on the counts as the proportion of correct cases. The     Fig. 1. Transition of accuracy for the settings with/without the combine function.
+
+relation matrix used for this experiment was the one based on common effects and influences (a 256,530?643,820 matrix; see Table I). The accumulator limit was set to 100 as before and the select limit was set to 5. Different values of select limit will be explored later in Section IV-E.
+
+Figure 1 shows the transition of accuracy along with total processing time. In both settings with/without the combine function, the accuracy increases as the clustering progresses.
+
+Especially, the accuracy reached up to 89% with the combine function in contrast to 84% without the function. It should be noted that when the combine function was used, an accuracy of 84% was achieved in around 12k seconds, which is about one third of the processing time needed for the setting without the combine function to achieve the same accuracy. These results verify that merging columns based on previously clustered rows (phrases) by the combine function helps identify similar rows more quickly and effectively.
+
+D. Processing Time  Our approach incorporates the select limit to focus on mutually similar pairs of rows and parallelize the algorithm using the MapReduce programming model so as to scale to po- tentially big data. This section reports on empirical evaluation of the scalability of the approach. In the previous experiments, relation matrices were constructed after removing infrequent phrases and predicates for efficiency. To obtain a larger matrix for testing scalability, a relation matrix was constructed using the full data without removing those infrequent expressions, which resulted in a 488,681?924,238 matrix. The accumulator limit and select limit were set to 100 and 5, respectively, throughout this section.
+
+Using a different amount of input data randomly taken from the relation matrix, we measured the processing time for one iteration of co-clustering. For this experiment, the number of reducers was set to 50. The result is plotted in Figure 2. The x-axis is the proportion of the relation matrix used as input, and the y-axis indicates processing time. As shown, processing time increases with the size of the input matrix but at most linearly, indicating the scalability of the proposed approach.
+
+Here, it should be mentioned that without the select limit, co-clustering could not be completed in our computational  Fig. 2. Processing time for one iteration of co-clustering with varying size of input matrix.
+
+Fig. 3. Processing time for one iteration of co-clustering with a varying number of reducers.
+
+environment due to a large amount of memory needed in the process.
+
+Then, we examined the relationship between the number of reducers and the processing time. We used the same 488,681?924,238 relation matrix as input data and measured the processing time for one iteration of co-clustering as before.
+
+The result is plotted in Figure 3, where x- and y-axes show the number of reducers and the processing time, respectively.
+
+With a greater number of reducers, processing time decreases inversely. Using 15 reducers or more, co-clustering was made up to six times faster in our environment.
+
+E. Select Limit and Function  This section examined the effects of the select limit and select function used for choosing pairs to be merged on the quality of generated clusters. As input, the relation matrix not containing infrequent expressions was used. As a metric of performance, average purity of generated clusters was utilized. Purity of a cluster C composed of data points dn, n = 1, 2, ? ? ? , N , is defined as in Equation (1), where Cent(C) is the centroid of C. The higher the purity, the better the quality of the generated cluster.
+
+Purity(C) =  ?N n=1 Sim(Cent(C), dn)  N (1)     Fig. 4. Average purity vs. average cluster size for different select limit values.
+
+Fig. 5. Average cluster size vs. processing time for different select limit values.
+
+As it is time-consuming to calculate the purity of every generated cluster due to a potentially large number of clusters, we focused on the clusters containing the 100 frequent phrase pairs and computed the average purity for those clusters.
+
+First, Figure 4 shows the relationship between the average purity and average cluster size for three different values of se- lect limit. Average cluster size is defined as the average number of data points included in the 100 clusters and monotonically increases as clustering progresses. As expected, average purity decreases with average cluster size and the slope is deeper for a greater value of select limit.
+
+Next, Figure 5 shows the relationship between average cluster size and processing time. Average cluster size increases as processing time elapses and the growth is slower for smaller select limit. This is also expected since smaller limit results in a smaller number of pairs to be merged at once. Taken together, the results in Figures 4 and 5 indicate that smaller select limit identifies more strongly associated rows but takes longer to generate clusters. One needs to adjust the select limit in consideration of their intended application.
+
+Lastly, we investigated the effect of the select function on the quality of the clustering indicated by average purity. The select function identifies mutually similar rows by examining the outputs of Sim(?) function (the modified PCP algorithm; see Section III-D). We compared average purity with/without  Fig. 6. Average purity vs. average cluster size when select function is used/not used.
+
+using the select function, where all pairs of rows contained in Sim(?)?s outputs were combined when the select function was not used. The results are plotted in Figure 6. It can be seen that, without the select function, average purity decreases more rapidly, which indicates the effectiveness of the select function for identifying more appropriate pairs to cluster.
+
+
+
+V. CONCLUSION  We focused on two types of predicate-argument relations: common effects and common influences, and proposed an approach to clustering synonymous noun phrases based on a relation matrix constructed from the relations. We adopted a hierarchical co-clustering, which is not particularly suited to a large data, and improved the performance in processing time by a set of heuristics. The heuristics includes putting a limit on the size of the output of a similarity function (i.e., select limit), identifying mutually similar phrases (i.e., select function), and transmitting the information of clustered rows to columns (i.e., combine function) for more efficient and effective clustering. All the processes were implemented using the MapReduce programming model to enable parallelized, distributed processing for accelerating the process.
+
+We extracted over 17 million predicate-argument relations from the Medline bibliographic database, from which a relation matrix was constructed. Based on a series of experiments on the matrix, it was demonstrated that 1) the relation matrix based on common effects and influences are useful in identi- fying synonymous expressions, 2) combine function improves the accuracy of clustering by around five points, 3) select limit controls the tradeoff between quality and speed, 4) select function is effective to improve the quality of resulting clusters, and 5) the approach is scalable with respect to the data size.
+
+For future work, there are two major directions. One is the utilization of lexical features. Our similarity function currently does not look at lexical features and cannot see the common- ality between superficially similar expressions. The other is to dynamically adjust the value of the select limit by possibly considering the available resources. As mentioned, the select limit controls the tradeoff between speed and quality. The limit may be set low in the beginning to facilitate higher accuracy of clustering, and later set high to accelerate clustering remaining data, thereby balancing the speed and quality.
+
+TABLE II. EXAMPLES OF CLUSTERED NOUN PHRASES.
+
+Cluster # Noun phrases 19 oral poliovirus vaccine; virus vaccine 58 peptide library; random peptide library 97 aminopeptidase p; peptidase 97 dipeptidase; peptidase 97 glucose dehydrogenase; hydrogenase 392 cholesterol esterase; lipas 548 glycosylphosphatidylinositol; gpi 614 bone marrow cell; marrow 840 liver failure; hepatic failure 840 multiple organ failure; multiorgan failure 910 hemophilia a; haemophilia a 910 hemophilia b; haemophilia b 910 fabry disease; anderson fabry disease  1017 cantharidin; cantharid 1046 dry powder inhaler; inhale 1158 response element; responsive element 1304 sodium channel; channel 1304 calcium channel; channel 1551 transcription factor tfiid; tfii 1655 hypoglycemia; hypoglycaemia 1668 occupational noise; nois 1951 myocardial ischemia; myocardial ischaemia 2096 health status; health 2129 hereditary nephritis; alport 2129 retinitis pigmentosa; cone rod dystrophy 2129 retinoschisis; juvenile retinoschisis 2129 hereditary spastic paraplegia; charcot marie tooth disease 2617 ductus arteriosus; arterial duc 2826 eosinophilic pustular folliculitis; eosinophilic folliculitis 2940 thoracoscopy; thoracoscopic surgery 3030 telephone; phon 3236 fluorometry; fluorimetry 3236 fluoroimmunoassay; fluorometric assay 3277 deoxyribonuclease; dnas 3411 gadolinium dtpa; gadolinium 3711 polyglycolic acid; polyglycolide 3804 unrelated donor; related dono 3921 magnetic resonance angiography; magnetic resonance imaging 3921 magnetic resonance imaging; imaging 4254 genomic instability; genome instability 4290 needle biopsy; vacuum assisted biopsy 4321 incidence; incidence rat 4370 blood transfusion; transfusion 4488 chloralose; alpha chloralose 4680 sulfur amino acid; sulfu 4845 prednisolone; predonisolone 4845 liposomal amphotericin b; amphotericin b 4845 corticosteroid; steroid 4896 lactobacillus casei; l. casei  APPENDIX  Table II shows some examples of noun phrase pairs grouped in the same clusters, where each pair was indicated as related phrases in the life science dictionary2.
+

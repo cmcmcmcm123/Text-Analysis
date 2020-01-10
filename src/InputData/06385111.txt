@@ -1,0 +1,366 @@
+Feature Location Using Data Mining On Existing Test-Cases
+
+Abstract?Feature location is the mapping of features onto static artifacts such as source code and configuration files.
+
+Recent effective feature location methods use dynamic-analysis and scenarios, i.e. executable use-cases that represent features in source code. Almost all of these techniques require that a distinct scenario is created for every feature, which puts a great burden on developers due to the inherent manual work that needs to be carried out. First, since scenarios are typically created and exercised manually, the act of locating features is not easily repeatable as software evolves. Second, there may be dependencies between features, which will be reflected on the collected execution traces during scenario execution. For existing feature location methods to perform well, developers typically need to mark the execution traces manually to specify which parts of it exactly represent each feature. In this work, we free developers of the manual process of creating scenarios by using association rule learning on a set of labeled test-cases, i.e. test-cases labeled with the features they exercise in the existing test-suite of the system, to locate features in source code. We also provide an evaluation of our method on three case studies and compare it with a well-known feature location technique that uses probabilistic ranking. Our method achieves results within 83?97% of the probabilistic ranking method on the case studies without any need to create scenarios as in the existing dynamic-analysis based feature location techniques.
+
+Keywords ? feature location; program features; data mining; program comprehension; software maintenance; reverse engineering
+
+I.  INTRODUCTION Features are defined as behaviors of the system  observable by users during their interaction with the system [9]. Features are usually described as functional requirements that can be executed on the system. As an example, "sign- on" is a feature of a chat system where the user signs on to the server with credentials.
+
+Maintenance is one of the most costly and time consuming tasks in the lifecycle of a software system [1]. To perform maintenance, developers typically identify the parts of source code that are related to a specific requirement. This identification process is called feature location [4]. With feature location, developers typically identify specific constructs in source code, such as classes or methods, and use them as starting points for further investigation and program understanding to serve a maintenance task.
+
+Recent effective feature location techniques use static or dynamic analysis, or a combination of both. Static analysis  based techniques analyze the static artifacts of the system (e.g. source code and configuration files) [2, 5, 10]. Dynamic analysis based techniques [4, 9, 14, 15, 20] exercise the system and collect information to later analyze and do feature location. There are also techniques that combine both static and dynamic analysis [6, 17, 18]. Our work is based on dynamic analysis.
+
+Another dimension of feature location techniques is whether they are interactive or automated. Interactive techniques [5, 6, 23] require a feedback loop, where the user obtains more information about the location of a feature by interacting with the tool. Automated techniques [4, 13, 20], however, take in an initial input and perform automated or semi-automated analysis. Our work is in the area of automated feature location.
+
+Dynamic analysis based feature location techniques typically use scenarios, actions to trigger features on the system. While a scenario is executed, they collect execution traces (e.g. method names, class names and call sequence), and analyze them to do feature location. Almost all of these techniques assume that there will be one or more distinct scenarios for each feature and no others. Some techniques also use negative scenarios, i.e. scenarios that are completely unrelated to a feature, to prune irrelevant information for that feature.
+
+Although recent techniques are known to work well, we observe that they have shortcomings on the assumptions they make. First, the requirement to have distinct scenarios for each feature puts a great burden on developers. Even though developers can potentially use existing test-cases as starting points and distill them into scenarios for features, this is still a manual task that is not repeatable reliably every time feature location needs to be performed. This is especially a bigger issue for users that are not very familiar with the system. Furthermore, negative scenarios are typically needed for some of the existing techniques, which puts more burden on users.
+
+Second, if a process that automates the execution of the scenarios is not provided, it is very hard to keep consistent information to do feature location reliably as software evolves. If execution traces are collected while scenarios are executed manually (e.g. on a graphical user interface of the system), feature location will not be repeatable as software is updated (e.g. code is refactored such that classes/methods are renamed), unless they are executed again on the updated system. Therefore, it is vital to have an automated process to execute scenarios without user intervention.
+
+2012 19th Working Conference on Reverse Engineering  1095-1350 4891 U.S. Government Work Not Protected by U.S. Copyright DOI 10.1109/WCRE.2012.25     TABLE I.  FEATURES AND SCENARIOS TO BE PERFORMED MANUALLY FOR EACH FEATURE  Feature Scenario  connect Scenario-1: On the GUI, click "Connect to server"  sign-on Scenario-2: Enter your credentials in the GUI and click "Sign on".
+
+send-message Scenario-3: On the GUI, double click on a friend, type some text into the opening dialog box, and click "send".
+
+sign-off Scenario-4: On the GUI, click "Sign off".
+
+Finally, dependencies between features require users to do extra cleanup before execution traces can be used as input to tools. Many techniques assume that a given part of the execution trace will be related to only a specific feature and no others. In the presence of dependencies between two features, the dependent feature's execution trace will inherently contain all of the depended feature?s execution trace. Therefore, users will typically need to clean up the execution traces for such dependent features to get good feature location results. This is a cumbersome and error prone process for users. Furthermore, dependencies between features also make it hard (and sometimes impossible) to create scenarios for the dependent feature, since the scenario for the dependent feature should ideally only trigger that feature and no others.
+
+In this paper, we bridge the shortcomings discussed above by considering the feature location problem as a data mining problem. Given a set of test-cases (in the existing test-suite of the system) labeled with the features they exercise, we automatically find relevant feature locations in source code using association rule learning [3]. Our work makes the following contributions:  ? We present a new way to do feature location to locate source code locations uniquely related to a feature, where users simply label some existing test- cases from the system's existing test-suite. A test- case can exercise multiple features, and a feature may be tested in multiple test-cases.
+
+? We present a metric to guide users on the labelings they provide. If a feature cannot be located in a sufficiently reliable way, users are notified so that they can provide more labelings for that feature. This prevents users from labeling test-cases blindly, without information on whether they provided enough input or not.
+
+? We provide tool support to automate the entire process so that feature location can be performed reliably and repeatedly in the presence of feature dependencies even though software is updated.
+
+Outline The rest of this paper is organized as follows: Section II discusses background and related work; Section III explains in detail how our technique and tool (FLMiner ? Feature Location Miner) work; Section IV describes the evaluation of our technique; Section V discusses the pros and cons of our approach; Section VI concludes our work; and Section VII points out potential future work that can build and improve upon the work presented here.
+
+
+
+II. BACKGROUND AND RELATED WORK In this section, we provide a simple running example,  define terms used throughout the paper, and describe existing literature on feature location.
+
+A. Running Example and Definitions Running example: Consider a simple chat system where users can connect to the chat server, sign in with credentials, send messages to each other and sign off. We use this example throughout the paper for discussion purposes.
+
+FEATURE: A feature is a realized functional requirement of the system observable by users during their interaction with the system [6, 9]. In our example, connect, sign-on, send- message and sign-off are all features. Note that, in the context of this work, non-functional features (e.g. robustness and security) are not considered.
+
+SCENARIO: A scenario for a feature is a set of actions that trigger the feature on the system. For instance, in our chat system example, if there is a graphical user interface (GUI) provided, the acts of connecting to the server, signing in, sending messages to friends and signing off through the interface are all scenarios, respectively, for the features described above. Scenarios can also be programs implemented using application programming interfaces (APIs).
+
+EXECUTION UNIT: An execution unit is a source code entity of desired granularity. Examples are statements, blocks, methods, classes and packages. In this work, we used the combination of classes and methods as execution units.
+
+However, the granularity can be changed to have higher or lower resolution.
+
+EXECUTION TRACE: An execution trace for a scenario is the set of execution units collected while the scenario is executed. Execution traces can be collected in different ways, such as profiling.
+
+FEATURE DEPENDENCY: A feature f is said to be dependent to another feature f', if f cannot be executed unless f' is executed. In our example, a user cannot send a message unless she signs on to the server first. So send-message is said to depend on sign-on.
+
+INPUT: An input for a feature location technique is the set of scenarios and their execution-traces, which contain execution units.
+
+There is a large body of existing research on feature location. Before discussing existing techniques, we use a sample setup for our chat system example that demonstrates the assumptions of the existing techniques.
+
+B. Assumptions of Existing Techniques Table I lists features and scenarios in our example, which  are exercised manually on the system through a GUI while the system is being profiled.
+
+First, since existing techniques require creation of scenarios for each feature, this puts a great burden on developers. Furthermore, these actions are performed on the GUI manually in our example. Therefore, the collected execution-traces will contain execution units that are valid at the time these scenarios are executed. If the code is      Figure 1.  Scenarios in Table I automated as small programs  refactored, the execution traces will no longer be valid, and scenarios will need to be executed again. This is cumbersome for developers, therefore it is vital to automate this process.
+
+To automate this, one can implement small programs as scenarios for each feature. This is demonstrated in Fig. 1.
+
+Each scenario contains code to exercise the respective feature annotated with the annotation @Scenario (this is meta-information on the program and is not executed). A user will need to implement these small programs to be used as scenarios, a cumbersome, labor-intensive and error prone process. Once implemented, these scenarios can be executed by a tool and their execution traces can be collected automatically. Note, however, that if the user is using an interactive technique (one that needs feedback from the user as it processes the execution traces), then the process of locating features will not be fully automated even though scenarios are captured as programs as in Fig. 1.
+
+Finally, some scenarios need to execute features other than the targeted feature due to feature dependencies. For instance, the program for send-message needs to also execute connect and sign-on because it depends on both features.
+
+Almost all techniques in the literature require that scenarios are as simple as possible and invoke a specific feature and no others. This is required to avoid noise in the analysis of execution traces and provide relevant feature locations for each feature. Therefore, a user will need to preprocess the execution traces of these scenarios to clean them up before applying a feature location technique. This is, again, a cumbersome, labor-intensive and error-prone process. These assumptions are common to almost all dynamic analysis based methods in the literature. In the rest of this section, we discuss relevant literature for our work.
+
+C. Related Work A significant body of research exists on feature location.
+
+Existing techniques can be classified in different dimensions, two of which are discussed here. The first dimension is the type of analysis they use: static, dynamic or hybrid (both  dynamic and static). The second dimension is whether the technique is interactive (uses a feedback loop to get more information from the user, and provides more information iteratively) or automated (uses an initial input, and then performs automated analysis).
+
+Static analysis based techniques [2, 5, 10] analyze the static artifacts of the system (e.g. source code and configuration files) to locate execution units specifically related to features. These techniques are known to be less effective [20] because they typically deal with a very large portion of the source code with a large amount of utility code. We refer the reader to [11] for a more detailed discussion of static analysis based approaches. Since our technique is based on dynamic analysis, we discuss existing dynamic analysis and hybrid approaches (both interactive and automated) in the rest of this section.
+
+Software Reconnaissance [4] is the pioneering work on feature location. It uses a set of scenarios that execute a feature, and a set of scenarios that do not (negative scenarios). It then uses set-difference: a process in which execution units for a feature are pruned by those observed in negative scenarios. Remaining execution units are relevant to the feature.
+
+Wong et al. [20] extended [4] with execution slices, which can use and suggest more types of execution units, such as branches and variables. Furthermore, they find out the distribution of the implementation of a feature onto different components in source code (such as classes and packages), as well as how much each component participates in the implementation of each feature.
+
+Antoniol and Gu?h?neuc [14] also extended [4] with statistical hypothesis testing, based on events that are observed in execution-traces, knowledge-based filtering, and multi-threading support.
+
+Eisenbarth's interactive technique [6] uses formal concept analysis, a mathematically sound technique to analyze binary relations, to assess the relationships between execution units and features. This technique provides information about unique execution units for each feature, which ones are shared and which are of interest to the implementation of a feature. In this regard, it provides both similar results as [20] and information on relationships between features. This technique combines static and dynamic analysis to increase coverage of the dynamic information obtained, and it is interactive, i.e. it relies on the user to guide the analysis process and to investigate different types of relationships suggested by Eisenbarth?s tool to locate code specific to each feature.
+
+Poshyvanyk et al. [17] combined static and dynamic analysis. Instead of performing binary set operations as in [6], they use probabilistic ranking on the execution units observed in the execution traces of each feature. If a certain execution unit is observed in all scenarios for a feature, they propose that there is a high probability that this execution unit is highly relevant to the feature. They also use information retrieval to index textual information in the source code to help rank the relevant execution units discovered with dynamic analysis.
+
+Figure 2.  Overview of FLMiner   Figure 3. Sample input to FLMiner for our chat system example  Liu et al. [18] introduced an interactive approach combining static and dynamic analysis. Their approach is similar to [17] in that they use dynamic analysis to find relevant locations for features first. Then, they ask users to perform queries relevant to the feature they are interested in to rank the locations found via dynamic analysis.
+
+Edwards et al. [15] addressed feature location on distributed systems using event logs across the nodes in the system. Distributed systems have some inherent difficulties, such as time synchronization, being event driven and more.
+
+Edwards et al. use causality analysis to overcome these challenges.
+
+A different family of approaches builds on the feature location techniques described above to analyze the features themselves. These do not aim to solve the feature location problem, but rather use those techniques to process different properties of the features. We include them here for completeness. These techniques analyze feature relationships [8, 28], evolution of features across versions of software [12] and identifying canonical features of a system [16].
+
+All feature location techniques discussed above, except [6], assume the use of distilled scenarios for each feature as discussed in section II-B. Therefore, they carry the risks and shortcomings previously discussed: the laborious task of creating scenarios, the difficulty of their maintenance and reliance on users to clean up dependencies in the scenarios.
+
+To the best of our knowledge, [6] is the only work where use of scenarios that exercise multiple features is suggested and discussed. To find feature locations specific to a feature, they look for those execution units that only appear in the scenarios executed for a feature and nowhere else. This is a result of the nature of formal concept analysis, since it makes binary decisions about the relationships between an execution unit and a feature. In the presence of dependencies between features, this technique may not find any feature locations specific to a feature at all, and require users to provide scenarios that exercise only that specific feature, i.e.
+
+require the manual cleanup discussed in the beginning of this section. Furthermore, this technique is interactive, i.e. it requires feedback from users during operation and users need to analyze the lattice produced to identify the feature location suggestions [18].
+
+In this paper, we lift the assumptions of the existing techniques discussed at the beginning of this section. To the best of our knowledge, ours is the first work that presents an end-to-end process to locate features in source code, along  with automated tool support, using existing test-cases without any need to create scenarios.
+
+
+
+III. FLMINER: FEATURE LOCATION MINER In this section, we describe our technique in detail. Fig. 2  shows an overview of our technique with inputs and outputs.
+
+We implemented a tool for this process: FLMiner ? Feature Location Miner.
+
+FLMiner takes in execution traces of test-cases, uses association rule learning to suggest highly relevant feature locations uniquely related to each feature, and finally outputs the found feature locations and some metrics on the quality of the found results as well as guidance for the user to provide more labeled test-cases, if need be, for higher quality results. We discuss each step in detail in the rest of this section.
+
+A. Input to FLMiner The input to FLMiner (step 1 in Fig. 2) is a set of test-  cases labeled with the features they execute. Fig. 3 shows a sample input to FLMiner for our chat system example. These test-cases are executed, and execution-traces are collected for each test-case (step 2 in Fig. 2).
+
+Compared to the sample scenarios in Fig. 1, there are some important differences in the scenarios in Fig. 3. First, the scenarios in Fig. 1 are either created manually, or distilled from existing test-cases in order to have as little noise as possible. Even though there are freely available tools for profiling and execution-trace collection, users may still need to do manual cleanup on the execution-traces due to dependencies, as discussed in the previous section.
+
+Unlike the existing techniques, for FLMiner, users label existing test-cases in the test-suite of the system with the features they execute, as in Fig. 3. If they exist, we make use of the available execution-traces collected by continuous integration tools. If not, we provide users with an AspectJ [19] aspect to output dynamic profiling information. Users don?t need to do cleanup after providing information on which features are executed by which test-cases.
+
+FUZZINESS: As noted in [8], locating features, with the input in Fig. 3, using existing techniques is a harder problem,     because we do not have information on the order of the features executed in the test-cases. Furthermore, when the test-cases are executed and execution-traces are collected, we do not know which part of the execution-trace belongs to which feature. Therefore, there is inherent ambiguity in the information used by FLMiner. We call this ambiguity fuzziness.
+
+B. Association Rule Learning and Confidence Once the execution-traces are collected, FLMiner uses a  data mining algorithm, namely association rule learning [3], to find highly relevant locations for each feature (step 3 in Fig. 2). Association rule learning [3] is a popular method in data mining used to discover interesting relations between variables in a database. Formally, association rule learning works on a set  ? ? ???? ??? ?	? ? ??? of   binary attributes, called items; and a set  ? ? ???? ??? ?	? ? ??? of ? transactions, called the database. Each transaction in ? contains a subset of the items in ?.
+
+A rule is defined as an implication ? ? ? , where ?? ? ? ? and ? ? ? ? ??  To demonstrate these concepts, we use the chat system example. Assume that we execute the test-cases shown in Fig. 3 and obtain information on which methods are executed in each test-case, as shown in Table II. For our example, the items are the union of all methods observed in the execution traces and the features; and the transactions are the test-cases. In the table, a 1 denotes the existence of a method or feature in a test-case. As an example, for the test testConnectAndSignOn, the execution-trace contains the methods m1, m2, m3 and m4; and, as labeled by the user in Fig. 3, the features connect and sign-on are executed by the test-case.
+
+In association rule learning, many different measures of interest and significance are defined [3]. In this work, we use confidence. Confidence is defined in terms of support of a set of items:  ?????????? ?  !"#$%&$'"()%&!*("+!$,,!("-.&!(%!? !")"$,!"#$%&$'"()%& As an example, in Table II:  ????????./? ? / 0 ? 1?23  Next, the confidence of a rule is defined as:  4?5?? ? ?? ? ????????? 6 ???????????? As an example, in Table II:  4?5?./ ? &(7%8)%? ? 1?23 1?23 ? 9  This tells us that it is highly probable that the existence of m3 in an execution-trace implies that the feature sign-on was  executed in that test-case. Confidence, given above, is in fact the conditional probability :;&(7%8)%!<!./? , i.e. the probability that a test-case executes sign-on given that its execution-trace contains the method m3.
+
+For a method m to be considered as a highly relevant location for a feature f, the confidence 4?5?. ? 5?should be high. The confidence values for the rules between methods and features as described above is used, in part, by FLMiner to rank each method in deciding whether it is a highly relevant location for a feature or not. In our case studies, we set minimum confidence to 0.5.
+
+For a more in depth analysis of association rule learning, we refer the reader to [3].
+
+C. Divergence: Detecting Edge Cases An edge case for our technique is a single test-case that  executes all features. In such a case, all confidence values of the form 4?5?. ? 5? would turn out as 1. Obviously, this information is not helpful in choosing the highly relevant locations for features; because the confidence values turned out to be equal due to an anomaly, or by chance. In fact, as the input to FLMiner has more fuzziness (more labels on a single test-case), the confidence values found by FLMiner are expected to be less reliable. Based on this observation, we present a new measure to perform an internal quality check on the confidence values found and detect this edge case.
+
+Consider a feature f and the set of all methods M such that:  =?5? ? ??!>!4?5?? ? 5? ? 1? We consider the confidence values of all of the methods in M(f) as a probability distribution Pf, and find out how much this distribution is different than a uniform distribution. If the distance is small, as was the case for the worst-case scenario described above (the distance is 0 for that case, because all methods have confidence 1, and Pf is a uniform distribution), then the confidence values are not very reliable. We call this distance divergence, and use KL-divergence [25], a well- known measure to calculate the distance between two probability distributions, to calculate it:  @?A?5? ? B :C??? ?DE?C?  ,% :C???F???  where Pf is the probability distribution constructed using the confidence values of methods in M(f) as described above, and U is the discrete uniform distribution of the same size as Pf. Note that, the divergence value is the same for all methods in M(f) for a given feature f. It can be considered as an indicator of the quality of the feature locations for f found by FLMiner, and how much FLMiner considers them as dependable for that feature.
+
+D. Affinity: Combining Confidence and Divergence Finally, we combine confidence and divergence to obtain  a single metric to be used to detect highly relevant feature locations. Given a method m and a feature f:     TABLE II.  THE ITEMS AND DATABASE BASED ON EXECUTION TRACES FOR TEST-CASES IN FIG. 3  Items D  at ab  as e  T ra  ns ac  tio ns  m1 m2 m3 m4 m5 m6 connect sign-on send-message sign-off testConnect 1 1 0 0 0 0 1 0 0 0  testConnectAndSignOn 1 1 1 1 0 0 1 1 0 0 testFeature6 1 1 1 1 1 0 1 1 1 0 testSignOff 1 1 1 1 0 1 1 1 0 1  G55???H??? 5? ? I J 4?5??? 5? J @?A?5?4?5??? 5? K @?A?5? Affinity combines confidence and divergence with equal  weights, i.e. both confidence and divergence are equally important in determining whether a method is a highly relevant location for a feature. If need be, these weights can be adjusted based on the project properties.
+
+E. Outputs: Feature Locations, Affinity and User Guidance Once affinities are determined for each (method, feature)  pair, we rank the methods for a feature from high affinity to low affinity, and provide users with a list of the most highly relevant locations for each feature.
+
+FLMiner will also output the divergence values for each feature. Since this is not a typical machine learning problem, only providing more labeled input may not yield better results. Some choices of test-cases labeled will sample features more evenly and provide better results. To help users on choosing test-cases to label, FLMiner guides users to provide more labeled test-cases for those features with low divergence. This way, the affinity values of methods can be increased for those features and the user can be presented with locations that FLMiner has stronger belief on whether they are highly relevant locations or not. When users follow FLMiner?s suggestions, FLMiner yields higher quality results. The user will then know whether or not to label more test-cases, and if so, for which feature (instead of blindly labeling test-cases without any information on the quality of the results presented).
+
+For our chat system example, Table III lists the affinity values calculated for each method, and the divergence values for each feature. The confidence values highlight some important observations. For connect, divergence is 0, because the confidence values for all methods are equal for connect. So, FLMiner assumes that the confidence values were found due to insufficient input, and will guide the user to provide more input for connect in order to provide better results.
+
+For send-message, m5 is ranked highest (it has the highest affinity), because it is only observed in the test-case testSendMessage where send-message is present, while it does not exist in the other execution-traces of the features connect and sign-on, which are also labels of testSendMessage.
+
+The divergence of send-message and sign-off are higher than that of connect and sign-on, because they have more distinguishing information available, i.e. connect and sign-on are executed in almost all test-cases, while send-message and sign-off have been specifically executed in certain test-cases.
+
+Therefore FLMiner has stronger belief that its feature location suggestions are better for these features.
+
+
+
+IV. EVALUATION To evaluate the effectiveness of FLMiner, we analyze it  both theoretically and practically.
+
+A. Baseline For Comparison: The Base  Case For comparison, we consider the same input as the  existing techniques assume: a distinct scenario per feature. In such a case, the input would look like the one shown in Fig.
+
+1, where there is a separate scenario for each feature.
+
+Furthermore, since most of the existing techniques assume that execution traces will be cleaned up so that each execution trace belongs to a single feature, we perform this operation too, i.e. we handle feature dependencies. We call this case the base case. Note that, base case is a very good input for a feature location technique since the execution- trace for each scenario contains execution units for a single feature, which is known deterministically (the execution traces will also naturally contain utility methods and other unrelated methods for a feature, which is expected by all feature location techniques).
+
+In the base case, the results found by FLMiner are identical to the well-known technique by Poshyvanyk [17].
+
+In [17], conditional probabilities are used to calculate the probability of a certain method to be a relevant location for a feature (it combines this with static analysis as well, but we compare our method with its dynamic analysis part). The confidence measure we use as part of affinity also represents conditional probabilities. Divergence is the same for all methods for a feature, so it doesn?t affect the feature location suggestions when used to calculate affinity for the base case.
+
+Therefore, FLMiner?s analysis and results are equivalent to [17] when presented with base case as input.
+
+MEASURING SUCCESS: We use the base case, i.e. the results of [17], as a baseline for our comparisons in the evaluation we perform. If FLMiner can achieve performance close to the base case when it is used on non-base inputs, then we suggest that FLMiner will benefit users, since it allows simply labeling existing test-cases and provides users guidance on which feature to provide more test-cases for, while freeing developers off the burdens discussed in Section II-B.
+
+Below, we evaluate FLMiner for two cases: the ideal case and the practical case.
+
+B. Ideal Case Since FLMiner considers the feature location problem as  a data mining one and uses a machine learning algorithm to solve it, it is expected that given ?enough? labeled inputs, it should be able to yield the same results as for the base case.
+
+TABLE III.  DIVERGENCE FOR EACH FEATURE AND AFFINITY VALUES FOR EACH (METHOD, FEATURE) PAIR  connect sign-on send-message sign-off divergence 0 0.0086 0.1783 0.1783  affinity connect sign-on send-message sign-off m1 0 0.0169 0.2081 0.2081 m2 0 0.0169 0.2081 0.2081 m3 0 0.0170 0.2323 0.2323 m4 0 0.0170 0.2323 0.2323 m5 0 0.0170 0.3026 0 m6 0 0.0170 0 0.3026  How many labeled inputs can be considered as ?enough? depends on the nature of the input, i.e. the degree of fuzziness.
+
+In the base case, there is no fuzziness: each scenario?s execution-trace contains execution units for one feature. As scenarios execute more features than 1, fuzziness increases.
+
+An example fuzzy input is shown in Fig. 3, where some test- cases execute multiple features.
+
+Based on Fig. 3, consider the case where the input is uniform in the number of features each test-case executes: every test-case in the input executes k features, where 9 L M L  and n is the number of features. In such a case, an ideal input to FLMiner would be N;OPQ examples, where the labels of the test-cases are an enumeration of all of the k combinations of the n features. As an example, for 3 features: ?5?? 5?? 5	} and M ? I, the ideal input to FLMiner would be three test-cases, labeled with: ?5?? 5??, ?5?? 5	? and ?5?? 5	?. If such an ?ideal? input is provided to FLMiner, we show below that FLMiner can find the same feature locations as the base case in spite of the fuzziness.
+
+Our analysis starts with the confidence value of a method m for the feature f in the base case. Assume that, in the base case:  4?5RSTUTVW?. ? 5? ?  9 K X This means method m was observed in f?s execution-trace and possibly some other features? as well (defined by x, where 1 L Y L  Z 9 ). For the ideal fuzzy input to FLMiner, the confidence will be:  4?5T[\VW?. ? 5? ? N;O]?P]?Q  N;OPQ Z N;O]^]?P Q   To find this confidence value, we count how many execution-traces m and f are seen together, and divide it by how many execution-traces m is observed in.
+
+To analyze how the confidence values compare between base and ideal cases, we compare the ratio of the two confidence values as x changes:  ,(._`a 4?5T[\VW?. ? 5? 4?5RSTUTVW?. ? 5?  ?9  ,(._`?]? 4?5T[\VW?. ? 5? 4?5RSTUTVW?. ? 5? ?b  Therefore, the confidence values found in the ideal case will be a multiple (k) of the confidence values found in the base case for all methods. Since divergence is calculated internally for each feature and is a linear transformation, it will not change the rankings found in the ideal case based on confidence values for the methods. As a result, in the ideal case, the methods will be ranked in the same order as they were ranked in the base case, and therefore FLMiner will find the same methods for each feature as relevant feature locations even in the presence of fuzziness.
+
+Using the base and ideal case analysis above, we also analyze the result of changing fuzziness, i.e. different values of k:  ,(.P`? 4?5T[\VW?. ? 5? ? N;O]?a Q  N;O?Q Z N;O]^]?? Q ? 99 K X  ,(.P`?]? 4?5T[\VW?. ? 5? ? N;O]??]?Q  N; O?]?Q Z N;O]^]??]? Q c 9  Based on these, as fuzziness decreases ( b ` 9 ), the confidence for a method found in the ideal case approaches the confidence found in the base case. As fuzziness increases (b ` % Z 9), the confidence of the methods approaches 1.
+
+Therefore, as expected, having higher fuzziness makes it harder for FLMiner to suggest highly relevant feature locations.
+
+This concludes our analysis that, given the ideal number of labeled test-cases, FLMiner yields the same feature location results under fuzziness as the base case.
+
+Unfortunately, for a certain k, it would be impractical to expect users to label N;OPQ test-cases. This could be a very large number of test-cases to label, and there may not even be that many test-cases in the test-suite of the system.
+
+Therefore, the ideal case is not practical, but it is useful in showing the foundations of our technique.
+
+In the next section, we evaluate FLMiner in a practical setting that can be realistically used by users.
+
+C. Practical Case In the practical case, we assess how many labeled test-  cases we can practically ask for from the users. Unlike the ideal case, it is not possible to mathematically calculate how FLMiner would behave since there is a wide range of possible inputs. Therefore, we performed regression experiments on case studies. We evaluated FLMiner on 3 case studies: a chat system used in teaching software at UCSD (University of California, San Diego), and the open source software projects Apache Pool [21] and Apache Commons CLI [22]. Table IV lists information about case studies relevant to our experiments.
+
+First, the base case expects n test-cases for n features.
+
+Since FLMiner is trying to solve a more complex problem, i.e. it doesn?t expect one scenario per requirement, it is expected that it will need more test-cases than n. An educated guess is that each feature is observed at least twice to deal with fuzziness. Therefore, we tested to see how FLMiner would perform if 2n test-cases are provided for n features.
+
+TABLE IV.  INFORMATION ABOUT CASE STUDIES  Case Study # lines of code # features UCSD Chat System   6,861 16 Apache Pool [21] 12,626 16  Apache Commons CLI [22]   4,739 11  Furthermore, as discussed in section III-E, if the users follow the guidance provided by FLMiner for each feature (through divergence), they would be expected to provide test-cases labeled with those features pointed out by FLMiner. This is expected to keep the needed number of test-cases to a minimum by guiding users to provide input where it is most needed for higher quality results, hence less work for users. Since users are expected to follow this guidance for high quality results, we used inputs that conform to this guidance in our experiments.
+
+1) Experiment Setup To perform experiments, we first identified features for  each case study through their documentation. Next, we created scenarios conforming to the base case, i.e. a distinct scenario for each feature (including the cleanup needed due to feature dependencies). Then we executed the scenarios and collected execution-traces for each feature using AspectJ [19].
+
+Next, we generated random inputs of different labelings using the execution traces for features obtained above: some with 1 feature, some with 2 and so forth, up to 6 (we didn?t go beyond 6 because the maximum number of features in a test-case across all case studies was 5). As an example, to simulate a test-case with 2 features, we simply combined the execution traces of 2 features from the base case and labeled the union with the two features. Note that, regardless of how the random input has been generated, the total number of test-cases is fixed to 2n in each case study.
+
+We generated the random inputs in two steps. First, we enumerated all possible labeling counts that add up to 2n. As an example, if a case study had 3 features, we enumerated all solutions to the following linear equation:  Y? K Y? K Y	 ? d Here, for a given solution to this equation, x1 corresponds to the number of test-cases where there is a single feature, x2 with 2 features, and x3 with 3 features. By enumerating all solutions, we ensure that there was no skew on how we sample the random space while we generate the random inputs.
+
+Then, for a given solution to the linear equation, we randomly chose features to assign to test-cases, such that each feature is used at least once. We repeat this process 100 times so that for a single solution to the linear equation, there are 100 random inputs to be used in our experiments.
+
+2) Evaluation Criteria To evaluate FLMiner?s performance on the random  inputs, first, we describe what a ?highly relevant? feature location is. Based on the existing literature, these locations are typically uniquely related to a feature. Therefore, observing a highly relevant feature location in an execution trace implies that the scenario of that execution trace executed that feature.
+
+Based on this observation, given the highest ranked feature location l suggested by FLMiner for a feature f, and the execution trace of a test-case t, FLMiner is said to guess that t executed f if the execution trace of t contains l. If l is indeed a highly relevant feature location for f, then FLMiner?s guess is correct.
+
+For each case study, we manually created a baseline to assess how well FLMiner?s guesses are, by looking at each test-case and finding out which features it actually executes.
+
+Finally, we compared how well FLMiner?s guesses were compared to the baseline, using the commonly used accuracy metric on retrieval problems: f-measure [7]. Given a guess g made by FLMiner, g is either correct, a false-positive (FLMiner guessed that a test-case executed a feature, but it was wrong), or a false-negative (FLMiner missed the fact that a test-case executed a feature). Given the following sets:   e ? ???? 5?>!"-&"8'$&-!?!-X-'f"-&!g-$"f#-!5?!!!!!!!!!
+
+h ? ???? 5?>!ijk(%-#!7f-&&-&!"+$"!?!-X-'f"-&!5?   F-measure is calculated as:  5 Z ?lG???l ? !!!I J >m?n> >n> J  >m?n> >m>  >m?n> >n> K  >m?n> >m>     Furthermore, we also performed the same experiments with base case inputs to FLMiner for each case study and reported the f-measure values for the base case. As discussed in section IV-A, the base case for FLMiner is equivalent to Poshyvanyk?s method [17]. Therefore, we provide a comparison of FLMiner?s performance on fuzzy inputs with that of [17] on base case inputs.
+
+3) Evaluation Results Fig. 4 shows the results of our experiments, where we use 2n test-cases for n features as input to FLMiner. In the graphs, the line at the top for each case-study shows the f-measure obtained in the base case, which is equivalent to what would be obtained using the method in [17]. The scattered points show the f-measure values obtained by FLMiner on the random experiments. Linear fit for the scattered points are also shown, with information on the average f-measure value obtained by FLMiner for each case-study.
+
+As shown, FLMiner does not perform as good on fuzzy inputs as the base case. This is expected, since the fuzzy inputs are more complex than the base case. However, on average, FLMiner performs 83 ? 97% as good as the base case, i.e. Poshyvanyk?s method [17]. Furthermore, as discussed in Section II-B, FLMiner does not require creating any scenarios and the preparation required on the execution- traces (due to dependencies), unlike the existing feature location methods. It only needs some labeled test-cases from the existing test-suite of the system.
+
+Table V shows the results of the same experiment when the number of labeled test-cases is increased from 2n (as in Fig. 4) to 3n. When more labeled test-cases are provided, FLMiner is expected to perform better because it has more information to learn from. As expected, using 3n examples increases the performance of FLMiner for all case-studies.
+
+Figure 4.  FLMiner performance with 2n
+
+V. DISCUSSION In this section, we discuss the  disadvantages of our technique.
+
+FLMiner lifts the assumption of  techniques that each scenario should execute We use existing test-cases of the system i users to create scenarios. This decreases developers due to scenario creation and the due to feature dependencies.
+
+In the evaluation section, we show th achieve results on fuzzy inputs close to o known existing techniques [17] on the bas also provides guidance to users whether a test-cases can be used to increase the quali FLMiner does not require too many test-ca show that it performs well when it is given test-cases where there are n features, developers follow the guidance provide Furthermore, if more labeled examples a success improves further (see Table V).
+
+Our technique is independent of th language used in the system. The only re existence of a profiler. We implemented FL however it can easily be extended to work fo  Our technique uses test-cases of the syst is not applicable to systems without test-case common for production systems to have tes [26]. Therefore, FLMiner can be adopte systems.
+
+Another advantage of our method is th can be executed without manual interven This makes the task of locating features rep process can be integrated into continuous for complete automation. This way, users do out any actions: feature location suggestio every time continuous integration runs th feeds the input to FLMiner.
+
+Similar to existing techniques in the technique only supports functional features.
+
+Pruning utility methods is commonly techniques to improve feature location FLMiner, we allow users to do this thro regular expressions.
+
+Finally, our technique builds upon dyna the use of scenarios (test-cases). So it c limitations as existing techniques about  fuzzy test-cases as input (n is the number of features), compared to the b  TABLE V.  AVERAGE F-MEASURE B LABELED TEST-CASES PROVIDED  FO  Case Study Number of test-cases provided 2  UCSD Chat System 91.6 Apache Pool [21] 80.8  Apache Commons CLI [22] 70.5  advantages and  feature location e a single feature.
+
+instead of asking s the burden on e cleanup needed  hat FLMiner can one of the well- se case. FLMiner any more labeled ity of the results.
+
+ases as input: we about 2n labeled given that the  ed by FLMiner.
+
+are provided, its  he programming equirement is the LMiner for Java, or any language.
+
+tem. Therefore, it es. However, it is st-cases available ed in production  hat the test-cases ntion from users.
+
+peatable, and our integration tools  on?t need to carry ons will be ready he test-cases and  e literature, our  used in existing performance. In ough the use of  amic analysis and carries the same  ut coverage, i.e.
+
+capturing different ways of execut system. This can be mitigated b technique as described in [27] into F as future work.
+
+A. Threats To Validity In this section, we discuss the  affected the results of our case stu IV-C, and therefore may limit generalizations of our results.
+
+First, we cannot claim that our c full extent of production systems. W from different domains to mitigate t are commonly used production so further mitigated if we experiment from more domains.
+
+Second, we are not domain exp in our case studies. Therefore, we ca all features in each system, and that are the best ones to capture them.
+
+the chosen features and scenarios, th  Third, in our approach, as t increases, the effort necessary to la data also increases. Our approach n larger systems with higher number well it scales.
+
+Finally, we created the baselin section IV-C manually. To mitig different developers perform this results. However, mistakes might sti
+
+VI. CONCLUSION AND Features are observable behavio  be triggered by users [9]. Mainten costly tasks in the software lif typically identify the parts of source specific feature to perform maint feature location [4].
+
+In this paper, we present a feature location technique and tool   base case input [17]  BASED ON THE NUMBER OF OR EACH CASE-STUDY  Average f-measure 2n 3n 67 % 94.11 % 80 % 85.20 % 55 % 77.05 %  ting a feature across the by integrating a similar FLMiner, which we leave  e issues that might have dies presented in section the interpretations and  case studies represent the We chose our case studies this risk, and two of them ftware. This risk can be t with more case studies  perts of the software used annot claim that we found t the scenarios we created Therefore, depending on  he results may differ.
+
+the number of features abel test-cases as training needs to be evaluated on of features to assess how  e for the experiments in gate risk, we had two task and compare their  ill have happened.
+
+FUTURE WORK ors of the system that can nance is one of the most fecycle [1]. Developers e code that are related to a enance, which is called  dynamic analysis based (FLMiner) that uses data     mining on existing test-cases of a system to suggest highly relevant feature locations uniquely related to features.
+
+Similar to existing dynamic analysis based feature location techniques, FLMiner makes use of scenarios. However, it has the following improvements over the existing techniques: (a) it doesn't require users to create scenarios, users can simply tag existing test-cases with the features they execute; (b) it doesn't require a distinct scenario for each feature, test-cases can execute multiple features and a feature can be executed in multiple test-cases; (c) it doesn't require users to perform cleanup on the execution-traces of scenarios due to feature dependencies.
+
+FLMiner provides users guidance on the quality of the suggested feature locations and whether the results can be improved if more labeled test-cases are provided for a feature. Furthermore, it provides an end-to-end automated process to locate features from the execution of test-cases automatically to outputting feature location suggestions.
+
+On fuzzy inputs, where a scenario can execute multiple features and a feature might be executed by multiple scenarios, our technique yields results, on average, within 83 ? 97% of the results provided by a well-known successful technique [17] on base case inputs (a distinct scenario for each feature).
+
+Based on experiments on three case studies, 2n labeled test-cases yield the results described above, where there are n features. Furthermore, more labeled examples yield better results.
+
+As future work, FLMiner can be complemented with static analysis to yield better results, as in [6, 17, 18]. It can also be improved to work for non-functional features.
+
+Currently, we evaluate FLMiner against [17] by combining execution traces of scenarios for each feature. As future work, we plan to evaluate it on the whole test-suite of each case study. As part of this experiment, we also plan to evaluate how fast it converges and stops for asking for more labeled test-cases. Finally, we plan to evaluate the interaction of developers and FLMiner to assess the usefulness of FLMiner?s guidance on labeling test-cases as input.
+
+
+
+VII. ACKNOWLEDGEMENTS This work was supported in part by NSF Grants CNS-  0932403 and 0729029, as well as a generous donation of phones by Qualcomm.
+
+
+
+VIII. REFERENCES [1] B. P. Lientz, E. B. Swanson, and G. E. Tompkins, "Characteristics of  application software maintenance," Comm. of the ACM, vol. 21, no.
+
+6, pp. 466-471, Jun. 1978.
+
+[2] T. J. Biggerstaff, B. G. Mitbander, and D. Webster, "The concept assignment problem in program understanding," in Proc. Working Conf. on Reverse Eng., 1993, pp. 27-43.
+
+[3] R. Agrawal, T. Imielinski, and A. Swami, "Mining association rules between sets of items in large databases," ACM SIGMOD Record, vol. 22, no. 2, pp. 207-216, Jun. 1993.
+
+[4] N. Wilde and M. C. Scully, "Software reconnaissance: Mapping program features to code," Journal Of Softw. Maintenance Research And Practice, vol. 7, no. 1, pp. 49-62, 1995.
+
+[5] M. P. Robillard and G. C. Murphy, "Concern graphs," in Proc. of the 24th Int. Conf. on Softw. Eng., 2002, p. 406.
+
+[6] T. Eisenbarth, R. Koschke, and D. Simon, "Locating features in source code," IEEE Tran. on Softw. Eng., vol. 29, no. 3, pp. 210-224, Mar. 2003.
+
+[7] C. J. Van Rijsbergen, Information Retrieval, vol. 30, no. 6. London: Butterworths, 1979, p. 208.
+
+[8] A. Egyed and P. Gr?nbacher, "Supporting software understanding with automated requirements traceability," Int. Journal of Softw.
+
+Eng., vol. 15, p. 783, 2005.
+
+[9] A. D. Eisenberg and K. De Volder, "Dynamic feature traces: finding features in unfamiliar code," in 21st IEEE Int. Conf. on Softw.
+
+Maintenance, 2005, pp. 337-346.
+
+[10] M. P. Robillard, "Automatic generation of suggestions for program investigation," ACM SIGSOFT Softw. Eng. Notes, vol. 30, no. 5, p.
+
+11, Sep. 2005.
+
+[11] A. Marcus, V. Rajlich, J. Buchta, M. Petrenko, and A. Sergeyev, "Static Techniques for Concept Location in Object-Oriented Code," in Proc. of the 13th Int. Workshop on Program Comprehension, 2005, pp. 33-42.
+
+[12] O. Greevy, S. Ducasse, and T. Girba, "Analyzing feature traces to incorporate the semantics of change in software evolution analysis," in 21st IEEE Int. Conf. on Softw. Maintenance, 2005, pp. 347-356.
+
+[13] W. Zhao, L. Zhang, Y. Liu, J. Sun, and F. Yang, "SNIAFL: towards a static non-interactive approach to feature location," Proc. 26th Int.
+
+Conf. on Softw. Eng., vol. 15, no. 2, pp. 195-226, 2006.
+
+[14] G. Antoniol and Y.-G. Gueheneuc, "Feature Identification: An Epidemiological Metaphor," IEEE Tran. on Softw. Eng., vol. 32, no.
+
+9, pp. 627-641, Sep. 2006.
+
+[15] D. Edwards, S. Simmons, and N. Wilde, "An approach to feature location in distributed systems," Journal of Systems and Softw., vol.
+
+79, no. 1, pp. 57-68, 2006.
+
+[16] J. Kothari, T. Denton, A. Shokoufandeh, and S. Mancoridis, "Reducing Program Comprehension Effort in Evolving Software by Recognizing Feature Implementation Convergence," 15th IEEE Int.
+
+Conf. on Program Comprehension, pp. 17-26, 2007.
+
+[17] D. Poshyvanyk, Y.-G. Gueheneuc, A. Marcus, G. Antoniol, and V.
+
+Rajlich, "Feature Location Using Probabilistic Ranking of Methods Based on Execution Scenarios and Information Retrieval," IEEE Tran. on Softw. Eng., vol. 33, no. 6, pp. 420-432, Jun. 2007.
+
+[18] D. Liu, A. Marcus, D. Poshyvanyk, and V. Rajlich, "Feature location via information retrieval based filtering of a single scenario execution trace," in Proc. of the 22nd IEEE/ACM Int. Conf. on Automated Softw. Eng., 2007, p. 234.
+
+[19] "AspectJ." [Online]. Available: http://www.eclipse.org/aspectj/.
+
+[Accessed: 01-Mar-2012].
+
+[20] W. E. Wong, S. S. Gokhale, J. R. Horgan, and K. S. Trivedi, "Locating program features using execution slices," in Proc. 1999 IEEE Symp. on Application-Specific Systems and Softw. Eng. and Technology, pp. 194-203.
+
+[21] "Apache Pool." [Online]. Available: http://commons.apache.org/pool/. [Accessed: 19-Apr-2012].
+
+[22] "Apache Commons CLI." [Online]. Available: http://commons.apache.org/cli. [Accessed: 19-Apr-2012].
+
+[23] K. Chen and V. Rajlich, "Case study of feature location using dependence graph," in Proc. of the 8th Int. Workshop on Program Comprehension, pp. 241-247.
+
+[24] M. Salah and S. Mancoridis, "A hierarchy of dynamic software views: from object-interactions to feature-interactions," in 20th IEEE Int. Conf. on Softw. Maintenance, 2004, pp. 72-81.
+
+[25] S. Kullback and R. A. Leibler, "On information and sufficiency," The Annals of Mathematical Statistics, vol. 22, no. 1, pp. 79-86, 1951.
+
+[26] E. M. Maximilien and L. Williams, "Assessing test-driven development at IBM," in Proc. of the 25th Int. Conf. on Softw. Eng., 2003, vol. 6, pp. 564-569.
+
+[27] C. Ziftci, and I. Krueger, ?Tracing requirements to tests with high precision and recall,? 26th IEEE/ACM Int. Conf. on Automated Software Eng., Nov. 2011, pp. 472-475.
+

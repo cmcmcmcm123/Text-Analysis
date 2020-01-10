@@ -1,0 +1,178 @@
+Write Bandwidth Optimization of Online Erasure
+
+Abstract-As the data volume is growing from big to huge in many science labs and data centers, more and more data owners are willing to choose Erasure Code based storage to reduce the storage cost. However, online Erasure Code based cluster file systems still have not been applied widely because of write bottlenecks in data encoding and data placement. We proposed two optimizations to address them respectively. We propose a Partition Encoding policy to accelerate the encoding arithmetic through SIMD extensions and to overlap data encoding with data committing. We devise Adaptive Placement policy to provide incremental expansion and high availability, as well as good scalability. The experimental results in our prototype ECFS show that the aggregate write bandwidth can be improved by 42%, while keeping the storage in a more balanced state.
+
+
+
+I. INTRODUCTION  With the rapid development of information technology, people are stepping into the era of big data recently. According to IDC's report [1], the whole world produced at least 2.7ZB data in 2012, while in 2011 was just 1.8ZB. This number will be 8ZB until 2015, and it's will be shocking 35ZB in 2020. Internet companies contribute a large amount of data in recent years. The total data volume of several companies has already reached hundreds of PB, such Facebook, Amazon and Microsoft. Meanwhile, supercomputing filed aJso has to provide large scale data storage [2].
+
+Since the data volume is growing from big to huge, more and more data owners are willing to choose Erasure Code based storage to reduce the cost of data storage. Erasure Code based cluster file systems can provide the reliability at the same level as the Replica file systems while consuming less storage overhead [3]. For example, a 3-replica file system will consume 3GB storage space for each 1GB data. However, Erasure Code based file system could provide the same reliability as replica file system with less than 3GB storage space, which can reduce half the storage cost compared with replica method.
+
+Erasure code based storage system could be divided into offline type and online type by if data is encoded when it is imported into the storage system. The offline type always encode data in background when the data is not in use, such as the storage systems used in Microsoft [4] and Facebook [5].
+
+The offline type storage system is good for its write bandwidth as its writing path is nearly the same with the traditional storage system. However, it needs more space to store replicas and have extra overhead when converting replica into parities in background. The online type storage system encodes data before submitting it into the storage device and does not need to convert data into parities any more. Online erasure code   based storage system can provide higher storage utilization than the offline one. However, a significant challenge for online Erasure Code based cluster file system is how to provide a scaJable write bandwidth. Since the write path of online erasure code storage contains encoding process, it involves more overhead than normal write operation. Lower write efficiency limits the implementation of online erasure code based cluster file system. With the rapid growth of data storage requirement, we have to deal with the following two chaJlenges on write bandwidth.
+
+The first challenge is how to reduce the overhead of data encoding. In online erasure code based cluster file system, data encoding is involved in write path. Before committing data to nonvolatile storage, data need to be encoded into parity.
+
+Since most of encoding caJculation is Galois Field arithmetic, the caJculation efficiency is comparatively low. The longer encoding process occupies, the higher overhead we will suffer during data writing. So a high efficient data encoding method is needed to deal with the encoding chaJlenge.
+
+The second challenge is how to manage data placement to improve the aggregate bandwidth of a cluster file system.
+
+Since the development of information technology brings more users and larger volume of data, unbaJanced workload among all the storage servers becomes more serious. What's more, online erasure code based cluster file system will raise more difficulties on data placement because data blocks in the same stripe will need to be placed into different storage servers to achieve high reliability. Therefore, a highly efficient and dynamic data placement is necessary to deal with this challenge.
+
+To address the above challenges, we anaJyzed the two bottlenecks at data encoding and data placement in the write path, and propose Partition Encoding and Adaptive Placement to improve the write bandwidth of online erasure code based cluster file systems. For the Partition Encoding policy, we first partition data blocks into multiple small data regions to im? prove CPU cache utilization. And then we overlap data encod? ing with data distribution in a pipeline way, which can improve write bandwidth by hiding part of encoding latency. For Adap? tive Placement, we choose the concept of data temperature to depict the workload history of a server. Before placing a new data block, we need to calculate a placement score for each candidate server through a formula of their temperature, CPU usage, memory utilization and network status. Then we place the new data block into the server with the highest score. To evaJuate our work, we implemented an online erasure code based cluster file system, ECFS. The experiment shows that,    through Partition Encoding, data encoding efficiency can be improved by 21.4%, and aggregated write bandwidth can be improved by 34.7%. Adaptive Placement can improve write bandwidth by 3S.9% and 42% under balanced and unbalanced workloads respectively.
+
+The rest of this paper is organized as follows: section II gives the background and related works of Erasure Code based cluster file systems; section III focuses on Partitioned Encoding; section IV discusses Adaptive Placement; section V is the implementation of the prototype ECFS we developed; section VI presents the evaluations we conducted in ECFS; and finally, section VII concludes the paper.
+
+
+
+II. BACKGROUND AND RELATED WORKS  A. Erasure Code Based Storage  In recent years, adopting erasure code to guarantee the reliability of data has attracted much attention in the field of massive storage research. Through reversible redundancy encoding, erasure code based storage can get m parities from k data blocks. These k blocks and m parities compose a stripe which can tolerant at most m data failures.
+
+Erasure codes can be divided into MDS (maximum distance separable codes) [6] and Non-MDS. As the MDS codes meet the Singleton bound states [7] it can provide the greatest error correction capability among all the erasure codes. For this reason, business companies prefer to choose MDS code based storage to achieve a higher storage utilization.
+
+There are several erasure codes belonging MDS codes, such as Reed-Solomon code [S], x-code [9], EVEN ODD [10] and BCP [11]. However, among all the MDS codes, only Reed? Solomon code supports arbitrary configuration of k and m in a stripe, which can provide the flexibility required by the cluster file systems.
+
+The weak point of Reed-Solomon code is its performance.
+
+The computation units in Reed-Solomon code are words with fixed length w, and every unit corresponds to an element in G alois Field (denoted GF(2W)). The most frequently used operations among Galois Field elements are addition and multiplication: addition can be implemented simply by bitwise XOR, but multiplication is more complex. Traditional software implementations of Galois Field multiplication are using mul? tiplication table or discrete logarithm tables. The low-efficient multiplication cause Reed-Solomon code is slower than many other codes which need not to do Galois Field multiplication.
+
+The optimizations of Galois Field multiplication can be cate? gorized into three types:  BlOmer et al. present an approach to convert most Galois Field multiplication into XOR operation [12]. The multiplicand is converted from w bit words to w x w matrix of bits. The multiplier and product are converted as 1 x w column vector of bits. Then the original multiplication can be represented as matrix multiply vector [13]. Reed-Solomon code adapting to this optimization is often called Cauchy Reed-Solomon.
+
+By using additional optimization method [13], [14], [15], Cauchy Reed-Solomon can perform much better than Reed? Solomon which using traditional implementation of Galois Field multiplication [16].
+
+Raid6 module in Linux kernel uses a method to accelerate its encoding process [17]. The design of raid6 module is similar with a Reed-Solomon code which can tolerant 2 disk failure. Since multiplying by 2 in GF(2W) can be implemented easily, this optimization changes multiplicand into powers of 2. Although this raid6 module can achieve high performance, its optimization can only be used in 2-failure tolerant code.
+
+Plank presents a new method to implement Galois Field multiplication through Intel SIMD instructions [IS]. By preloading multiplication table entries into vector registers and doing lookup in parallel, this method can achieve a perfor? mance of 2.7 to 12 times faster than other implementations.
+
+Different with the optimization in raid6 module, this approach could accelerate Reed-Solomon code with any configurations of k and m.
+
+B. Data Placement  In online erasure code based cluster file system, data blocks and parities should be placed to multiple storage devices. Since blocks in the same stripe are correlated, fault tolerant and load balance should be considered carefully during their placement.
+
+In cluster file system, data placement is a classical problem, the conventional approach of data placement is random dis? tribution and CPU/storage sensitive distribution. Both HDFS and Lustre adopt random policy to distribute the replica data to different nodes randomly. Random distribution is easy to implement and incurs almost no extra penalty to place the data blocks. In Erasure Code based cluster file system, data blocks may be immigrated because of the load balance or the node failure. Random distribution is static and it will be tricky when data movement happens. CRUSH [19], [20] is a pseudo? random data distribution algorithm that effectively and robustly distributes data blocks across the Ceph [20] storage cluster.
+
+In the Ceph storage cluster, each node is given a weight and system places data proportional to this statically determined weights. The weight modification in Ceph storage cluster may incur the data movement on many nodes. CRUSH places the data based on the statically determined weights, it doesn't take system's work load into the data distribution. To achieve high scalability and fault resilience, the data placement protocol [21] in Sorrento [21], [22] is distributed, relies on both workload and storage usage. The main idea of Sorrento's data placement policy is to evenly distribute hot segments across storage nodes to balance 110 workload, and to use cold segments to balance storage nodes. Data migration decisions are triggered when there is a significant 110 load or storage imbalance. Whether a segment is hot or cold is determined based on the current work load status. However, in many applications, like movie rendering, the data temperature is affected by both current and past data accesses. If data's access history is also taken into the consideration when placing new data, the system can gain better performance and more robust data safety.
+
+
+
+III. ENCODING OPTIMIZATION  In online erasure code storage system, the overhead of encoding is a necessary part of data writing. As of this reason, the speed of encoding clearly have an impact on write throughput.
+
+The encoding process of Reed-Solomon code can be de? scribed as a matrix multiplication equation as shown below:    P= G?D (1)  In Equation 1, P stands for the parity block vector, and D is the original block vector. G is an m x k matrix and all elements in G are constant w-bit words. A coding word Pi inside the i-th parity block Pi in vector P can be generated according to the following equation:  k Pi = L gi,j' dj  j=1 (2)  In Equation 2, gi,j represents the element in G at row i and column j, and dj represents the data word at the corresponding position with Pi in the j-th data block. In G F(2W) elements in Equation 2 are operated as w-bit units, typically w E {8, 16,32,64}. In most cases, we do not calculate a single w-bit word, but to compute a region of many words with constant size, called region multiplication. In the encoding process, every data word will be multiplied in each parity block's generation.
+
+To accelerate encoding process, Plank's SIMD implemen? tation [18] is suitable to be used to implement Galois Field multiplication. In Plank's evaluation, multiplication speed will drop sharply while region size exceeds the last level cache, and presented in [14], cache behavior of encoding can influence encoding performance. Most of modem CPU have on-chip cache whose size are in range from 1MB to 30MB. In cluster file system, data usually organized by big blocks such as 64MB to reduce the management overhead. Comparing with the size of data block, cache are much smaller. As for conventional encoding, region multiplication performs as whole block mul? tiplication. Since data and parity blocks are much larger than cache, the performance of conventional encoding approach will suffer a lot from cache miss.
+
+To improve erasure code encoding performance, we pro? pose Partition Encoding to achieve higher CPU cache uti? lization. Based on math transformation, Equation 2 can be converted to equations as shown below:  { Pi(l) = gi, 1 . d1 Pi(? = Pi(j-l) + gi,j-l . dj-1 Pi - PiCk)  (2 ? j ? k) (3)  Inspired by evaluation in [18], splitting big data blocks into small data regions can reduce cache replacement during encoding. As shown in Fig.l, in conventional encoding, each parity block's generation need to read all data blocks. Limited by cache size, much of data block's access will cause cache miss. In our Partition Encoding, data regions are accessed in a good temporal locality way. Each data region is loaded into cache to do multiplication and XOR with parity region by m times. Except for the first time, data region access will not cause any cache miss. This strategy can save much time spent on main memory reference.
+
+To reduce the time of processing write requests further, we could commit the data regions to storage device once data  Conventional Encoding Partition Encoding  Data blocks Data blocks  Parity blocks Pa rity blocks  Fig. l. Conventional Encoding vs Partition Encoding. Both policy are configured with k = 5 and m = 3. Compared with conventional encoding, Partition Encoding splits spilts the original each of k data blocks into regions and completes the infinite arithmetic one region by another.
+
+Conventional Encoding  Partition Encoding  t" t"  Fig. 2. Conventional Encoding vs Partition Encoding in writing 5 data blocks.
+
+Conventional Encoding has to wait a encoding time te before starting write data blocks to disk while the Partition Encoding can overlap the encoding time te' with the data writing time two  is loaded into the memory of encoding node. The effect of this approach can be shown in Fig.2. This policy parallels the encoding process and the data writing process, which can overlap the encoding time with the data writing and helps to improve the encoding throughput.
+
+To be noticed, the consistency model is changed due to our modification compared with the conventional encoding flow. In our method, while append operations happens, the mapping information for this stripe is maintained until all parities of the stripe are written to storage devices. If parity blocks cannot be written to disk due to unexpected reasons, for example, temporal node failure, the stripe consistency can be recovered after the node reinstated. By recorded stripe mapping information, we could read data blocks and regenerate their parities.
+
+
+
+IV. ADAPTIVE PLACEMENT  Since data placement can affect the distribution of data and workload, it plays an important role in the utilization of storage servers. As for online erasure code based cluster file system, the distribution of workload is harder to balance since all the blocks in the same stripe should be placed to different storage servers to achieve required reliability. In order to avoid unbalanced and hot spots, we adopt an Adaptive    Placement strategy that distributes new data among storage devices according to per-server weight value, which is a approximate uniform probability distribution. Besides CPU usage, storage usage and network status, we take the data access history of storage server into account to calculate the weight value. And this weight value will be refreshed regularly to adaptively reflect the status of storage server.
+
+A. Temperature of Server  Locality of reference is a fundamental principle of com? puting with many applications, and there is no exception for online Erasure code based cluster file system. According to the locality principle, if a data block is accessed at one time, it is possible that the data block would be accessed soon. However, the longer a data has not been accessed since last access, the less possible the data is going to be accessed again. In the cluster file system, if a data segment is accessed at to, then it has a probability to be accessed again at next time tick t1 because of the effect of the temporal locality. However, if the data section is not accessed at t1, the probability that it will be accessed at time tick t2 would be lower, because of the impact of the time tick t1. If we can describe the locality in the cluster file system, we can predict each node's workload trend and avoid overmuch data to be placed at the same node and balance the whole system's load.
+
+To give a more accurate weight-value for each storage server, the activity of storage server should be considered.
+
+As storage server can be viewed as a data set, its activity can be predicted by the locality of reference. Then we define a variable Temperature to represent the activity of a storage server. The temperature of a storage server can be calculated by the temperature of the past and the accumulated access times since last time. It can be described as follows:  In Equation 4, Ti is temperature of storage server at time "ti, T is the coefficient of convergence to node's locality, and Hi+i is the temperature increasement to the node at time ti+ 1.
+
+As different applications may show different data locality, the coefficient of T should be adjusted with the change of data access pattern. For broadband applications like video on demand, it usually has good data locality characteristics to follow. In these circumstances, the value of T should be set big to take the locality into consideration. However, in some other situations like DNA sequencing, there is no obvious data locality to follow, so the value of T should be small. The best way to set the value of T is to detect the data access model, then adjust T according to the detection dynamically.
+
+B. Workload Evaluation  In Erasure Code based cluster file system, to achieve a higher aggregated write bandwidth, we should consider servers' CPU usage, storage utilization, network status and the temperature of servers when placing a new data. In order to evaluate each node's workload in the storage cluster, we derive a equation to score each node. Then, we can determine the workload status of the node. The equation goes as follows:  T  o  Fig. 3. A probability description example to data locality: Assuming that at first the node has a high node temperature. When there is no real access to the node, the probability goes down slowly. At time tl. the data on the node is accessed again, then the temperature goes up sharply. after that if there is no access any more, the node temperature will go down again.
+
+a?C +b?F S = -:-::---::---::::----:-c?N +d?T + l (5)  In Equation 5, C represents idle CPU usage of the node, F is the free space ratio in the node storage, N stands for the network status and T is the node temperature mentioned before, whereas a, b, c and d are coefficients of the factors.
+
+Since C and F are of the same importance to the node score, we set all coefficient a and b with the same weight(50% to 50%) in our prototype ECFS. The network status and the node temperature also affect the node score in the same way, so c and d have the same weight too. Since C and Fare positively correlated with the score, they both are placed as numerator, while Nand T are placed as denominator because being negatively correlated with the score. The denominator should plus 1 because when the system is just started, the network load and the node temperature are both Os.
+
+Through Equation 5, we can estimate if a node's workload is heavy when a new data block is committed to the system, the system will select the node with highest score to store the data.
+
+C. Data Placement  A robust approach to data placement is always to select the node with the highest score to place the new data. In Erasure Code based file system, every stripe have k data blocks and m parity blocks. The data placement should consider not only the workload of the nodes but also data reliability in the same stripe.
+
+Node failures are the norm in the cluster file system with a large number of storage nodes [23], [24]. When considering data placement, to achieve the data safety, we divide the network topology of storage cluster into three layers, and maintain this layer data structure in our system to instruct placement. L1 layer is the sub-network of the system, L2 layer is the row in the sub-network L1, and L3 layer is the cabinet in the row L2. Each L1 layer may consists of more than one L2, and each L2 may contain many L3. As L3 represent cabinet in the cluster, it may contains 10-20 storage servers depending on the capacity of cabinet.
+
+Root  node  Fig. 4. Node score collection in Adaptive Placement. The nodes in the cluster are divided into three layers, hence prime node at level L1 will collect the nodes' score at level L2 while the prime node at level L2 collects nodes' score from the nodes at level L3 and the prime node at level L3 collects from each node under the corresponding level L3.
+
+When selecting a node for the data block placement, if we query each node's score to get the node with the lowest workload, the communication overhead would be too high to accept.
+
+To reduce the query overhead, we collect the score of servers in an top-down way. Each layer will elect one server as its prime node, which is in charge of collecting the score of servers from its lower layer. The prime node in each L3 layer collects the scores from all the servers in the same cabinet.
+
+The top-down collecting process is shown as FigA.
+
+This collecting process is triggered in period to keep the score fresh. Our storage system will maintain a sorted queue of all the Ll layers. And the prime node in each Ll layer holds all the scores of its belonging servers and sorts them to accelerate queries.
+
+When choosing a server for a new data block or parity block, the node selection process of Adaptive Placement is shown in Algorithm 1.
+
+In Algorithm 1, we first select the Ll with the highest score(Ll's score is calculated by accumulating all the node scores it maintains). Then we select the node with highest score in the selecting list of this L1. If the node has not been used for the current stripe, we append it to the stripe list and return its id. If the appropriate node is not found in the current L1, we continue to select the node from the Ll with the second highest score. If all the nodes have been used for the current stripe, we just pick the node with the greatest score in the cluster(it means some nodes in the cluster may contain multiple blocks from the same stripe).
+
+According to Adaptive Placement, the system will dis? tribute data blocks and parity blocks in the same stripe to different failure domains. In each failure domain, it picks the nodes with the highest scores. Adaptive Placement not only guarantees the data safety in the cluster but also improves storage utilization through placing data by considering the dynamic workload of the cluster.
+
+Algorithm 1: Node selection.
+
+Input : s: the nodes already selected; i: Ll list; Output: id: selected id.
+
+1 id +- -1; 2 i +- 0; 3 while i < leng th(i) do 4 tmpLl +- Ll wi th highes t s core in i; 5 j +- 0; 6 while j < leng th( tmpL1) do 7 l id +- node wi th highes t s core in tmpLl; 8 if id ? s then 9 l s= s+ id;  10 return id; 11 j++; 12 i++; 13 id +- node wi th highes t s core in all the nodes; 14 return id;
+
+V. IMPLEMENTATION  In order to evaluate the optimization on the data path of Erasure Code based storage system, we develop an Erasure Code based cluster file system prototype named ECFS.
+
+A. System Architecture  ECFS consists of four components: an asynchronous mes? sage passing library (AMPL), metadata servers, storage servers and FUSE-based clients. For the concern of system portability , the prototype is mainly implemented in the user space.
+
+AMPL is the communication layer between different servers in ECFS. Since ECFS is distributed, AMPL provides communication APIs for different servers to pass all kinds of messages. AMPL is a higher package of TCP/IP protocol with support of sending messages in asynchronous and synchronous mode, AMPL is totally multi-threaded, so the callers don't need to consider the parallelism of the communication.
+
+Metadata servers are in charge of the names pace manage? ment for the whole file system, In local file system, inode and dentry are separated, however, according to previous studies [25], [26], [27], we combine the inode and the dentry of the same file to a new data structure named dinode, which can reduce the cost of consistency maintenance. Moreover, according to the previous study [27] on metadata, we use extendible hash to manage directory to achieve high scalable of metadata management.
+
+Storage servers are the core of our design because most of optimizations are implemented in storage servers. To improve data reliability, we maintain a tree structure to represent net? work topology of the storage cluster. Adaptive Placement need to check the candidate server's position in the tree structure to guarantee data reliability.
+
+Client is implemented in user mode through fuse [28] to avoid the plague of kernel debugging. Different with traditional cluster file systems, clients in ECFS need to provide data encoding function to reduce data transportation.
+
+Fig. 5. Client Encoding example: at first, data blocks are only sent to the data storage server; when encoding process is completed, the parities are sent to the parity storage nodes.
+
+B. Client Encoding  As mentioned above, data encoding is implemented in client of ECFS. The data encoding in ECFS is implemented by three steps. Firstly, we divide data blocks into small data regions that adapts to CPU's cache size. Secondly, we proceed Galois Field multiplication by invoking Plank's library [29].
+
+Thirdly, the intermediate parities generated from the second step will be cached in memory until the encoding of stripe encoding is completed, then cached parities will be committed to storage servers.
+
+
+
+VI. EVALUATION  In this section, we are going to evaluation the optimization in ECFS. Our evaluation is proceeded in a cluster testbed with 32 nodes. Each node is composed of 2-way Intel(R) Xeon(R) CPU E5-2650 processors and 16GB memory. To accelerate test and avoid memory caching effect, we configured nodes with only 2GB memory for testing. All the nodes are interconnected by Infiniband FOR. Each node is configured with two 1 TB nOORPM hard drive: one for operating system and the other for data storage. In our evaluation, since metadata operations are not bottleneck of write bandwidth, the test file system is only configured with one metadata server. Data storage servers and FUSE-based clients are collocated on all the nodes.
+
+For the experiments below, data block size is configured as 32MB by default, which is chosen based on the tests with various configurations.
+
+A. Encoding Efficiency  To demonstrate the performance of Partition Encoding precisely, the evaluation is taken on a single workstation with one Xeon E3-1230 V2 CPU. We test five configurations of (k, m) in a stripe, including (5, 3), (6, 2), (10, 4), (12, 4) and (12, 6). With each test, we generate k data blocks, each of which is a 64MB sized block with random content. All k data blocks are placed in memory and then encoded into m parity blocks. To show the effect of Partition Encoding, we test with multiply data region size ranging from 64KB to 16MB.
+
+As shown in Fig.6, with the increase of parity number, the improvement over encoding is becoming more obviously.
+
+As for (12, 6) test, when data blocks is larger than 16MB, the entire stripe encoding time can be save with 2l.4% by partition encoding.
+
+To show the improvement of overlap committing data in Partition Encoding optimization, we evaluated Partition En? coding in the cluster testbed and compared Partition Encoding  0.8 r----r----,----,---.---, 0.7 0.6 0.5  ",---"'1--"'<7  0.4 .j.----..--...... --:. __ -_ 0.3 0.2 0.1 :k=?=F=*=*=?  o L----'_--'-_---'-_-'-_-' 64KB 256KB 1MB 4MB 16MB 64MB  Data region size  (5,3) -+? (6,2)?  (10,4) -+? (12,4) ? (12,6) ----'V-  Fig. 6. Partition Encoding with multiply data region size  ? 1800 6 1600 -5 1400 .", .? 1200 .", c: 1000 '"  .D 1l 800 .? 600 1l 400 '" 01) 1:: 200 01) 01)  0 ?  Conventional Encoding --+-? Partition Encoding ---*-  16 24  Node Count  Fig. 7. Partition Encoding vs Conventional Encoding   with Conventional Encoding, which blocks commlttmg data until the committing data has been encoded.
+
+From Fig.7, we can see Partition Encoding showing higher performance than Conventional Encoding in cluster file system.
+
+What's more, the aggregated write performance is nearly linear scalable with the increase of storage servers. In 32 nodes system configuration, Partition Encoding can achieve 111SMB/s aggregated write bandwidth, which is 34.7% higher than the Conventional Encoding.
+
+B. Data Placement  To evaluate Adaptive Placement, we simulated two kinds of workloads for the cluster testbed. One is a balanced workload.
+
+To simulate balanced workload, every client in the cluster testbed will invoke an IOzone thread to write 4GB data into ECFS in parallel. The other is an unbalanced workload. To simulate unbalanced workload, besides every client invoke an IOzone thread to write 4GB data into ECFS, we select half of configured clients to invoke another IOzone thread to write another 4GB data at the meantime. As random placement and Round-Robin placement are two traditional and widely used placements, we compared Adaptive placement with both of them. All the tests in this section are taken on the cluster testbed, and data is encoded with Reed-Solomon code (6,2).
+
+Fig.S shows the aggregated client write bandwidth under balanced workload. The random placement doesn't work well.
+
+Since random placement assigns blocks randomly among all the storage server, workload is unbalanced when blocks are committing to storage sever. The Round-Robin placement per? forms better than Random placement. Round-Robin placement    ? 1400 Random --+-- 6 1200 Round-Robin ----*- -5 Adaptive --+-- "0 LOOO .?: "0  800 c: '" .D 1l 600 .? 1l 400 '" 01)  200 ? 01) 01) ? 0  8 16 32  Node Count  Fig. 8. Write bandwidth under balanced workload  Random -  190 Round-Robin - Adaptive ?  c: 180  ? :::l 0  U 170 "" u 0 iii 160   0 4 8 12 16 20 24 28 32  Node ID  Fig. 9. Data distribution under balanced workload  assigns blocks to storage servers in an order way. So workload of different storage servers are equal in general. However, since Round-Robin placement does not consider node status when placing data, write bandwidth of this method is lower than that of Adaptive Placement. As shown in Fig.8, in the test taken on 32 nodes, write bandwidth of Adaptive Placement is 12.9% higher than Round-Robin placement and 38.9% higher than random placement.
+
+The storage space usage of the cluster with 32 nodes is depicted in Fig.9. We can find that the storage utilization of random placement is unbalanced. In contrast, through Round? Robin placement, storage utilization of each storage server is equal. Compared with the other two placement methods, Adap? tive Placement can achieve higher performance and relative balanced storage utilization.
+
+While workload on clients are unbalanced, the compar? isons of placement methods in write bandwidth are shown in Fig.lO and Fig.ll. Through Roud-Robin placement, un? balanced workload will bring unbalanced storage distribution, which will reduce the aggregated write bandwidth. Since Adaptive Placement always check storage server's status when placing new data, when test is taken in 32 nodes, its perfor? mance is 22.7% higher than Round-Robin placement and 42% higher than random placement.
+
+
+
+VII. CONCLUSION  Erasure Code based cluster file system is cost-efficient for massive data storage. However, online Erasure Code based cluster file system hasn't been the mainstream due to its write  ? 1800  Random --+-- 6 Round-Robin ----*- -5 1400 Adaptive --+-- "0 ?: 1200  "0 c: LOOO '"  .D 1l 800 .? 600 1l 400 '" 01) ? 200 01) 01)  0 ? 8 16 32  Node Count  Fig. 10. Write bandwidth under unbalanced workload  Random -  Round-Robin - 350 Adaptive ?  c: 300 :::l 0  U "" u 250 0 iii    0 4 8 12 16 20 24 28 32  NodeID  Fig. 11. Data distribution under unbalanced workload  bottlenecks in data encoding and data placement. To address write efficiency of online erasure code based storage, we pro? pose two optimizations over data encoding and data placement.
+
+Partition Encoding is presented to partition encoded data to improve CPU cache utilization and overlap data encoding with data committing. Adaptive Placement is presented to improve the utilization of storage servers through better utilizing data locality and server status when placing new data.
+
+The experiment results show that write bandwidth can be improved effectively through our two optimizations. The encoding bandwidth can be improved by 2l.4% through Par? tition Encoding. And Adaptive Placement can improve write bandwidth by 38.9% and 42% under balanced and unbalanced workloads respectively.
+
+
+
+VIII. ACKNOW LEDGMENT  This work is supported by the National Basic Research Program of China (NO.20l2CB3l6502) and the National High-Tech Research and Development Program of China (NO.2013AAOlA211). Authors of this paper would like to thank lames Plank of University of Tennessee for his technical inspiration. The authors would also like to thank Dr. Ping Li of Beijing liaotong University for her discussion and helpful advices.
+

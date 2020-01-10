@@ -1,0 +1,72 @@
+SWAPHI: Smith-Waterman Protein Database Search on Xeon Phi Coprocessors
+
+Abstract?The maximal sensitivity of the Smith-Waterman algorithm has enabled its wide use in biological sequence database search. Unfortunately, the high sensitivity comes at the ex- pense of quadratic time complexity, which makes the algorithm computationally demanding for big databases. In this paper, we present SWAPHI, the first parallelized algorithm employing the emerging Xeon Phis to accelerate Smith-Waterman protein database search. SWAPHI is designed based on the scale-and- vectorize approach, i.e. it boosts alignment speed by effectively utilizing both the coarse-grained parallelism from the many co- processing cores (scale) and the fine-grained parallelism from 512- bit wide single instruction multiple data (SIMD) vectors per core (vectorize). By searching against the large UniProtKB/TrEMBL protein database, SWAPHI achieves a performance of up to 58.8 billion cell updates per second (GCUPS) on a single Xeon Phi and up to 228.4 GCUPS on four Xeon Phis. Moreover, SWAPHI using four Xeon Phis is superior to both SWIPE on 16 high- end CPU cores and BLAST+ on 8 cores, with the maximum speedup of 1.52 and 1.86, respectively. SWAPHI is freely available at http://swaphi.sourceforge.net.
+
+
+
+I. INTRODUCTION  As an optimal method, the Smith-Waterman (SW) algo- rithm [1] is able to compute the optimal local alignments of two sequences S1 and S2. This algorithm has a dynamic programming kernel whose recurrence with affine gap penalty is defined as  Hi,j = max{0, Ei,j, Fi,j , Hi?1,j?1 + sbt(S1[i], S2[j])}  Ei,j = max{Ei?1,j , Hi?1,j ? ?} ? ?  Fi,j = max{Fi,j?1, Hi,j?1 ? ?} ? ?  (1) where S[k] is the k-th character of sequence S (0 < k ? |S|), ? is the gap opening penalty, ? is the gap extension penalty, and sbt is a scoring function (usually represented as a scoring matrix) that defines the substitution scores between characters.
+
+This recurrence is initialized as Hi,0=H0,j=E0,j=Fi,0=0 for 0 ? i ? |S1| and 0 ? j ? |S2|.
+
+The SW algorithm is able to compute the optimal local alignment score (i.e. the maximum score in matrix H) in linear space, but has a quadratic time complexity. The quadratic runtime makes it computationally demanding for big sequence databases, and has therefore motivated the investigation of its acceleration on a variety of high-performance computing platforms, among which accelerators have been the predom- inant technique. Among existing accelerators, SIMD vector processing units (VPUs) affiliated to CPUs are undoubtedly most widely used. Existing vectorization approaches can be  classified into two categories: inter-sequence model and intra- sequence model. Inter-sequence model computes multiple alignments in SIMD vectors with one alignment per vector lane, whereas intra-sequence model targets the alignment of a single sequence pair. Both inter-sequence and intra-sequence models constitute the foundation of existing parallelized im- plementations on accelerators with VPUs, such as graphics processing units (GPUs) [2] and Xeon Phis.
+
+A Xeon Phi is a shared-memory manycore computer, which provides full cache (L1/L2 cache hierarchy) coherency over the entire chip and runs a specialized Linux operating system (OS).
+
+The Xeon Phi is comprised of a set of processor cores, and each core offers four-way simultaneous multithreading. While offering scalar processing, each core also includes a newly- designed VPU which features 512-bit wide SIMD instructions.
+
+Each vector can be split to either 16 32-bit-wide lanes or 8 64-bit-wide lanes. There are two usage models for invoking the Xeon Phi: native and offload. We have adopted the offload model in our algorithm.
+
+In this paper, we present SWAPHI, the first parallelized SW algorithm on Xeon Phis for protein sequence database search. This algorithm attains high speed by coupling both the fine-grained parallelism within 512-bit wide SIMD vectors (a 512-bit SIMD vector is split to 16 32-bit-wide lanes) and the coarse-grained parallelism over the many proces- sor cores. Performance evaluations, by searching against the UniProtKB/TrEMBL (TrEMBL) protein database, reveal that SWAPHI achieves a performance of up to 58.8 GCUPS on a single Xeon Phi and up to 228.4 GCUPS on four Xeon Phis.
+
+
+
+II. PARALLELIZATION ON XEON PHIS  We have investigated three variants: inter-sequence model with score profile [3] (InterSP), inter-sequence model with query profile (InterQP), and intra-sequence model with query profile (IntraQP). Both InterSP and InterQP have adopted a tiled computation similar to that used in the GPU-based CUDASW++ 3.0 [4] in order to significantly reduce the number of memory accesses. This is because we have observed that access to Xeon Phi device memory is still heavy in some sense, albeit with two-level caching and high memory bandwidth. IntraQP is designed based on Farrar?s striped approach [5], which visits the query profile in a striped layout.
+
+In contrast, InterQP has adopted a sequential-layout query profile. We have aligned as many memory accesses as possible to facilitate fast vector load/store operations. The Xeon Phi requires an alignment to 64 bytes and enables the allocation     ?  ???? ??? ? ???? ???? ?? ??? 	??? ?	? ???  ???? ??? ?????? ?? ???? ? ??? ????? ? ? ?????  ??????? ?? ?????? ? ?? ?? ???? ??? ??????? ??????? ??? ?? ??????? ??? ?? ???? ?????? ?? ???? ???? ?? ?? ?   ????? ???? ???? ???? ??  ??????  ???????? ? ?????? !
+
+" ??	 ? ?	??? ?? ??? ? ? ???????   ????  ??????? ?? ????? ?????? ??? ??????? ? ???? ?	??? ?????  ?????#? ?????  ??????? ?? ? ? ??  ????? ???? ? ????  ??? ? ? ???  $ ?  %?  ??????? ? ?????? ?? ???? ?? ?? ???? ??? ?????? ?? ?? ???????????? ????  &???????? ? ?? ?? ????? ??? ? ?? ?? ?? ???????   Fig. 1: Program workflow of SWAPHI  of aligned memory either by compiler storage-class attributes or specialized functions (e.g. mm malloc()).
+
+All of the three variants share the same program workflow (see Fig. 1), which generally works in four stages: (i) construct a query profile for the query if applicable, depending on the alignment configurations; (ii) perform alignments by creating as many host threads as the number of Xeon Phis used, where host threads have one-to-one correspondence to Xeon Phis; (iii) wait for the completion of all host threads; and (iv) sort all alignment scores in descending order and output the alignment results. In Stage (ii), each host thread carries out and coordinates the offloading operations to its Xeon Phi. To alleviate memory pressure, each host thread loads the database sequences onto the Xeon Phi chunk-by-chunk at the runtime.
+
+To support big databases and achieve good load balance, we build indices for the input database offline, prior to alignment, and store the index files on disk. All database sequences are sorted in ascending order of sequence length for the indexing.
+
+The index files have been carefully organized so that they can be randomly accessed after memory mapping.
+
+
+
+III. RESULTS AND DISCUSSION  We have evaluated the performance of SWAPHI by search- ing 20 queries (lengths range from 144 to 5,478) against the TrEMBL database (13,208,986,710 amino acids in 41,451,118 sequences). All of the tests are conducted on a compute node with two Intel E5-2670 8-core 2.60 GHz CPUs and 64 GB RAM running the Linux OS. This node is further equipped with four Xeon Phis (product name B1PRQ-5110P/5120D), each of which has 60 processor cores and 7.9 GB RAM.
+
+First, we have compared the performance of the three vari- ants (see Fig. 2(a)). All variants have used the same scoring scheme, i.e. scoring matrix BLOSUM62 and a gap penalty of 10-2k. Both InterSP and InterQP demonstrate superior performance to IntraQP. The performance of both InterSP and InterQP consistently improves for increasing query lengths.
+
+' *' <'' <*' >'' >*'  <?
+
+?
+
+<\ ^  >> >  _` *  ?j ?
+
+*j `  j* `  `> ^  \* '  <' ''  <* ''  >' '*  >* '?
+
+_' '*  _* j?
+
+?' j<  ?* ?\  ?` ?_  *< ?`  *?
+
+`\  ? ? ? ??  ??????	????  {?? ??|}?<}|	?? {?? ??|}??}|	??? {?? ?~|}?<}|	??  {?? ?~|}??}|	??? {????~|}?<}|	?? {????~|}??}|	???  ' <'' >'' _'' ?'' *'' j''  <?
+
+?
+
+<\ ^  >> >  _` *  ?j ?
+
+*j `  j* `  `> ^  \* '  <' ''  <* ''  >' '*  >* '?
+
+_' '*  _* j?
+
+?' j<  ?* ?\  ?` ?_  *< ?`  *?
+
+`\  ? ? ? ??  ??????	????  ??|?{}??}|	??? ?????}?\}??? ?? ?????}?<j}??? ??  ??{|?}?\}??? ?? ??{|?}?<j}??? ?? ???  ???  ? Fig. 2: Performance comparison of all evaluated algorithms  InterSP outperforms InterQP for the queries of lengths ? 375, whereas the latter is superior for the remainder. This can be explained by the additional overhead incurred by the score profile construction, which cannot be effectively offset by the alignment computation for shorter queries. By using InterSP, SWAPHI achieves a performance of up to 58.8 GCUPS on a single Xeon Phi and up to 228.4 GCUPS on four Xeon Phis.
+
+Subsequently, we have compared SWAPHI to SWIPE (v2.0.7) [3] and BLAST+ (v2.2.28) [6] (see Fig. 2(b)).
+
+SWAPHI used the InterSP variant and each algorithm used its default scoring scheme. Additionally, SWIPE and BLAST+ used other options ?-b 0 -v 0? and ?-num alignments 0?, respectively. On four Xeon Phis, SWAPHI could not outper- form BLAST+ on 16 CPU cores, but is superior to SWIPE on 16 cores. Compared to BLAST+ on 8 cores, SWAPHI performs better for most queries and runs 1.19? faster on average (1.86? maximally). Compared to SWIPE on 8 and 16 cores, SWAPHI gives a speedup of 2.49 and 1.34 on average (2.83 and 1.52 maximally), respectively.
+
+Currently, SWAPHI has merely exploited Xeon Phis. An approach to further boosting the performance can be concur- rently performing alignments on both CPUs and Xeon Phis by means of a hybrid parallelism model [4].
+

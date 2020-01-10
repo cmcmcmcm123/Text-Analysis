@@ -1,0 +1,118 @@
+A Scalable Real-time Photometric System for Automatic Astronomical Observations on Dome A
+
+Abstract?Deployed on Dome A of Antarctica, the AST3 astronomical telescopes are required to perform the sky sur- vey in the extreme unmanned environments and process the observed data in real-time to offer the astronomers far back home with the timely observation results. A scalable real-time photometric system is proposed and designed for the automatic astronomical observations of AST3. A GPU-based algorithm for image subtraction photometry is proposed to improve the efficiency of this most time-consuming prodedure in the data processing workflow. To impove the reliability, the system is organized in a HA cluster and equipped with a specially designed daemon. The system has been practically utilized in the astronomical observations with the development of AST3 telescopes.
+
+Keywords-real-time photometric system; big data; automatic astronomical observation; HA cluster; adaptive system; AST3;
+
+I. INTRODUCTION  The AST3 (Antarctic Survey Telescopes, consisting of an array of three 0.5m optical telescopes) project is being carried out by the Chinese Center for Antarctic Astronomy on Dome A of Antarctica with science goals including research on supernovas and extrasolar planets[1][2]. With a surface elevation of 4093 meters, Dome A is the highest place in Antarctica with its lowest temperature reaching below -80?C in the night. Annually, there are only around 20 days suitable for the researchers to work there. As planned, researchers can only reach Antarctica annually or even biennially by Xue Long icebreaker. Thus, AST3 is required to be capable to work without the guard of mannual operations over the long and harsh Antarctic nights.
+
+When in operation, each of the AST3 telescopes theoreti- cally provides 200MB images per 2.4 minutes which reaches up to 360GB a day, which cannot be transmitted back through the slow and expensive satellite communications.
+
+On dome A of Antarctica, the only possible means of com- munication is the Iridium satellites whose total bandwidth is only 28.8 kb/s. Although TCP/IP is supported, it?s almost unacceptable to transmit those images back even in a speed of up to 10 kb/s, claimed by Iridium in their direct Internet  service[3]. It would be a huge cost considering the exorbitant charge.
+
+However, the massive data far away is required to be processed timely according to its intended science purposes.
+
+The major science missions of AST3 telescopes include searching for supernovae and extrasolar planets. Supernova, a kind of stellar explosion, is extremely luminous and can cause a burst of radiation that often briefly outshines an entire galaxy, before fading from view over several weeks or months. During this interval, the telescopes are expected to record the complete procedure of the explosion. Thus, observations are needed to be carried on continuously in the area where a possible supernova is discovered, which raises request for the system to offer the latest transients. In search of an extrasolar planet, the light curves of transients are supposed to be accumulated for analyzing whether it is a planet and the characteristics of it. Once again, the latest transients should be prepared for the sake of further studies.
+
+It can?t be tolerated if we fail to offer the astronomers the up- to-date observation results. In this case, these data need to be processed, especially classified and preliminarily photome- tered, locally. And only the final results (compressed text files) and some of the important images will be transmitted back home.
+
+The data processing procedures include image subtraction, PSF fitting photometry, aperture photometry, light curve analysis etc., most of which are quite time-consuming con- sidering the data scale. The image processing has to be performed in real-time, to catch the objects which changed notably in short time such the initial phase of a supernova explosion. Of course, all observed data will be stored in special designed disk array for further batch processing to do other type of astronomical research, after the data disks are carried back with the next round of national exploration plan to Antarctic. We can?t do more data processing in-situ at Dome A constrained by the power supply.
+
+It means that a real-time system is required during the observations in order to undertake the new images from the telescopes and deal with each of them within the limited  2014 14th IEEE/ACM International Symposium on Cluster, Cloud and Grid Computing  DOI 10.1109/CCGrid.2014.36     2.4 minutes. In addition, as the AST3 project is still on- going, the three sets of telescopes and their corresponding processing computers will be transported to the Antarctic one by one gradually. Therefore, the system needs to be scalable enough to guarantee the normal operation of the existing facilities when new telescopes and computers are added.
+
+On the conditions mentioned above, there are three main challenges we are facing:  1. Real-time data processing. The observed images need to be processed within the limited time before the next image produced.
+
+2. Scalability. The system should be scalable with the addition of new facilities.
+
+3. Reliability. To adapt to the extreme environment, relia- bility of both infrastructure and software system should be considered seriously.
+
+Accordingly, we set out to design and implement a real- time photometric system for AST3 to meet these challenges.
+
+It is required to equip AST3 with a scalable system which is both efficient enough to accomplish real-time photomet- ric processing and reliable enough to keep itself running smoothly in the extreme and unmanned surrounding.
+
+In the rest of the paper, the detailed design and imple- mentation of this system will be demonstrated. Section II introduces the basic data processing workflow of the astro- nomical observations and the GPU based parallel algorithm we proposed to speed up the image subtraction photometry.
+
+Section III presents the architecture of the system, namely, how the computers in this system are organized and how they cooperate with each other. Section IV gives a detailed description of the mechanisms to help the system keep reliable, which are implemented in the AST3 Daemon.
+
+And the conclusions of the paper and our future work are presented in section V.
+
+
+
+II. DATA PROCESSING WORKFLOW  The data processing of AST3 start from the observation of images and obtain all of the observed celestial bodies and the star catalogs and light curves of the discovered transient sources[4]. Subsequential data processing depend on the preliminary observation results. And before data pro- cessing, it is required to establish some standards utilizing pre-selected observational data, which include the selection of the photometric standards of the observation sky area and the astrometric standards of the sky coordinate, the establishment of the observing sky templates, metering and location calibration.
+
+The workflow of the data processing is shown in Figure 1. After a round of observation is completed, the CCD images are handled by the necessary processes (the image photometry pipeline). We need to detect the sources from the images, and calibrate their locations with templates and  Figure 1. Data processing workflow of AST3  astrometric standards. Subsequently, the most important pro- cesses, photometries, are performed. The result star catalogs contain the locations and magnitudes of all of the sources.
+
+Light curves of changed sources need to be analyzed in real time in order to find special transient sources. And the transient sources will be picked out, with which as the center the small stamp images will be cut out separately and transmitted back together with the star catalogs.
+
+The photometric processing involves three different op- tional methods: difference image analysis, namely, image subtraction photometry; PSF-fitting photometry; aperture photometry.
+
+Among these three metering processes, the image sub- traction photometry[5] is of great importance and will be most frequently used during the actual observations of AST3 to obtain the transient catalogs which can help in the observations of supernovae and extrasolar planets searching.
+
+The core component of the image subtraction photometry, the astronomical image subtraction photometry algorithm (AISP)[6], with many floating point operations, is very time-consuming. An image of 10K?10K size will take approximately 6 minutes to be processed with AISP, which is obviously intolerable in this project where we only get 2.4 minutes to deal with every single image.
+
+In terms of the real-time processing requirement of the AST3 project, a major attempt on improving the perfor-     Figure 2. The flowchart of AISP  Figure 3. Image subtraction photometry  mance of the existing subtraction photometric algorithm is taken[7]. We designed and implemented an efficient GPU- based improvement algorithm (GBAISP, GPU based Astro- nomical Image Subtraction Photometry) to accelerate AISP.
+
+The implementation is based on the HOTPANTS package[8], a popular astronomical image analysis package, with CUDA GPU.
+
+Figure 2 presents the the flowchart of AISP. The AISP processes can be divided into three parts: pre-processing, convolution and image subtraction. In pre-processing, the input image I and the template image T are stored into mem- ory from disk. And then the template image is convolved with a computed kernel K. In the end, the input image is subtracted by the convolved template image, from which a result image can be generated. As in Figure 3, the input image is subtracted by the convolved template image so that the differences will be found. The complexity of convolving the template image is O(mnk2) in AISP, where k is the length of the kernel, m is the length of the image and n is the width of the image. According to our statistical analysis, almost 60% to 80% of the time is occupied in the convolution part when large scale images are dealt with in AISP. Thus, in our proposed algorithm, GBAISP, we focus on the optimization of the convolution part.
+
+In GBAISP, pre-processing part and the image subtraction are done on CPU, and convolution is done on GPU. The convolution in the original serial algorithm AISP divides the image into multiple sub-stamps which have the same size with the convolution kernel. And before each sub-stamp is convolved, its convolution kernel, which is spatially- varying[9], needs to be calculated. In CUDA framework, a kernel function launches a grid of thread blocks. Threads within a block cooperate via shared memory[10]. Therefore, the image can be mapped into one CUDA grid. Each  Figure 4. Performance improvement of GPU-based image subtraction photometry  sub-stamp can be mapped into a block within the grid accordingly. And the convolution of each pixel in the sub- stamp is delivered to the threads within the block. There are two levels of parallelization: the calculation of each sub- stamp, and the calculation of each pixel within the sub- stamp. The detailed mathematical analysis and implemen- tation of GBAISP is in another corresponding paper under publication.
+
+In the experiments, the time consumed by the original algorithm AISP and the proposed algorithm GBAISP was tested respectively when the input images and the template images are in different sizes (ranging from 1K?1K to 10K?10K). Figure 4 presents the time used by the original algorithm AISP (Intel i7 CPU, 2.67GHz, 6GB Memory) and the proposed algorithm GBAISP (Nvidia GTX660 GPU) in the whole process of image subtraction photometry (from pre-processing to the result image outputting) respec- tively. When dealing with larger scale images (8K?8K to 10K?10K), the speedup made by the proposed algorithm GBAISP is very obvious. In the case of 10K?10K, the runtime of the whole substraction photometry procedure sharply declines from over 300 seconds to 125 seconds.
+
+
+
+III. ARCHITECTURE OF THE SYSTEM  The AST3 telescopes are equipped with three data pro- cessing computers, by which a high availability cluster (HA cluster) will be formed. This HA cluster manages and schedules the three computers uniformly. Each node of the cluster deals with the observation data from the specific telescope when they are operating normally. Within each node, we establish mathematical model to describe the CPU utilization, memory usage, disk partition / volume occupancy rate, I / O device status and other key resources of the oper- ation environment and the resource consumption indicators during the operation of each data processing module, and then determine a dynamic task scheduling strategy to adjust     Figure 5. HA Cluster configuration of the system  the real-time data processing according the state of system resources.
+
+A daemon independent from data processing is designed to adjust the data processing according to configuration files and support remote control of the system and updates of some functional modules. The configuration files and sources codes can be transmitted to the computers via Iridium satellite. And on the other hand, this daemon also works as a reliable service to prevent the node that it is deployed on from breaking down and keep it running smoothly, which will be described in detail in the next section. To facilitate the description, this daemon is named as the AST3 Daemon in the followings.
+
+The AST3 Daemon measures and controls the running status of the node. Once serious faults occur in one of the nodes, which stop to work accordingly, the data processing work on it will be transferred temporarily or permanently to another node. The AST3 Daemon supports two kinds of HA mechanisms: cyclic backup mechanism and redundant backup mechanism.
+
+As shown in Figure 5, given the 3 computers A, B and C corresponding to the 3 telescopes, in cyclic backup mechanism, B is the backup of A, C is the backup of B and A is the backup of C and in redundant backup mechanism, an added node D is included, which won?t get involved in any data processing work in normal occasions and will become the backup node when one of the nodes A, B, C down.
+
+Within each computer node, AST3 Daemon is deployed and manages the running of the node itself.
+
+Figure 6. The workflow chart of AST3 Daemon
+
+IV. THE AST3 DAEMON  The AST3 Daemon, is designed to be equipped with the features as belows.
+
+A. Start as a Daemon  AST3 Daemon is booted in int 3 and int 5 on the Linux operating systems by default prepared for both text and graphic interface users and is started automatically once the operating system booted. This design is believed to spend less operating system resources and can make sure that it can run all by itself once the computers started up.
+
+B. Task Triggering  Some planned triggers are included in AST3 Daemon.
+
+When the telescope offers new images to the processing     computer, AST3 Daemon will get the image files and startup new subprocesses to perform a series of photometric processing tasks to deal with them. The triggering plan here is that if there are images in the task pool and there are computing resources available, the system will create a new subprocess with the fork function which calls the photometric functions to photometer the next image in queue. The task pool works as a buffer especially when the process of the last images take too much time or even some of processes crashed down. Process level parallelism adopted here makes it possible for the computer to deal with several tasks simultaneously, which contributes to the performance of the whole system.
+
+After its own initialization, AST3 Daemon can get in- formed of whether there are images in the receiving directory (named as task pool in the system) by the inotify mechanism.
+
+And then it will create processes with exec functions to handle them and record logs. There is another reason that the inotify mechanism is used here is that we need to make sure the image from the telescopes has already been transported completely to the directory in case of the possibility that the uncompleted images cause single point fault during the photometric processing.
+
+C. Real-time Monitoring  AST3 Daemon monitors the tasks that have already started in real-time. Once a task is detected to be stopped by an exception, such as faults in the photometric functions, AST3 Daemon will obtain the information, kill the process to avoid the system from crashing caused by single point failure. If the execution time of a certain task is not tolerable, it will be considered to be an unknown failure and forced to stop and restart. All of the normally ended processes send end messages to AST3 Daemon to inform it, and the system marks them as normal ones and logs their information. This mechanism is very essential for AST3 Daemon to keep the whole real-time system running normally and play its adaptive role.
+
+Once the photometric processes are triggered, AST3 Dae- mon will record their information, such as PIDs which can be used in the detection of a process?s operation status, and examine them periodically. If the status turns out to be abnormal, for example the process quited unexpectedly or turned to a zombie process, the information of it will be logged and AST3 Daemon will kill the task and try to restart it. When the number of consecutive failures of a certain task exceeds a certain threshold, the task will be discarded and the information will be logged. If the execution time of a certain task is not tolerable, it will be considered to be an unknown failure and forced to stop and restart. All of the normally ended processes send end messages to AST3 Daemon before quiting to inform it, and the system marks them as normal ones and logs their information.
+
+Table I ROULOGS AND RELOGS  Roulogs Relogs  Classification DEBUG, INFO, ERROR, FATAL itself  Content All kinds of useful information Execution status  Usage Potential data analysis afterwards Recovery  Stored in Text files Binary  Compress Compressed when files get long Never  D. Logging  AST3 Daemon records the information that users might be concerned about and may be useful in the subsequent data analysis and those are related to the system operations and can be utilized in the real-time monitoring, especially in the failure detections and crash recoveries.
+
+Logging is an important approach that can keep a real- time system working normally and help it to resume from disasters. The logs of AST3 Daemon are divided into two parts, and are named as the routine logs and the recovery logs.
+
+The routine logs, as the Roulogs, record the useful in- formation about the execution of the system, including DE- BUG (for debug information), INFO (for routine operation information), ERROR (for error information) and FATAL (for fatal and unrecoverable information). The Roulogs are designed to play their rules in potential data analysis after- wards. The recovery logs, as the Relogs, store the execution status in order to help find the recent crash. The Relogs, which are light and brief and only contains those exactly useful information, are designed to be used in the recovery processes. The Roulogs are kept in text files. And after the length of a logging text file gets over a certain threshold, the text file will be compressed with gzip and a new text file will be created to succeed. While the Relogs are kept in binary without any compression, due to its different usage and scale from Roulogs.
+
+E. Cross-protection and Crash Recovery  A specific protection mechanism is proposed for AST3 Daemon, in which another parallel process is run alongside with AST3 Daemon and if AST3 Daemon crashes, this process will restart AST3 Daemon immediately, so that AST3 Daemon can recover the current state of the execution flow and continue the computing tasks before crash. The cross-protection mechanism is introduced here to help AST3 Daemon itself out of dreams after falling asleep accidentally.
+
+After AST3 Daemon is started, a new Protect Server process will be created. These two processes periodically shake hands with each other to make sure that they are both alive. And once one side of them fails to feedback for more than a certain number of times, the other side will take it as fault and try to restart the failed one. The handshake principle is introduced here to protect AST3     Daemon from crashes and make it possible for it to recover automatically from failure even without the involvement of humans. This cross-protection mechanism can be enabled through the dynamic configuration file described in the last section if the user wants to make this system even more lightweight.
+
+Besides, the original cront process of Linux help to protect AST3 Daemon, which can periodically check processes and help to restart them once crashes happen.
+
+F. Dynamically Configurable  The core parameters of AST3 Daemon can be modified according the actual need through the configuration file, which allows users to manage the the adaptive system flexibly as much as possible.
+
+The overall work flow of AST3 Daemon is shown in Figure 6. AST3 Daemon is designed to be adaptive to handle certain events, such as new arrival of images, exceptions in the photometric processes and system crashes. Meanwhile, a series of mechanisms are proposed to help AST3 Daemon achieve these adaptations and help the processing computer accomplish the real-time data processing tasks. AST3 Dae- mon monitors the newly arrived images and put them into the task pool, after which new sub-processes are created to deal with those images. And it also periodically examines whether there is any exceptions in the running tasks or not to keep the system working smoothly. No matter a task ends normally or not, the corresponding information will be logged for further use.
+
+
+
+V. CONCLUSION AND FUTURE WORK  The real-time photometric system in this paper is to help the AST3 telescopes process the observation data timely and locally so that the astronomers can catch the variable objects such as new supernovae. According to the astronomical science goals of AST3, a real-time photometric workflow, which can handle the instantly captured large-scale images properly and efficiently, is designed and implemented in the system. GPU-based parallelization is used to improve the performance of image subtraction photometric processing.
+
+To ensure the computers can work stably in the extreme conditions at Dome A, an HA cluster is introduced into the system utilizing the corresponding computers with the telescopes and within each node, AST3 Daemon manages the processing tasks and works as an adaptive service to keep the system reliable. SoC-based solution for image subtraction photometry is also under consideration for better performance and power efficeincy[11].
+
+The first set of telescope and data processing system (AST3-1) has been carried to and deployed on Dome A in the year of 2012. And the second set of telescope and data processing system (AST3-2) has been tested in Mohe, the most northern town of China with long night and low temperature in the winter. AST3-2 is on the schedule of  deployment with the next exploration plan to Dome A.
+
+This scalable real-time photometric system is also expected to serve the planning KDUST[12] astronomical telescope project of China.
+

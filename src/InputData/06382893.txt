@@ -1,0 +1,80 @@
+Big Data Challenges A Program Optimization Perspective
+
+abstraction such as thread-level, task-level and data-level parallelism.
+
+? POSIX Threads [20] ? C++ Thread Support Library [21] ? MPI [22] ? OpenMP [23] ? OpenCL [24] ? Task Parallel Library [25] ? Threading Building Blocks [26] ? CilkPlus [27] ? MapReduce [28] ? Software Transactional Memory [29], [30]  ? Galois [31] ? CUDA [32] ? X10 [33] ? Chapel [34] ? Fortress [35]  Inspite of large scale efforts in development of new parallel programming models and programming languages, there are challenges galore that need to be addressed. Specifically:  ? Latency-Throughput trade-off: Customer facing ap- plications such as Google Search, Netflix?s video streaming[36] are subject to the latency vs. throughput trade-off.
+
+? Real time requirements: In [37], it was reported that number of tweets per day are over 250M. Likewise, there is a deluge of data being posted on Facebook, e.g., in [38], it was reported that around 6 billion photos are uploaded on Facebook every month. Searching the ever increasing amounts of data in real time is highly challenging.
+
+? Multi-tenancy: In recent years, a number of cloud providers have sprung such as Amazon?s AWS [39], Microsoft?s Azure [40], Rackspace [41], Cloud Foundry [42]. These cloud offerings have a multi-tenant ar- chitecture. Owing to this, resource availability driven dynamic program optimization becomes paramount so as to meet the SLAs (service level agreements).
+
+? Memory management: Owing to stringent perfor- mance requirements, applications at Netflix often al- locate tens of gigabytes to the heap. This makes the application performance highly sensitive to tuning of the garbage collector.
+
+? Load balancing: Increasing number of cores and number of threads per core call for an explicit support for dynamic load balancing.
+
+? Support for Data Partitioning: As mentioned earlier, the recently announced Intel?s MIC architecture [18] has a 8M L2 cache partitioned across 32 cores. Explicit support for data partitioning would assist exploitation of data affinity on a per thread basis. To this end, Partitioned Global Address Space (PGAS) parallel pro- gramming model has been proposed, which forms the basis for languages such as X10, Chapel and Fortress.
+
+DOI 10.1109/CGC.2012.17     v1  v2  b)  DDG  a)  end do  2: A[i] = B[i] + 1  do i = 1, N  1: B[i] = A[i?1] + r <1>  Figure 1. An example loop and its data dependence graph (DDG)
+
+II. EXPLOITING WIDE SIMD  Akin to multithreaded execution, SIMD [43] execution is an- other way of exploiting data parallelism. SIMD instructions allow processing of multiple pieces of data in a single step, speeding up throughput for many tasks, from video encoding and decoding to image processing to data analysis to physics simulations. As per Cisco?s Visual Networking Index (VNI), Internet video is expected to reach 62% of the consumer Internet traffic by the end of 2015 [44] and mobile video will represent 71% of all the mobile data traffic by 2016 [45]. The above coupled with ever increasing Internet traffic associated with data parallel workloads such as, but not limited to, search and the growing HPC market1, progressively wider SIMD units are being supported in the x86 architecture.
+
+For instance, Intel?s MIC architecture supports 512-bit wide SIMD units. The lineage of support for SIMD execution in the x86 architecture is listed below:  ? MMX (1996) [47] ? SSE2 (2001) [48] ? SSE3 (2004) [48] ? SSSE3 (2006) [48] ? SSE4.1, SSE4.2 (2006) [48] ? AVX [49], [50] (2008) which are 256 bit instruction set extension to SSE.
+
+Beyond x86, other architectures have been designed and implemented with rich support for SIMD execution, most notably, Cell [51] and Larabbe [52].
+
+Exploiting the available hardware parallelism is highly dependent on, but not limited to, program optimization.
+
+Design of algorithms and their corresponding implemen- tation can potentially limit maximal exploitation of the available hardware parallelism thereby adversely affecting performance. In this regard, loop recurrences (defined below) have long known to be an inhibiting factor for SIMDization2  and/or parallelization of loops.
+
+Definition 1: A loop has a recurrence if an operation in  one iteration of the loop has a direct or indirect dependence upon the same operation from a previous iteration.
+
+1The HPC market is expected to grow, as per International Data Corporation (IDC), at a CAGR of 7% to $13.4 billion by 2015 [46].
+
+2SIMDization and vectorization are used interchangeably in literature.
+
+For example, in Figure 1, operation v22 has a direct depen- dence on the operation v12 (operation v  k 2 can be re-written  in the following fashion: A[i] = A[i-1] + r + 1), where vki represents the i-th operation of the k-th iteration.
+
+In general, a recurrence may span several iterations, i.e., an operation vki may depend on an operation v  k?j i , where  j > 1.
+
+Owing to the recurrence, the loop shown in Figure 1 can  not be SIMDized. However, recognition of the pattern in the following series:  A(1) = A(0) + r + 1 A(2) = A(0) + r + 1 + r + 1 A(3) = A(0) + r + 1 + r + 1 + r + 1 ...
+
+and  B(1) = A(0) + r B(2) = A(0) + r + 1 + r B(3) = A(0) + r + 1 + r + 1 + r ...
+
+guides the transformation of the loop shown in Figure 1 (a) to the loop shown in Figure 2. Both the operations of the loop in Figure 2 are amenable to SIMDization. Further, the transformed loop is also amenable to multithreaded execution without any support for thread synchronization.
+
+1: B[i] = A[0] + (i?1) * (r+1) + r  2: A[i] = A[0] + i * (r + 1)  do i = 1, N  end do  Figure 2. Transformed loop shown in Figure 1 (a)  Let us consider the example loop shown in Figure 3(a). From the figure we note that the inner loop is not amenable to SIMDization owing to the recurrence along the dimension j. To alleviate this limitation, the loop can be transformed via loop interchange [53]. The transformed loop is shown in Figure 3(b). The inner loop after the transformation can be SIMDized.
+
+for (i=0; i<iterat; i++)  A[i][j] = A[i][j?1]*B[i][j];  for (j=1; j<iterat+1; j++)  (a) An example Loop  for (j=0; j<iterat; j++)  A[i][j] = A[i][j?1]*B[i][j];  for (i=1; i<iterat+1; i++)  (b) Modified Inner Loop  Figure 3. SIMDization via loop interchange     b=c+2*b?A(i)+2 c=c+d  A(i) = a  DO i=0, n  ENDDO  d=d+1  a = b  (a)  DO i=0, n  ENDDO  A(i) = a+(i**5?10*i**4+(20*d+35)*i**3+(60*c?60*d+70)*i**2+(120*b?180*c+40*d?96)*i)/120  (b)  Figure 4. Exemplifying enabling of SIMDization via advanced symbolic analysis  Based on the advances in compiler technology over the past decades, open source compilers and commercial compilers (listed below) can perform symbolic analysis, automatically apply transformations and subsequently SIMDize loops to generate optimized binaries.
+
+? ICC 12.0 [54] ? LLVM [55] ? GCC [56] ? Cray cc compiler [57] ? IBM [58] ? PGI [59] ? Pathscale [60]  Recently, Intel released a library called Array Building Blocks [61] for exploiting vector parallelism.
+
+However, in many cases, compilers are inept in carrying symbolic analysis required to drive SIMDization. For in- stance, the loop shown in Figure 4(a) is not amenable to SIMDization. However, Engelen showed, in [62], that the loop can be transformed to the loop shown in Figure 4(b) which is amenable to SIMDization. Such transformations are not currently not supported by today?s compilers.3  A topical application of SIMDization is machine learned, using decision trees, ranking [65], [66], [67], [68], [69], [70], [71]. Web search is a popular example wherein machine- learned ranking is used. Specifically, computing the score  3In [63], Maleki et al. presented a comparative evaluation of open source and commercial vectorizing compilers. In [64], Satish et al. presented an evaluation of speedup achievable via vectorization beyond what can be via instruction-level parallelism (ILP) and thread-level parallelism (TLP).
+
+of a document entails traversal of a sequence of decision tress of the form shown in Figure 5. Each non-leaf node, also referred to as internal nodes, is of the following form:  if (value < constant)  A leaf node, also referred to as terminal node, contains a partial score. The overall score of a document is the sum of all the partial scores, refer to Equation 1, of the terminal nodes reached (highlighted in purple in Figure 5).
+
+score = n?  i=1  scorei (1)  The traversal path for each decision tree is highlighted with dashed arrows in Figure 5. Conceivably, traversal of the different trees can be done in parallel in a SIMD fashion thereby speeding up the ranking process. However, existing compiler, both commercial and open source, are inept to SIMDize the machine learned ranking process.
+
+
+
+III. DYNAMIC OPTIMIZATION  In a multi-tenant environment, an application may slow down owing to other VMs (virtual machines). The Xen credit scheduler is a proportional fair share CPU scheduler wherein VMs are allocated CPU subject to a weight and a cap [72]. Each CPU manages a local run queue of runnable VCPUs. On each CPU, at every scheduling decision (when a VCPU either blocks, yields, completes its time slice, or wakes up), the next VCPU to run is picked off the head  Figure 5. Illustration of a sequence of decision trees     Figure 6. Illustration of stolen CPU in a multi-tenant scenario  Figure 7. Illustration of variation in load in production  Figure 8. Illustration of variation in heap usage on a node in production  of the run queue. Thus, an application?s performance may suffer as CPU may not be allocated to its VM inspite of the VM being in a runnable state. Stoeln CPU can often result in a ?discrepancy? between metrics reported by Amazon?s CloudWatch [73]4 and operating system utilities such as top. This is reasoned at [74] as follows:  Stolen CPU means how many cycles were re-claimed by the hypervisor because the virtual machine has reached the maximum allocated number of processor units of the underlying processor core. For example, let an instance be allocated 0.4 processor units. A 40% CPU busy corresponds the percentage usage of the underlying core. However because 40% is the maximum CPU share that can be allocated to this VM, the effective CPU usage is 40%/40% = 100%.
+
+Adrian Cockcroft, architect at Netflix, explained the impli- cations of stolen CPU as follows [75]:  One performance statistic that is very valuable to Netflix is stolen time. Essentially, the steal time cycle counts the amount of time that your VM is ready to run but could not run due to other VMs competing for the CPU. This is a particularly relevant statistic to think about when you are using a cloud service provider. With cloud service providers you do not control the hypervisor (as an enterprise customer would in a traditional datacenter).
+
+As a result, you do not know how much the hypervisor is oversubscribed nor do you have insight or control into  4Amazon CloudWatch provides monitoring for AWS cloud resources and the applications customers run on AWS.
+
+the amount of resources that other VMs are taking from your compute requirements.
+
+Figure 6 illustrates variation in stolen CPU over 3 day period on one of the production nodes at Netflix. Akin to CPU, memory pressure also varies over time owing to multi- tenancy. This has direct implications on meeting SLAs.
+
+Further, the incoming traffic varies over time ? Figure 7 illustrates the variation in traffic over a period of 1 day for one of Netflix?s applications. Last but not the least, delivering personalized user experience5, as exempli- fied by Netflix Recommendations [78] and Amazon.com Recommendations [79], exacts compute pressure owing to computation intensive nature of the underlying algorithms such as collaborative filtering [80] and matrix factorization [81].
+
+The above altogether commands for dynamic application optimization so as to deliver best user experience on a continuous basis. Over the last decade, a large number of techniques have been proposed for dynamic optimization have been proposed [82], [83], [84], [85]. In [86], Bergin and Murphy proposed a framework to improve the run-time performance of component-based enterprise applications via dynamic profiling and dynamic bytecode adaptation. In the context of Java, the Hot Spot Virtual Machine supports a large set of dynamic optimizations. In Java 7, the following  5Personalization boosts user satisfaction thereby increasing retention which in turn is key for business [76], [77].
+
+performance optimizations were introduced [87]:  Tiered Compilation Compressed Oops Zero-Based Compressed Ordinary Object Pointers Escape Analysis  Optimizations such as Compressed Oops were evaluated and adopted for production for some of the Netflix ap- plications. There exists a large body of work on garbage collection (GC) (a comprehensive bibliography on garbage collection is available at [88]). Recently, several GC tech- niques, addressing concurrency and scalability, have been proposed [89], [90], [91]. In a similar vein, a multitude of techniques have been proposed for automatic adaptive heap sizing [92], [93].
+
+Existing dynamic optimizations employ code specializa- tion/versioning to enable, for example, but not limited to, runtime parallelization and runtime SIMDization. The opti- mizations ?learn? from program executions corresponding to different inputs. However, these optimizations are oblivious of systemic state. For example, as mentioned earlier in this section, available CPU may vary in a multi-tenant environment. Thus, in the cloud context, advanced dynamic optimizations need to developed which can ?learn? from the systemic state. For instance, let us consider Figure 8 which shows variation in heap usage during a 12 hr window for a Netflix application. From the figure we note that the heap usage varies significantly. This can, in part, be ascribed to variation in incoming traffic over time (there are few users streaming video at night). Learning the allocation elasticity [94] ? a measure of how the number of GCs g changes when the heap size h changes ? can potentially help guide setting up of autoscaling [95] policies on the cloud.
+
+
+
+IV. CONCLUSION  In [64], Satish et al. showed that, for throughput computing applications, there is a large performance gap between existing software and best optimized code on modern multi- many core processors. In this paper, we presented a pro- gram optimization perspective to the challenges posed by Big Data. Specifically, we discussed exploiting multi/many cores, exploiting wide SIMD and the role of dynamic optimization in the context of Big Data and cloud-based architectures.
+

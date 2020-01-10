@@ -1,0 +1,230 @@
+Iteration Aware Prefetching For Unstructured Grids Oyindamola O. Akande
+
+Abstract?Due to the increasing quality of instruments and availability of computational resources, the size of spatial scien- tific datasets has been steadily increasing. However, much of the research on efficient storage and access to spatial datasets has focused on large multidimensional arrays. In contrast, unstruc- tured datasets consisting of collections of simplices (e.g. triangles or tetrahedra) present special challenges that have received less attention. Data values found at the vertices of the simplices may be dispersed throughout a datafile, producing especially poor disk locality.
+
+In this paper, we address this important problem of poor locality in two major ways. First, we reorganize the unstructured dataset to improve locality in both the dataset space and in the data file on disk using a specialized chunking approach that maintains the spatial neighborhood relationships inherent in the unstructured data. This reorganization produces significant gains in performance by reducing the number of accesses made to the data file. Second, we extend our previous work and describe a prefetching method that takes advantage of prior knowledge of the user?s access pattern. Applying this prefetching method to unstructured data produces further performance gains over and above the gains seen from reorganization alone.
+
+
+
+I. INTRODUCTION  With increased processing power and vast storage space available at an affordable price, the size of scientific data sets has grown to the terabyte and even petabyte scale. Efficiently storing and retrieving large data volumes is an important goal for the scientific data community. Spatial datasets present special challenges because elements nearby in the data space may be far apart in the file on disk.
+
+This problem is further compounded with unstructured spatial datasets. The term ?unstructured? is overloaded, but in this paper it refers to data in which the spatial relationship between dataset elements does not follow a regular pattern.
+
+Unlike array based data, unstructured datasets require that the location of sample points in the dataset?s spatial domain (i.e.
+
+the geometry) be explicitly represented as a list of coordinate tuples. Similarly, the neighborhood relationship between sam- ple points (i.e. the topology) must be represented as a list of simplicial cells, typically triangles or tetrahedra.
+
+Cells are essential for interpolating data values for locations that don?t correspond to sample points, so efficiently retrieving the data belonging to a cell is of primary importance. Unfor- tunately, the data values corresponding to cell vertices may be spread throughout the data file, perhaps resulting in several file accesses with poor locality.
+
+This paper presents a method for dramatically enhancing I/O performance with unstructured datasets by splitting the data into chunks with improved locality while correctly han- dling the problem of triangles or tetrahedra that span chunk boundaries. While considerable work has been done in the area of graph partitioning [11], we concentrate on scientific data described by a collection of simplices. Our solution does not require potentially expensive duplication of data between chunks. Extending our previous work [19] to apply to unstructured data, we further improve performance using a prefetching cache that takes advantage of prior knowledge of an application?s access pattern. Many computations access data in the same manner regardless of the data values themselves.
+
+For example, the manner in which visualization applications access data often depends only on view direction and similar factors, rather than the values being visualized.
+
+Our work targets some of the most important features of the Big Data problem. Our splitting method addresses unstructured spatial sets with very large volume, allowing access to data sets much larger than memory. In future, we hope to extend this method to a distributed environment, so that even the size of local storage no longer limits feasible dataset size. Our prefetching technique addresses velocity, greatly improving the speed of data access by reducing the frequency of read operations. Lastly, the work described here is being conducted as part of a larger system which handles many different varieties of spatial scientific data, while providing scientists with a single intuitive interface.
+
+The rest of the paper is organized as follows: Section II presents related work, while section III presents an overview of the Granite system. In section IV, we describe the splitting process, and our prefetching method in section V. Section VI presents and analyzes our experimental results. We conclude and present our future work in section VII.
+
+
+
+II. PRIOR WORK  A lot of research work has gone into handling large data and solving issues relating to storage and retrieval of spatial data.
+
+Data partitioning and reorganization are popular techniques used to improve performance when working with very large data sets. However, much of the literature is focused on large multidimensional array data [22], [25]. In recent work, Ross and Sitaridi [20] propose a method for accessing multidimen- sional data with a partitioned blockmap index, using a bitmap      to achieve minimal space overhead. Tian et al. [26] use a data reorganization approach called Smart-IO to improve the retrieval of multidimensional scientific data. The first level, called the intra chunk level, involves implicitly dividing the data into data chunks of different sizes and the second level involves data reordering and placement based on a space filling curve. Rotem and Otoo [21], [15] present and analyze models for chunking of large multidimensional arrays. They provide exact solutions for configuring the chunking methods presented in [23].Kumar et al. [12] discuss the IDX format and its suitability for fast access to multi-dimensional scientific datasets and implement an API for parallelizing it to further improve performance. They perform some data reorganization to assist with analysis and visualization. Lofstead et al. [13] discussed several reading patterns for large scale I/O. They describe a log based storage approach that organizes data into chunks called data districts that facilitates parallel reading and writing of data to and from storage respectively.
+
+There has been some progress in reorganizing or parti- tioning unstructured spatial data as well. Papadomanolakis et al. [16] implement a reorganization method that uses a space filling curve to reorder the simplices in the data file and uses a modified breadth first search to locate desired simplices. The space filling curve improves locality of access very significantly, but does not directly provide a mechanism for reading subsets of the data file. Such functionality is more easily provided by reorganization methods that partition simplices into chunks that are stored together on disk. With this in mind, mesh partitioning has been an important research topic for many years [10]. Partitioning unstructured data is complicated by cells that span partition boundaries. Data associated with such cells may be duplicated among several partitions, but at the expense of extra storage.
+
+Prefetching and caching methods have been investigated for years[17], [31], [6]. However, these approaches do not readily lend themselves to spatial data because they view the dataset as one-dimensional, missing important neighborhood relationships available in an n-dimensional view of the dataset.
+
+Iteration Aware Prefetching (IAP), first described in [19] is unusual both because it maintains a spatial view of the data, and because it uses advance knowledge of the access pattern expressed as an iterator. We describe IAP and its application to unstructured data in section V.
+
+
+
+III. BACKGROUND  Scientific data sets are represented in a variety of formats, stored on local disk or distributed across a collection of ma- chines. There are many examples of middleware that abstract away the details of storage, allowing users to focus on the science [2], [1], [3]. The Distributed Spatial Computation and Visualization Environment (DISCoVer) focuses on providing a convenient model for spatial scientific datasets, allowing scientists to query datasets naturally using the domain space, shielded from the minutiae of representation. DISCoVer con- sists of several components that support both distributed and local access to large spatial datasets.
+
+The Granite component of DISCoVer provides efficient access to spatial datasets stored on local or remote disks [19], [18]. While much of our previous work on Granite has focused on regular datasets, the work described here is applied to unstructured data, which presents special challenges.
+
+A. Regular Data  The placement of sample points within the domain of a regular data set follows a repeating pattern that typically allows point locations to be calculated from array indices rather than stored explicitly. Similarly, each point?s relationship with its neighbors is uniform across the dataset, except perhaps at the boundaries. We refer to the placement of sample points within the domain as the geometry, and the neighborhood relationship that exists between sample points as the topology.
+
+A common example of a regular dataset is a three dimen- sional grid, where sample points are evenly spaced, and have neighbors to the north, east, south, west, front, and back.
+
+B. Unstructured Data  In contrast to regular data, sample points in unstructured datasets are placed arbitrarily throughout the dataset domain and have some arbitrary number of neighbors. Because there is no pattern to either the geometry or topology of an unstruc- tured dataset, they must be represented explicitly. That is, the geometric coordinates of each sample point must be stored directly in the file. Similarly, representing an unstructured topology requires listing the neighbors of each sample point.
+
+Rather than listing neighbors directly, unstructured datasets are commonly organized into non-overlapping cells, where each cell is a convex region bounded by a set of sample points, also referred to as vertices. Cell shapes are often simplices, meaning that the number of vertices is minimal for a given dataset dimensionality. For two dimensional datasets, simplicial cells are triangular, while for three dimensions, a tetrahedron is used. In any case, the dataset can be organized using three lists. A vertex list contains the sample point locations, while a cell list denotes each cell using a series of indices into the vertex list. Data values associated with vertices can be stored in a separate data list, or included directly in the vertex list. Figure 1 shows an example for a 2D dataset consisting of triangular cells.
+
+cell v0 v1 v2    2 3 1 18292    ?     vertex x y z   1 2.91 17.6 34.2   3 3.3 19.3 38.7  d0 d1  6.2 8.9  6.9 9.3  2.4 3.8   18292 348.8 382,9 997,3   ?  a) b)  Fig. 1: Unstructured datasets are organized into lists of cells (a) consisting of references into a list of vertices and associated data (b).
+
+A scientific application will often need to query the dataset for an arbitrary location within the domain, rather than restrict- ing queries only to locations corresponding to sample points.
+
+Cells are essential for this purpose, because the cell containing the query location is used to interpolate a value from the data associated with the cell vertices. Unfortunately, this operation can be expensive for two reasons. First, finding the cell that contains the query location can be computationally expensive because a large number of cells that must be tested before the containing cell is found. Second, there is significant I/O cost incurred when reading the data values associated with the cell vertices. As shown in figure 1, data values may be spread over several distant locations in the data file, exhibiting poor locality and requiring separate read transactions to the underlying storage device.
+
+C. Granite  Granite is a middleware package that provides convenient access to large spatial scientific datasets . The Granite system is composed of two main layers: the datasource and the lattice layer. The datasource layer supports array based regular data, while the lattice layer adds support for unstructured data.
+
+In prior work [19], [18], we described Granite?s unique Iteration Aware Prefetching (IAP) mechanism, that creates n- dimensional cache blocks with a shape that is tuned to the user access pattern. The user represents the access pattern in advance as an iterator, after which the Granite system reads the underlying dataset via the cache blocks, which vastly reduce the number of reads made to disk.
+
+Those previous efforts were implemented for regular datasets using Granite?s datasource layer. A major goal of the work described in this paper is the extension of IAP to the much more difficult case of unstructured datasets. In order to facilitate our explanation of this work, we now describe some of the concepts and terminology used within the Granite system.
+
+D. Index Space  An index space is an abstraction of the discrete space formed by array indices. An index space may be of any dimensionality, and is addressed by cartesian coordinates with integer values. Granite?s IndexSpaceID class encapsulates these coordinates, and can be used to address any Granite class that implements the Indexable interface.
+
+Hyper-rectangular sub-regions of an index space are repre- sented using the ISBounds class, which uses two IndexSpaceID objects to represent two corners of the region. Such regions can only be isoaligned, meaning that the sides are always parallel to the major axes of the index space, similar to the Axis Aligned Bounding Box (AABB) commonly used in computer graphics and related fields [30].
+
+E. Partitionings  A partitioning divides a space into a set of partition ele- ments which can be viewed as an index space. For example, a two dimensional RegularISPartitioning divides an index space  into equally sized rectangles, which in turn form another index space. Figure 2 shows a domain split using a regular partitioning. This kind of partitioning plays a key role in the dataset splitting method described in section IV-A. Non- regular partitionings are also certainly possible, and may be useful for load balancing and variable resolution applications in future work.
+
+The shape of the partitioning determines the number of partition elements created. Figure 2a shows a partitioning using a 5? 5 ISBounds that creates 36 partition elements and figure 2b uses a 20 ? 3 partitioning that creates 84 partition elements. The size of partition elements generated in figure 2b will be less than figure 2a on disk. Slight variations in size may exist depending on the data distribution within the data space before partitioning.
+
+F. Geometric Space  For datasets with sample points located in a continuous geometry, we provide facilities similar to those offered for the discrete index space. The Point class denotes a location in a continuous space, while the GBounds denotes an isoaligned hyper-rectangular region. RegularGPartitioning partitions a continuous space in a manner analogous to the RegularISPar- titioning class described above.
+
+Creating an efficient partitioning for the dataset is important as it will determine the number of cell groups created and the eventual cache shape and size.
+
+GBounds(10.0, 10.0)ISBounds(5, 5)  (a) (b)  (0, 1)(0, 0) (0, 4)(0, 2) (0, 3) (0, 5)  (1, 0)  (5, 5)  (1, 1) (1, 2)  GBounds(10.0, 10.0)ISBounds(20, 3)  (1, 3) (1, 4) (1, 5)  (2, 0)  (3, 0)  (4, 0)  (5, 0)  (2, 1) (2, 2) (2, 3) (2, 4) (2, 5)  (3, 1) (3, 2) (3, 3) (3, 4) (3, 5)  (4, 1) (4, 2) (4, 3) (4, 4) (4, 5)  (5, 1) (5, 2) (5, 3) (5, 4)  Fig. 2: Dataset with an upper GBounds of 10x10 showing partitioning using an ISBounds of (5,5) and (20,3)  G. Iterators  Because a major goal of DISCoVer is to improve I/O performance using knowledge of the access pattern, we use iterators both to represent the access pattern and to perform the actual iteration through the datasource index space. Iterators have a value that changes with each invocation of the iterator?s next() method, and this value can be used directly in both datum and subblock queries. The iteration space is the space traversed by the iterator. It may be the entire index space of a datasource, continuous domain of a lattice, or some subset of that space.
+
+Iteration Space  Partition (0,0) Partition (0, 1) Partition (0, 2) Partition (0, 3)  Partition (3,3)  Partition (1, 0)  Domain Space  Iteration Space Datum Query Points  Partition (2, 0)  Partition (3, 0) Partition (3, 1)  Partition (1, 1)  Partition (2, 1) Partition (2, 2)  Partition (1, 3)  Partition (2, 3)  Partition (3, 2)  Partition (1, 2)  Fig. 3: Iteration space spanning a subset of of the geometric domain space showing query points. The domain has been partitioned using a 4 ? 4 ISBounds.
+
+Figure 3 shows a data space that has been partitioned using a 4 ? 4 ISBounds. The diagram shows an iteration space whose limits are specified by the GBounds used in creating the iterator. In this case, the iterator will iterate over a subset of the domain space. The iterator performs a datum query at each location as it iterates through the space. Having a small valued sampling density for the query points requires that the iterator visits every partition within the iteration space. With a larger sampling density, some partitions may be skipped by the iterator.
+
+H. Axis Orderings  An axis ordering is an ordered list of axes, where each axis is identified by an integer. Many iterators use axis orderings to denote their most (and least) rapidly changing axes, specifying the manner in which they proceed through space. For example, ordering {2,1,0} describes an iteration that changes most rapidly along axis 0, and least rapidly on axis 2.
+
+For some types of file, axis orderings are also used by the datasource layer to map an index space to the one-dimensional file space. We describe this further in section IV-E.
+
+
+
+I. Lattice  The lattice layer provides a logical representation of an unstructured dataset. The lattice layer represents topology and geometry information and also provides both topological and geometrical views of the dataset.
+
+A lattice is able to associate a data value with any loca- tion in the dataset domain, regardless of whether a sample point actually exists for that location. In the very common case where a query point does not correspond to a sample point, the data value (i.e. datum) must be generated using an approximator function that computes the value from the data values associated with the vertices of the cell containing the query point.
+
+If cells were simply contained in a single list for the entire dataset, a very large number of containment tests would have  to be performed in order to find the cell that contains the query point. Instead, we reorganize the dataset into a grid of cell groups, where each cell group corresponds to a partition element, and contains all cells that intersect with that element.
+
+When processing a datum query, the lattice can easily map the query point to the partition element that contains it, and load only that element from disk. It therefore has a much smaller set of candidate cells to examine for containment, and each cell group can be read from disk into memory with a single read transaction, vastly reducing the number of I/O operations required for a lattice datum query.
+
+Since the grid of cell groups serves as a spatial data structure [9] that speeds the search for the cell containing the query point, we can use yet another grid of cell groups in memory to further speed the search once a cell group has been loaded from disk. That is, the cell group loaded from disk actually contains an InCoreCellGroupGrid, which once again partitions the cells into a grid of cell groups that further reduce the number of containment tests required.
+
+Once the cell containing the query point has been found, it remains only to apply the approximator function to produce a data value. The function takes the data values associated with the cell vertices and the position of the query point within the cell, and computes a data value to be returned as a result of the query. Many options exist for this function, and the scientific user is allowed to specify a function suitable for their particular purposes.
+
+
+
+IV. DATA REORGANIZATION  Chunking [23] is a very effective general-purpose technique for improving access to multidimensional arrays stored as files. Data that is nearby in the data space is stored together on disk, improving performance through improved locality of reference. Chunking has been applied to regular datasets very successfully for decades [7], [22], but it is not as easily applied to unstructured data. The main problem is cells that span boundaries. Such cells must be members of more than one chunk (or partition element), which could require expensive duplication of data. The approach adopted by the Granite system requires no such duplication.
+
+The remainder of this section describes the splitting process and the storage model we applied to improve locality within the one dimensional file.
+
+A. Splitting The Unstructured Data  In order to split the unstructured data, we first construct a regular partitioning of the geometric domain, forming an index space for which each location corresponds to an isoaligned n-rectangular region that we call a partition element. The splitting process consists of reading each cell from the original data file and determining which partition element contains it.
+
+The simplest case occurs when a cell is wholly contained by a partition element. Cells that span partition boundaries present additional challenges. Due to the size of the datasets we are handling, partition elements need to be occasionally committed to disk while splitting is being performed. Each     partition element is written to its own separate file, which allows a partition element to be flushed easily to disk as memory limitations demand.
+
+T  Partition(0, 0) Partition(0, 1)  Partition(1, 1)Partition(1, 0)  A B  C  (a)  (c)  (b)  Fig. 4: Splitting an unstructured 2D lattice. The shaded triangles in (b) show the borrowed triangles within each cell group.
+
+Figure 4a shows a lattice representation for a 2D dataset before it was split and figure 4b shows the same dataset after it has been split into separate partition elements. The shaded triangles in 4(b) shows the borrowed triangles within each cell group.
+
+B. Cell Groups  Each partition element corresponds to a cell group which maintains the set of cells that intersect that particular partition element. Each cell group contains the vertex information and data for cells that are contained within that cell group. The data for cells that span the partition boundary are treated differently.
+
+C. Owned and Borrowed Cells  Partitioning datasets into chunks can cause difficulties when cells span partition boundaries. It is desirable to make each partition self-sufficient, but duplicating data between partitions is an unattractive option for large datasets. Our solution to this problem is a compromise in which the vertex coordinates for all intersecting cells is stored in each partition?s cell list, but the data associated with the cell vertices is stored in only one partition. This partition is called the owner of the cell. All cells have exactly one owner. Partitions that intersect with a cell that is owned by another partition are referred to as borrowers of the cell. A cell may have any number of borrowers, always one less than the number of partitions it intersects with. A cell that has no borrowers is entirely contained within its owner partition. Borrowed cells are represented on disk using only the vertex indices necessary for representing the cell, and an identifier that denotes the owner partition and position in the owner cell list. Since all cells have exactly one owner, the data associated with the cell need only be stored once. Scientific datasets may contain a large number of attributes for each point, so this can result in significant space savings over a full duplication method.
+
+Looking at figure 4c, we see the triangular cell T overlaps cell groups A, B and C. The IndexSpaceID for cell group A will have the smallest coordinates in each dimension (com- pared to B and C), and is therefore chosen to be the owner of the cell. All the information pertaining to T, including the cell, vertex, and data values will be recorded in cell group A.
+
+Subsequently, when T is represented in B and C, it is recorded as a borrowed cell, so these cell groups will refer to A for complete information about T.
+
+D. In Memory Subgrids  A subgrid is a further partitioning of each partition element stored on disk and is used to further accelerate search for cells when they are stored in memory. Figure 5 shows the subgrid partitioning of a partition element. The datum query can be more quickly resolved due to the much smaller number of triangles intersecting the relevant subgrid partitioning element.
+
+Partition (0, 0)  (0, 1) (0, 2) (0, 3)  (2, 0) (2, 1) (2, 3)  (3, 0)  (4, 0)  (3, 1)  (4, 1)  (3, 2)  (4, 2)  (3, 3)  (4, 3)  Partition(0,  2)  Partition(2, 3)  Partition(3,  2)  Subgrid Partitioning  Datum Query Point  Partition(3, 3)  Partition(0, 3)  Fig. 5: A datum query showing subgrid partitioning within a partition element.
+
+The extra space created is the size of the borrowed cells file and the owned and borrowed subgrid data that are written to disk.
+
+E. Storage Model  Spatial datasets must ultimately be represented as one dimensional files on disk or a similar storage device. A storage model describes how the n-dimensional domain of the dataset is mapped to the one dimensional file space [28].
+
+Some file formats can be described using the rod storage model, which views files as a collection of rods, where each rod is a sequence of elements that are contiguous in both the n-dimensional data space and the one dimensional file space [19]. For example, the rasters of a raw image file can be considered rods if the image file is stored in the usual linear order.
+
+Since the elements of a rod are contiguous on disk, they can be accessed with a single read operation. When fulfilling a subblock query, the query region can be broken into a collection of rod subsets, which each conceptually represent a single read operation.
+
+F. Merged File Format  Our previous work [19] applies the IAP caching mechanism to files that fit the rod storage model, including both linear and chunked [23] files. The major motivation of the work described here is to fit unstructured data to the rod storage model, which allows a series of adjacent elements to be read from file in a single read transaction. In doing so, we can once again achieve very significant gains in performance by taking advantage of prior knowledge of the access pattern. Merging the data into a single file helps us take advantage of filesystem prefetching[24], which is only effective when reading from a single file. Merging the cell groups into a single file also improves the locality of reference in the one dimensional file space on disk. Thus, we merge the cell groups created from the splitting phase back into a single file.
+
+We create a merged file format with a preamble that maintains meta data about the cell groups stored in the data section using the rod storage model. Meta data information includes cell group offsets, cell group size, record size, number of fields and dimensionality information for each cell group.
+
+The preamble can be read into memory providing the Granite system with a description of the complete dataset.
+
+A future possibility during the merging process may be to use space filling curve for merging the cell groups into a single one dimensional file.
+
+
+
+V. PREFETCHING  Prefetching has long been used to speed up execution both at the system and application level. Over the years, the computing community have tried to improve system through- put by integrating prefetching into hardware and software systems [8], [5]. The filesystem cache also prefetches pages following an explicitly accessed page in the hope that the prefetched page will be accessed next and reads to disk will be reduced. However, filesystem prefetching will increase the number of inappropriate pages loaded when the user does not proceed through the file in the manner the filesystem predicts, which degrades performance. Our application level caching mechanism reconciles the user access pattern with filesystem prefetching, allowing it to work much more effectively to boost performance.
+
+A. Iteration Aware Prefetching  The speed of data retrieval from disk suffers when data is accessed in a manner different from how the data is stored.
+
+The underlying file structure is one dimensional and data is stored (mostly) contiguously on disk. If the physical file is accessed sequentially, the filesystem cache performs quite well. When the data is not accessed sequentially, performance degrades quickly. Several reads may be required for portions of a file that are neighbors in the data space but not in the one dimensional file space.
+
+Iterator Aware Prefetching is a prefetching approach ap- plicable to situations in which the access pattern is not data dependent and can be known in advance. An iterator describes the access pattern and also performs the iteration through the  data space. Because of this prior knowledge provided by the iterator, we can configure a cache that uses n-dimensional cache blocks with a shape tuned to the iteration. Because of this block shape, data is never loaded more than once into an IAP cache, assuming the iterator is used to determine the access pattern [19].
+
+B. Access Pattern and Cache Blocks  When we create a cache block for use with unstructured data, we use one or more slices of the iteration space. A slice is formed by cutting the space with a plane orthogonal to a specified slice axis. The dimensionality of the resulting slice matches the dimensionality of the dataset, but has a thickness of one in the slice dimension.
+
+In order to create a cache block shape that performs well when used with a particular iterator, we choose a slice axis that is also the least frequently changing axis of the axis ordering associated with the iterator (see section III-H). The position of the iterator is monotonically increasing on this axis, so the iterator is certain never to revisit a slice once it has left it. Data in a cache block is therefore never loaded more than once.
+
+Such a scheme cannot work with unstructured data unless we can quickly and efficiently load the cells corresponding to a slice of the iteration space. Because the merged data format described in section IV-F makes this possible, we can work with the index space formed by the lattice partitioning instead of slicing the geometric data space. That is, cache blocks will consist of collections of partition elements, each containing a cell group and associated data. Better yet, whole sequences of partition elements can be read with a single transaction, because the rod storage model applies to the merged data format. Visiting or accessing partition elements in a row by row fashion is referred to as row-wise access.
+
+This is synonymous with using a {0,1} axis ordering for a two dimensional iteration. The overall behavior of an iterator with a column-wise ordering, {1,0}, is largely similar. For the three dimensional case, however, a slice will be synonymous with a plane.
+
+After the first row of elements is loaded into the cache, an iterator?s data requirements would be satisfied from the cache for several rows of the iteration, assuming the spacing of the iterator?s rows is much smaller than the height of a partition element. Eventually, a new row of the iteration will be started which falls outside of the first row of partition elements.
+
+This triggers a cache miss, which causes the second row of elements to be loaded into the cache. The first row will not be needed again during the iteration, which will proceed in similar fashion until complete.
+
+C. Different User Ordering and Storage Ordering  Consider the diagram shown in figure 6a where the user?s ordering and storage ordering are similar. In this case the cache prefetches data in the order it was stored and is guaranteed to satisfy datum iteration queries. Moreover, we can take advantage of the filesystem cache as the data is contiguous spatially and in the one dimensional file. When the user?s     ordering is different from the storage ordering as shown in figure 6b, performance will be poor for a datum iteration query that accesses the data in a column order fashion. We remedy this problem by prefetching the data using the storage ordering and the cache data will be tuned to the iteration.
+
+Storage Ordering Datum Query  (a) (b)  Fig. 6: (a) Access ordering of datum query and storage ordering {0,1} (b) Access ordering {1,0} and storage ordering {0,1}  D. Out of Core Prefetching  The lattice layer, like the datasource layer, uses an out of core approach to data access, loading only necessary subsets of the larger data volume. This capability is made possible by the partitioning and owned and borrowed cell information.
+
+Because of this, we can greatly reduce the amount of memory needed at one time by only prefetching cell groups that will actually be used in satisfying user query. Available memory does not limit the size of the datasets that our system can handle.
+
+
+
+VI. RESULTS  We perform our tests on a 64bit Linux machine running Linux version 2.6.18 with Intel Xeon R? processors with 16 cores, each running at 2.4GHz. The system has 24GB of memory, but our system used a maximum of only 1.6GB.
+
+We perform our tests using a dataset of 15GB for the two dimensional dataset and 25GB for the three dimensional dataset. We generate 2D and 3D unstructured datasets using a seeded random number generator to simulate the vertex points. The vertices lies within a domain space of 0.0 to 1.0.
+
+The delaunay triangulation is performed with the open source software qhull [4]. The 2D dataset contains over 31 million tetrahedra, and over 67 million tetrahedra in the 3D dataset.
+
+We clear the filesystem cache after each run to ensure fairness across runs. The results presented are an average of at least three runs.
+
+We perform datum query iterations using a partitioning of varying dimensions and perform the datum query tests using separate partition files, the merged file and the caching mechanism on top of the merged file. We use several iteration orderings for the 2D and 3D tests. We use orderings {0,1}  and {1,0} for the 2D partitioning and {0,1,2} and {2,1,0} for the 3D partitioning.
+
+Reorganized Merged Cache  100x100 Partitioning  Ordering (0,1) (Row wise access) Ordering (1,0) (Column wise access)  S ec  o nd  s       Merged Cache  100x100 Partitioning  Ordering (0,1) (Row wise access) Ordering (1,0) (Column wise access)  S ec  o nd  s  (a) (b)  Fig. 7: Datum Iteration with a step of 0.01 and 100x100 partitioning       Reorganized Merged Cache  300x33 Partitioning  Ordering (0,1) (Row wise access) Ordering (1,0) (Column wise access)  S ec  o nd  s       Merged Cache  300x33 Partitioning  Ordering (0,1) (Row wise access) Ordering (1,0) (Column wise access)  S ec  o nd  s  (a) (b)  Fig. 8: Datum Iteration with a step of 0.01 and 300x33 partitioning       Reorganized Merged Cache  33x300 Partitioning  Ordering (0,1) (Row wise access) Ordering (1,0) (Column wise access)  S ec  o nd  s       Merged Cache  33x300 Partitioning  Ordering (0,1) (Row wise access) Ordering (1,0) (Column wise access)  S ec  o nd  s  (a) (b)  Fig. 9: Datum Iteration with a step of 0.01 and 33x300 partitioning  A. Datum Query Iteration over 2D Files  We perform datum queries using a two dimensional file with an equal sided partitioning of 100x100 and unequal sides 300x33 and 33x300. We use an 8x8 subgrid partitioning and a sampling density of 0.01 for the iteration (i.e. we query the domain space at every 0.01 interval). Figures 7a, 8a and 9a show our results for the 100x100, 300x33 and 33x300 partitioning respectively. Figures 7b, 8b and 9b shows only the merged and cache portion of the results. We perform datum queries using the separate partition files generated from the data reorganization, the resulting merged file, and the cache mechanism.
+
+The merged file shows significant gain in performance when compared to the reorganized data files both in the orderings {0,1} and {1,0}. With the row wise access, it takes about 97 minutes to iterate over the reorganized files and about 31 minutes for the merged file using the 100x100 partitioning.
+
+The cache performs far better as it takes about 6 minutes for     Ordering Rowwise Column  wise 100x100 300x33 33x300 100x100 300x33 33x300  Merged 3.12 5.43 12.44 3.45 5.54 14.50 cache 16.92 19.75 236.7 8.73 17.79 15.76  TABLE I: Speedup Results for 2D dataset  Ordering Row-wise Column-wise 2x2x2  Subgrid 8x8x8  Subgrid 2x2x2  Subgrid 8x8x8  Subgrid Merged 2.94 1.69 2.76 1.62 cache 42.44 27.38 7.21 5.19  TABLE II: Speedup Results for 3D dataset  the datum query iteration. When iterating in a column wise fashion, the reorganized data completes in about 94 minutes and the merged file takes approximately 27 minutes. When we utilize the cache, performance is further improved as we record a speedup of 8.73. Table I shows the speedup results for the 2D dataset when we compare against the reorganized files.
+
+In both the 300x33 and 33x300 partitioning, the cache performs better than the merged file and reorganized approach.
+
+The cache shows tremendous speedup particularly in the 33x300 partitioning when accessing the data in a row wise pattern. This is because the access ordering is tuned to the storage ordering and more cell groups are loaded per cache slice exhibiting tremendous performance gain.
+
+Since each cell group is visited at least once, the merged file performs better than the separate files. The increased locality of the merged file allows for reduced disk access and takes advantage of the filesystem prefetching. Overall, the cache speedup for the row wise access performs better than the column access because we access the data in a manner consistent with the storage ordering.
+
+B. Datum Query Iteration over 3D Files  We also perform datum queries over a 3D file using a cubic partitioning of 10x10x10. We perform tests using different subgrid configurations for the cubic partitioning. We use a subgrid of 2x2x2 and a subgrid of 8x8x8 and use a sampling density of 0.01.
+
+Reorganized Merged Cache  Ordering (0,1,2) Ordering (2,1,0)  Se co  nd s  10x10x10 Partitioning with step 0.01 Subgrid 2x2x2  (a)       Reorganized Merged Cache  Ordering (0,1,2) Ordering (2,1,0)  Se co  nd s  10x10x10 Partitioning with step 0.01 Subgrid 8x8x8  (b)  Fig. 10: Datum Iteration with a step of 0.01, 10x10x10 partitioning and (a) subgrid 2x2x2) (b) subgrid 8x8x8)  Figure 10(a) shows the results for a cubic partitioning of 10x10x10 using a 2x2x2 subgrid and figure 10(b) shows the results for a cubic partitioning of 10x10x10 using an 8x8x8  subgrid. The cache and merged file performance are compared to the reorganized file and the speedup values are shown in table II.
+
+We experience a greater speedup value for the cache when we utilize a row wise access pattern. The 2x2x2 subgrid however tends to perform better than the 8x8x8 subgrid in both row wise and column wise access patterns. This is because the granularity significantly decreases in the 8x8x8 subgrid.
+
+This introduces some overhead evident in the result when we perform datum query. However, the coarse 2x2x2 subgrid performs better as fewer cells span partition boundaries and the overhead is reduced, therefore showing significant perfor- mance gain.
+
+Overall, the cache outperforms the merged file format and the separate files in both the two dimensional and three dimensional files. Also, the merged file performs better than the separate files in all cases. When using either a row wise or column wise access pattern, the cache shows significant gain in performance compared to the merged file and separate files.
+
+Accessing the data in the manner it is stored results in much greater performance.
+
+C. Datum Query Iteration over Real World Data  We also perform datum query iteration over real world scientific data. The data is generated from fluid simulations where space is decomposed based on a Delaunay tessellation.
+
+The mesh generating points are from the Arepo series of simulations described in Nelson et al [14]. The dataset contains over 11 million particles that represent fluid elements and have associated fluid density, energy and velocity (x,y,z) data values. Converting this dataset to our merged format increased storage requirements by 48%, but this percentage will decrease for datasets with more attributes per vertex, and for coarser partitionings. Determining the ideal configuration for a given dataset is an avenue for future work.
+
+The data volume is a cube with side length 20000 and has over 75 million tetrahedra. Figure 11 shows our results and Table III shows the speedup achieved. The cache shows tremendous performance gains compared to the separate files and the merged file.
+
+Reorganized Merged Cache Ordering (0,1,2) Ordering (2,1,0)  Se co  nd s  10x10x10 Partitioning with step 0.01 Subgrid 8x8x8       Reorganized Merged Cache    Ordering (0,1,2) Ordering (2,1,0)  Se co  nd s  10x10x10 Partitioning with step 0.01 Subgrid 2x2x2  (a) (b)  Fig. 11: Datum Iteration with a step of 0.01, 10x10x10 partitioning and (a) subgrid 8x8x8) (b) subgrid 2x2x2)
+
+VII. CONCLUSIONS  We have implemented a data reorganization mechanism that improves the locality of reference of unstructured data     Ordering Row-wise Column-wise 2x2x2  Subgrid 8x8x8  Subgrid 2x2x2  Subgrid 8x8x8  Subgrid Merged 1.15 1.07 1.13 1.14 cache 5.69 39.24 2.26 11.34  TABLE III: Speedup Results for real world dataset  within the one dimensional file. We also describe a means of efficiently handling cells that may occur at the edge of the split. We implement a caching mechanism that prefetches data by taking advantage of prior knowledge of the user?s access pattern and leads to significant gains in performance.
+
+An obvious avenue for future work is to explore the effect of ordering partitions using a space filling curve, rather than the linear order we currently use. Though this organization will be slower for some types of iteration, we expect that it will yield acceptable performance in all cases, perhaps making it a good ?default? choice for organizing the partitions.
+
+Our current implementation assumes that the data resides locally, but we expect to extend the system to handle remote datasets that span several geographically distributed machines.
+
+Having prior information about the performance of remote servers may allow the partitioning mechanism to improve load balancing. Correspondingly, we would like to extend our replica location and selection mechanisms [27], [29], [28] to handle very large distributed unstructured spatial datasets.
+
+The work described here will be instrumental in these future efforts.
+
+
+
+VIII. ACKNOWLEDGMENTS This work was partially supported by the National Science  Foundation under grant CRI-0855136.
+
+We would also like to thank Dylan Nelson and his collabo-  rators at the Harvard-Smithsonian Center for Astrophysics for providing us with real data.
+

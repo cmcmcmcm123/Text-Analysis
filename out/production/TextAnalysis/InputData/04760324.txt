@@ -1,0 +1,78 @@
+HDW: A High Performance Large Scale Data Warehouse
+
+Abstract?   As data warehouses grow in size, ensuring adequate database performance will be a big challenge. This paper presents a solution, called HDW, based on Google infrastructure such as GFS, Bigtable, MapReduce to build and manage a large scale distributed data warehouse for high performance OLAP analysis. In addition, HDW provides XMLA standard interface for front end applications. The results show that HDW achieves pretty good performance and high scalability, which has been demonstrated on at least 18 nodes with 36 cores.
+
+Keywords: data warehouse, GFS, Bigtable, MapReduce, high performance  1. Introduction   With information generated consistently, data warehouses grow in size [1]. This challenges current data warehouse systems. To accommodate and analyze vast quantities of data over time become more difficult than ever. In some business scenarios, data warehouses and business intelligence applications are required to answer exactly the types of ad hoc OLAP queries that users would like to pose against real time data. Further, [2] proposed C-Store, a column-oriented DBMS, which outperforms the current traditional DBMSs in read optimization. As data warehouses are read-mostly, the new data warehouses design needs to consider and incorporate the C-Store feature.
+
+Recently, Google provides server infrastructure such as GFS [3], Bigtable [4] and MapReduce [5] to handle with large amounts of data on thousands of low cost commodity machines. Considering Google?s searching information over the very large worldwide web, how about using the infrastructure to build a huge data warehouses?
+
+This paper presents a solution built upon the Google infrastructure, called HDW. HDW is a large scale distributed data warehouse where high performance OLAP analysis is executed. It uses GFS and Bigtable to store data. Also it uses MapReduce to parallelized computation tasks such as data cube construction,  ? The research is sponsored by the Science & Technology Program of Guangdong Province, China (NO. 2006B11301001, NO.
+
+2006B80407001) and The International Science &Technology Cooperation Program of Guangdong Province, China (NO.
+
+2007A050100026)  OLAP query answering.
+
+HDW is different from other previous parallel data  warehouse and OLAP systems. The most comparable system with HDW is Panda [6, 7, 8]. They all aim at a high performance scalable parallel OLAP system built on low cost share nothing clusters. But they have quite a few differences in implementation. Panda constructs ROLAP data cubes mainly based on the pipesort algorithm, while HDW builds a MOLAP data cubes around the closed cube algorithm [9]. Panda and most other systems [10, 11, 12] employ MPI (Message Passing Interface) to communicate between a node and another node. They need to take extra consideration about data partitioning, load balance and failure tolerance, which are automatically handled by GFS and Mapreduce used in HDW. In addition, for high availability, HDW provides XMLA (XML for Analysis) standard API for front end applications. Thus, all visualization tools which support XMLA can be easily plugged into HDW system without much modification.
+
+2. Design Overview 2.1 Architecture   The HDW system consists of four layers as illustrated in Figure 1: the storage layer, the calculation layer, the message layer and the presentation layer.
+
+Figure 1. The layers of HDW   The storage layer stores metadata and summary data  in GFS or Bigtable. Large data is split into blocks which are spread across different machines. The storage layer also extracts data from a relational database.
+
+The calculation layer uses MapReduce framework to parallelize computation tasks such as the data cube  storage layer  message layer  presentation layer  calculation layer  GFS / Bigtable RDB  MapReduce  XMLA Engine  JPivot Excel i  Manager l  2008 International Muitsymposiums on Computer and Computational Sciences  DOI 10.1109/IMSCCS.2008.16   2008 International Multi-symposiums on Computer and Computational Sciences  DOI 10.1109/IMSCCS.2008.16     construction (i.e. aggregate data into a data cube) and OLAP queries. The calculation layer accesses data in the storage layer via the read / write interface provided by the storage layer, pre-aggregates the data and stores the aggregated data to the storage layer.
+
+The message layer includes an XMLA engine which processes requests from users and invokes the calculation layer to execute parallel computation tasks.
+
+Through XMLA, the message layer provide a unify interface for client applications. Metadata discovery, OLAP query and pre-computation etc. are all wrapped into two standard methods: discover and execute.
+
+In the presentation layer, users can make analysis via JPivot, Excel pivot table, etc. visualization tools that support the XMLA specification. The system also provides a management console to manage the GFS / Bigtable, create data warehouse schema metadata, send query request, and monitor the execution.
+
+2.2 Interface   The storage layer provides the data access interface for the calculation layer. The Map tasks and Reduce tasks read data in Bigtable via TableInputFormat and write TableOutputFormat. When the table is from a relational database, the interface is DbInputFormat and DboutputFormat. For files, the access of GFS is wrapped as FileInputFormat and FileOutputFormat.
+
+In the calculation layer, the interface for the data cube construction is CubingMap and CubingReduce.
+
+The OLAP querying interface is QueryMap and QueryReduce. These interfaces are all invoked by the message layer?s interface: Discover and Execute, two methods defined in XMLA.
+
+3. Implementation Detail 3.1 Storage Structure   If the summary data in the data cube is structured, it is stored in a distributed table which we called Cubetable. Cubetable is built and managed by Bigtable.
+
+Therefore Cubetable is column oriented, which is more efficient for storage and querying of data cubes since data cubes are sparse in most situations.
+
+Figure 2. A slice of Cubetable conceptual view   The Cubetable conceptual view is shown in Figure 2.
+
+The data cube unique name acts as the row name. The dimension unique name acts as the column family name, while the level unique name in the dimension the qualifier of the column family. As soon as a record of  the data cube is inserted into Cubetable, each cell in the same row for the record is under the same version, i.e.
+
+the same timestamp. When the record has a special value ALL or * in a dimension, the cell value is set NULL.
+
+3.2 Data Cube Construction   Because the closed cube is very efficient in the data compression ratio, we used it to implement the data cube construction.
+
+For the input data in files or tables specified by FileInputFormat or TableInputFormat respectively, the system partitions them into data blocks. As shown in Figure 3, every block?s content as a whole is an input value with a unique id. The map function accepts the pairs and computes every local data cube by calling DFS function (see DFS definition in [9]). The cells are stored in a local data cube closedCells. Finally the closedCells identified by a blockid are output and stored in the GFS/Bigtable. The CubingReduce does nothing except only outputting the closed cube.
+
+Figure 3. The pseudocode of the cubing interface   The data cube is locally constructed. As the id keys of local data cubes are small and unique, the subsequently partitioning merging of these keys produces little communication overhead and little data swap between nodes.
+
+We conducted the experiments for the data cube construction in an 18-node PC cluster with total 36 cores, 18 GB RAM, 540GB disk volumes. Although the cluster is not large, but it is easy to add more nodes (say, reach 100 -1000 cores and 1 terabyte disk volume) since it is share nothing.
+
+For a fact table with 60 million rows (stored in text file with the size 1.37G), the data cubes are constructed in less than 5 minutes and output the 2.98G file spread over 18 nodes. Even when the number of rows reaches 100 million, the construction time is about 7 minutes.
+
+The speedup is almost linear within at least 36 cores.
+
+For high dimensions, say the fact table with 12 dimensions and 20 million rows, the construction time is only 273 seconds.
+
+3.3 OLAP Query   The same query is sent to every data node. The parallel query task includes the QueryMap class and the QueryReduce class. As shown in Firgure 4, the (blockid, closedcells) pair from files/tables is the input of the map  V21  ?dimension2:level1?  V1 data cube1  ?dimension1: ?  ?dimension2:level2?   V22  t  V21? * *  t  t  t  data cube1  Class CubingMap local variable closedCells; map(InputKey blockid, InputValue blockdata) 1. cl = (ALL, ?, ALL); 2. call DFS(cl, blockdata, 0); //generating and collecting the closed cells 3. emit(blockid, closedCells);     function. The query strings are stored in a file which can be accessed by all map functions. Then the map function searches every queried cell in its local data cube and emits a (cell, msr) intermediate key/value pair.
+
+These intermediate pairs are partitioned by the key, i.e.
+
+the name of cell, so the measures are grouped by cells.
+
+Finally, the measures for a cell are reduced to one measure by applying the aggregate function (e.g. sum).
+
+Figure 4. The pseudocode of the querying interface   Even though the OLAP query involves in each node, the result sets are small. Thus the partitioning merging for the results causes little communication.
+
+For the fact table with 60 million rows, the 1,000 point queries answering time is only 203 seconds (the experimental environment is the same as the data cube construction environment). Each point query answering time is 0.2 seconds in average. Also the time approaches linear speedup when the number of nodes increases from 5 to 17.
+
+3.4 The Code Base   We implemented our system based on Hadoop [13].
+
+Hadoop is a software platform that allows one to easily write and run parallel or distributed applications that process vast amounts of data. It incorporates features similar to those of the Google File System and of MapReduce. Hadoop also includes HBase which is a column-oriented store model like Bigtable.
+
+Although Hadoop is implemented in Java, the map and reduce computation tasks were all coded in C++ because of the efficiency of C++. The C++ program communicates with Hadoop through Hadoop Streaming.
+
+4. Conclusions   HDW aims at building a large scale data warehouse that accommodates terabytes data atop inexpensive PC clusters with thousands of nodes. As the limited experimental condition, at present we demonstrated it on only 18 nodes with 36 cores. But in view of Hadoop?s successfully sorting 20 terabytes on a 2000-node cluster within 2.5 hours [13], we believe that  HDW has the same potential ability which will be proved in the next step. The data extraction, transformation and loading (ETL) will be considered to incorporate into HDW.
+

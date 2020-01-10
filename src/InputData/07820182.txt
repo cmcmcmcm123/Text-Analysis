@@ -1,0 +1,372 @@
+Efficient Processing of Skyline Queries Using MapReduce
+
+Abstract?The skyline operator has attracted considerable attention recently due to its broad applications. However, computing a  skyline is challenging today since we have to deal with big data. For data-intensive applications, the MapReduce framework has been  widely used recently. In this paper, we propose the efficient parallel algorithm SKY-MR? for processing skyline queries using MapReduce. We first build a quadtree-based histogram for space partitioning by deciding whether to split each leaf node judiciously  based on the benefit of splitting in terms of the estimated execution time. In addition, we apply the dominance power filtering method to  effectively prune non-skyline points in advance. We next partition data based on the regions divided by the quadtree and compute  candidate skyline points for each partition using MapReduce. Finally, we check whether each skyline candidate point is actually a  skyline point in every partition using MapReduce. We also develop the workload balancing methods to make the estimated execution  times of all available machines to be similar. We did experiments to compare SKY-MR? with the state-of-the-art algorithms using MapReduce and confirmed the effectiveness as well as the scalability of SKY-MR?.
+
+Index Terms?Skyline queries, MapReduce algorithms, distributed and parallel algorithms  ?  1 INTRODUCTION  THE skyline operator and its variants [1], [2], [3] haveattracted considerable attention recently due to their broad applications such as product recommendations [4], review evaluations with user ratings [5], querying wireless sensor networks [6] and graph analysis [7]. However, com- puting a skyline is challenging today since we have to deal with big data. For data-intensive applications including similarity joins [8] and top-k substring matching [9], the MapReduce[10] framework has been considered as a de facto standard. Thus, several skyline processing algorithms [11], [12], [13], [14] using MapReduce have been proposed.
+
+MR-GPMRS in [11] consists of the partitioning and global skyline phases. The partitioning phase of MR-GPMRS divides the data space into grid partitions and prunes the partitions that cannot contain any skyline point by utilizing the dominance relationships between grid partitions. In the global skyline phase, in every unpruned partition P , the points which are located in other unpruned partitions and may dominate a point in P are first collected and each point in the partition P is compared with the collected points to determine whether it is a global skyline point in parallel.
+
+To compute the skyline efficiently, an additional local skyline phase is involved between the partitioning and global skyline phases in MR-BNL [12], PPF-PGPS [13] and SKY-MR [14]. They compute the local skyline for each  partition and use them to compute the skyline in the global skyline phase. The benefit of the additional phase is that the overheads of computing the skyline as well as distributing the points via the network in the global skyline phase are reduced since the number of local skyline points in each partition is much less than that of all points in the partition.
+
+In the local skyline phase, while MR-BNL computes the local skylines blindly, PPF-PGPS and SKY-MR prune points in advance by utilizing partition-aware filtering techniques.
+
+Thus, PPF-PGPS and SKY-MR outperform MR-BNL as reported in [13], [14]. In addition, while MR-BNL and PPF- PGPS utilize only a single machine to compute the global skyline, SKY-MR calculates the global skyline in parallel and thus shows better scalability than PPF-PGPS and MR-BNL.
+
+Furthermore, since SKY-MR prunes non-skyline points by the additional local skyline phase, it is generally more effi- cient thanMR-GPMRSwhich consists of two phases.
+
+While SKY-MR is the state-of-the-art algorithm for com- puting skylines using MapReduce, it has the following drawbacks. To split the data effectively, SKY-MR builds a sky-quadtree [14] from a sample of data based on the user- defined parameter split threshold which is the maximum number of points in every leaf node. Thus, the performance of SKY-MR suffers when a reasonable split threshold is not provided. Furthermore, since the skyline algorithms using MapReduce [11], [12], [13], [14] including SKY-MR ignore workload balancing of available machines, their performan- ces degrade with increasing the number of machines.
+
+To alleviate the problems mentioned above, we propose the MapReduce algorithm SKY-MR? to compute skylines efficiently in this paper. The contributions of our work are summarized as follows:  Adaptive Quadtree Building. Our SKY-MR? uses an adaptive quadtree building technique which splits each node judiciously depending on whether splitting the node is beneficial or not in terms of the estimated execu- tion time. SKY-MR splits a leaf node of a sky-quadtree in  ? Y. Park and K. Shim are with the Department of Electrical and Computer Engineering, Seoul National University, Kwanak P.O. Box 34, Seoul 151- 600, Korea. E-mail: {yjpark, shim}@kdd.snu.ac.kr.
+
+? J.-K. Min is with the School of Computer Science and Engineering, Korea University of Technology and Education, Byeongcheon-myeon, Cheonan, Chungnam 330-708, Korea. E-mail: jkmin@koreatech.ac.kr.
+
+Manuscript received 29 Mar. 2016; revised 28 Nov. 2016; accepted 7 Jan.
+
+2017. Date of publication 17 Jan. 2017; date of current version 30 Mar. 2017.
+
+Recommended for acceptance by F. Li.
+
+For information on obtaining reprints of this article, please send e-mail to: reprints@ieee.org, and reference the Digital Object Identifier below.
+
+1041-4347? 2017 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+
+See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+a d-dimensional space into 2d child nodes whose regions are equi-sized. However, our SKY-MR? divides a leaf node into 2d child nodes with respect to a skyline point located in the region of the leaf node since one of its child nodes can always be pruned. Furthermore, among the skyline points in the region of the leaf node, we select the one such that the estimated number of check- ing dominance relationships between the pairs of points in the region is the smallest.
+
+Effective Workload Balancing. To balance the workloads of available machines in the local and global skyline phases, we propose the workload balancing techniques to make the estimated execution times of all machines to be similar.
+
+Since our workload balancing problem is the same as the multiprocessor scheduling problem [15], which is NP-Hard, we use an effective approximation algorithm in [15].
+
+Efficient Local Skyline Computation. Before computing the local skyline points, it is desirable to remove as many non- skyline points as possible to decrease the local skyline com- putation overhead. Thus, we adapt the dominance-power fil- tering technique [16] which maintains a set of dominating points that are expected to dominate many other points and we prune the points dominated by a dominating point.
+
+To demonstrate the efficiency and scalability of our SKY- MR?, we compared SKY-MR? to MR-GPMRS, MR-BNL, PPF-PGPS and SKY-MR by implementing them as well as conducting extensive performance study on Hadoop [17].
+
+Our experimental results confirm that SKY-MR? is very effi- cient and scalable compared to the other existing MapRe- duce algorithms including the state-of-the-art SKY-MR.
+
+2 RELATED WORK  After skyline processing was introduced in [1], several serial algorithms for computing skylines and its variants were introduced in [2], [3], [18], [19], [20], [21], [22], [23], [24], [25].
+
+However, existing serial skyline algorithms utilizing central- ized indexing structures such as B?-trees and R?-trees are not suitable to be parallelized using MapReduce since the MapReduce framework does not provide the functionality for building and accessing centralized indexing structures.
+
+Although we focus on computing the skyline using Map- Reduce, we still need a serial skyline algorithm to calculate the local skyline for each partition. Thus, among the serial skyline algorithms [1], [18], [24], [25] without using central- ized indexes, we adopt the state-of-the-art algorithm BSky- Tree-P [24]. To split the data space into 2d partitions, BSkyTree-P first selects a pivot point. Then, every point dominated by the pivot point is removed and BSkyTree-P recursively divides the partitions into sub-partitions until each partition contains at most one point. It next merges the partitions and computes the local skyline of the merged par- tition repeatedly until there is a single partition and then the global skyline is obtained.
+
+Recently, skyline processing algorithms in distributed environments such as MapReduce [11], [12], [13], [14], sen- sor networks [6] and other distributed systems [26], [27], [28], [29] have been proposed. The MapReduce algorithms for probabilistic skyline queries [16], [30] and subspace sky- line queries [31] are also proposed. Among the above works, we next illustrateMR-GPMRS [11],MR-BNL [12], PPF-PGPS [13] and SKY-MR [14] briefly since they are the most rele- vant works to ours. The details of the state-of-the-art algo- rithm SKY-MRwill be presented in Section 3.3.
+
+While MR-GPMRS [11] consists of the partitioning and global skyline phases only, MR-BNL [12], PPF-PGPS [13] and SKY-MR [14] are composed of the partitioning, local skyline and global skyline phases. In the partitioning phase, the space is split into partitions by using sky-quadtree parti- tioning in SKY-MR, angle-based partitioning [32] in PPF- PGPS or grid partitioning in MR-GPMRS and MR-BNL. In contrast to MR-GPMRS using two phases, MR-BNL, PPF- PGPS and SKY-MR compute the local skyline for each parti- tion in the additional local skyline phase. Then, in the global skyline phase, MR-GPMRS, MR-BNL, PPF-PGPS and SKY- MR compute the global skyline.
+
+Since MR-BNL uses only up to 2d machines in the local skyline phase where d is the number of dimensions, the machines participating in the MapReduce framework could not be fully utilized. In addition, since a single machine computes the global skyline, MR-BNL is ineffi- cient when a large number of local skyline points are pro- duced. On the contrary, SKY-MR utilizes all available machines at the local and global skyline phases. Further- more, in the local skyline phase, SKY-MR performs addi- tional pruning by utilizing the dominance relationships between partitions. It is shown in [14] that SKY-MR outper- forms MR-BNL. Since PPF-PGPS uses a single machine to compute the global skyline, SKY-MR also shows better per- formance than PPF-PGPS. In addition, SKY-MR is gener- ally more efficient than MR-GPMRS since MR-GPMRS does not have the local skyline phase.
+
+Although the works in [27] and [28] are not proposed for MapReduce, since they can be processed with MapReduce, we present them here. The one-step and two-step algo- rithms in [27] split the data space into grid partitions. They next prune the partitions with no skyline point and compute the global skyline for every unpruned partition in parallel.
+
+While both algorithms in [27] split the data space into a fixed number of grids, SKY-MR varies the number of parti- tions adaptively based on the data distribution.
+
+The algorithm PPPS in [28] for multi-core machines uti- lizes the angle-based space partitioning [32]. PPPS recur- sively splits each partition into two partitions until the number of the partitions becomes the desired number of CPU cores c. The local skyline is next computed for every partition in parallel. Finally, PPPS performs a bottom-up merge in O?log ?c?? iterations until there remains a single partition only. Since PPPS can utilize c=2i cores only in the ith merging iteration, multi-cores are not fully utilized.
+
+However, SKY-MR computes the global skyline by consid- ering each partition independently and utilizing all avail- able machines simultaneously. As expected, it is shown in [14] that SKY-MR is superior to the MapReduce implemen- tations of the algorithms in [27] and [28].
+
+3 PRELIMINARIES  3.1 The Skyline Consider a d-dimensional data set D ? fp1; p2; . . . ; pjDjg. A point pi is represented by hpi?1?; pi?2?; . . . ; pi?d?i where pi?k? is the kth coordinate of pi. A point pi dominates another point pj, denoted as pi ? pj, if the following two conditions hold: (1) for every k with 1 ? k ? d, we have pi?k? ? pj?k? and (2) there exists k with 1 ? k ? d such that pi?k? < pj?k? holds.
+
+We also denote that a point pi does not dominate another point pj as pi 6? pj. The skyline of D, represented by SL?D?, is a subset of D where every point in SL?D? is not     dominated by every other point in D. In other words, SL?D? ? fpi 2 D j@pj 2 D such that pj ? pig. The points in SL?D? are called the skyline points of D. Some notations used in this paper are summarized in Table 1.
+
+Example 3.1. Consider a bicycle data set D with the price and weight attributes in Fig. 1a. We plot every point in D into a 2-dimensional space in Fig. 1b where x and y axes indicate the price and weight, respectively. Since p1?1? < p16?1? and p1?2? < p16?2?, p1 dominates p16. In addition, p1 is a skyline point since p1 is not dominated by the other points. In Fig. 1b, we plot every point in SL?D? ? fp1; p3; p5; p7; p12gwith a black circle.
+
+3.2 The MapReduce Framework MapReduce [10] or its open-source equivalent Hadoop [17] is a widely used framework for data-intensive parallel compu- tation in shared-nothing clusters of machines. In Hadoop, data is represented as key-value pairs. Hadoop divides the input data to a MapReduce job into fixed-size pieces called chunks and spawns a mapper task for each chunk. The mapper task invokes a map function for each key-value pair in the chunk and the map function may output several key-value pairs. The key-value pairs emitted by all map functions are grouped by keys in the shuffling phase and passed to reducer tasks to generate the final output. Users can control which key goes to which reducer task by modifying a Partitioner class.
+
+For each distinct key, the reduce task invokes a reduce function with the key and the list of all values sharing the key as input.
+
+A reduce function may generate several key-value pairs. Each mapper (or reducer) task can execute a setup function before invoking map (or reduce) functions and a cleanup function after executing all map (or reduce) functions. Hadoop exe- cutes themain function on a singlemastermachine.
+
+3.3 SKY-MR: The State-of-the-Art Algorithm In this section, we present the details of SKY-MR [14] which works with the three phases as follows.
+
+(1) Sky-quadtree building phase: SKY-MR builds a sky-quad- tree with a sample of data to split the data space into several partitions. The d-dimensional data space is subdivided recursively into 2d equi-sized sub-regions each of which is  associated with a node of the sky-quadtree until each sub- region contains at most a predefined number of points r called the split threshold. According to the dominance rela- tionships between the regions represented by nodes, every node without any skyline point is marked as ?pruned?.
+
+(2) Local skyline phase: For each unpruned leaf node n of the sky-quadtree, the local skyline of P ?n?, denoted by SL?P ?n??, is computed where P ?n? is all points in the region represented by n. To reduce the number of checking domi- nance relationships between points in the next phase, virtual max points and sky-filter points are computed after the local skylines are obtained. The virtual max point vpn of a leaf node n is an artificial d-dimensional point such that vpn?k? ? maxp2SL?P ?n??p?k? with 1 ? k ? d. In each leaf node n, we also select a single local skyline point, called a sky-filter point, which has the minimum value for every dimension.
+
+(3) Global skyline phase: Each local skyline point in every unpruned leaf node is checked whether it is a global skyline point or not by comparing it with the local skyline points in the region of the other unpruned leaf nodes. When the total number of local skyline points is less than the size threshold d, a single machine is used to speed up. SKY-MR first col- lects all virtual max and sky-filter points of every leaf node. If a local skyline point p located in the region of a leaf node is dominated by any sky-filter point, p is discarded without comparing to the local skyline points of the other unpruned leaf nodes. The number of checking dominance relation- ships between a pair of points can be even more reduced by utilizing the virtual max points. For an unpruned leaf node n, it is shown in [14] that if a local skyline point p0 in another leaf node n0 does not dominate the virtual max point of the leaf node n (i.e., p0 6? vpn), the point p0 does not dominate every local skyline point in SL?P ?n??. Thus, in every unpruned leaf node n, each local skyline point p in the region of n becomes a skyline point if p is not dominated by every local skyline point p0 which dominates vpn and is in the region of the other unpruned leaf nodes.
+
+Drawbacks of SKY-MR. SKY-MR builds a sky-quadtree from a sample of data based on the user-defined parameter split thresholdwhich is the maximum number of points in each leaf node. As the split threshold decreases, the number of leaf nodes in the quadtree tends to increase and more points are allowed to be pruned by the dominance relationships between leaf nodes in the local skyline phase. In contrast, decreasing split threshold has an adverse effect on the net- work overhead by transmitting more duplicates of local sky- line points to other leaf nodes in the global skyline phase.
+
+Since there is a trade-off between the costs of the local and global skyline phases, when a reasonable split threshold is not provided, its performance suffers. Furthermore, since SKY-MR as well as the other MapReduce skyline algorithms [11], [12], [13] do not consider workload balancing, the per- formances of the algorithms could degrade. Finally, there is  TABLE 1 List of Notations  Notation Description  S A sample of d-dimensional dataD (i.e., S ? D).
+
+SL?P ? The skyline of a set of points P .
+
+vpn The virtual max point of a node n of sky-qtree  ?s or sky-quadtrees.
+
+region?n? The region covered by a node n of sky-qtree?s or sky-quadtrees.
+
+P ?n? The set of points p 2 D located in region?n?.
+
+S?n? The set of sampled points p 2 S located in  region?n?.
+
+C?n? The set of candidate split points p 2 SL?S?  located in region?n? (i.e., C?n? ? SL?S? \ S?n?).
+
+R?n? The set of all local skyline points which dominate  vpn of a leaf node n and are located in the other leaf nodes (i.e.,  S n0 6?nfp0 2 SL?P ?n0??jp0 ? vpng).bt?Q? The estimated execution time of SKY-MR? with  a sky-qtree? Q.
+
+Fig. 1. An example of a skyline.
+
+PARK ETAL.: EFFICIENT PROCESSING OF SKYLINE QUERIES USING MAPREDUCE 1033    still a lot of room for improvement to reduce the communica- tion and computation costs of the local skyline phase.
+
+4 EFFICIENT PARALLEL SKYLINE PROCESSING  To alleviate the weak points of SKY-MR mentioned previ- ously, we propose the parallel algorithm SKY-MR? to com- pute skylines using MapReduce efficiently as follows.
+
+Adaptive Quadtree Building. We develop an adaptive quadtree building algorithm which splits a node of a quad- tree based on minimizing the estimated execution time of computing the local and global skyline points.
+
+Effective Workload Balancing. We propose the workload balancing algorithms for both local and global skyline phases to make the execution times of all available machines to be similar.
+
+Efficient Local Skyline Computation. To remove as many non-skyline points as possible to decrease the local skyline computation overhead, we adapt the dominance-power filter- ing [16], which maintains a set of dominating points that are expected to dominate many other points.
+
+4.1 Adaptive Quadtree Building The algorithm SKY-MR? utilizes an extension of a sky- quadtree [14], called a sky-qtree?, to partition and prune points. Similar to a sky-quadtree, a region is represented by a node of a sky-qtree?. When SKY-MR splits a leaf node of a sky-quadtree in a d-dimensional space into 2d child nodes whose regions are equi-sized, at most a single child node can be pruned by comparing the dominance relationships between every pair of its child nodes. On the contrary, our SKY-MR? splits a leaf node into 2d child nodes with respect to a skyline point located in the region of the leaf node.
+
+Let region?n? be the region represented by a node n of a sky-qtree?. Consider a node n of a sky-qtree? whose region is region?n? ? h?n:min?1?; n:max?1??; . . . ; ?n:min?d?; n:max?d??i where ?n:min?k?; n:max?k?? is the kth dimensional range.
+
+Let n:min and n:max be hn:min?1?; . . . ; n:min?d?i and hn:max?1?; . . . ; n:max?d?i, respectively. After splitting n with respect to a skyline point p, there is a child node nr of n which represents the region region?nr? ? h?p?1?; n:max?1??; . . . ; ?p?d?; n:max?d??i (i.e., nr:min ? p). Since all points located in region?nr? are dominated by p, every point in region?nr? is not a skyline point. Thus, by splitting a leaf node into 2d  child nodes with respect to a skyline point, SKY-MR? can always prune the child node nr among its 2  d child nodes.
+
+In contrast to a sky-quadtree, the user-defined parameter  split threshold is not required to build a sky-qtree?. When we build a sky-qtree?, we have to consider two aspects for split- ting a leaf node: (1) which skyline point in the sample to select in the leaf node and (2) whether to split the leaf node or not. To decide whether a leaf node n is to be split or not, we first select a split point based on the number of checking dominance relationships between pairs of points in region?n? locally. After a split point p in region?n? is decided, we evaluate the global effect of splitting region?n? with respect to p based on the estimated execution times of the local and global skyline phases in SKY-MR?. If splitting n by p is beneficial, we split the node n. We next discuss each aspect inmore details and present how to build a sky-qtree?.
+
+Selecting a Split Point. As mentioned earlier, for a leaf node n, we select a skyline point located in region?n? as the split point of n. Since we build a sky-qtree? from a sample S ofD, we select a split point among the skyline points in S.
+
+Given a node n of a sky-qtree?, let S?n? and C?n? be the set of sampled points in region?n? and the set of skyline points among the sampled points in region?n?, respectively.
+
+We consider each skyline point in C?n? as a candidate split point of n. Selecting a split point among the skyline points in C?n? affects the performance of SKY-MR?. To minimize the computational overhead of building a sky-qtree?, we select the skyline point p 2 C?n? which minimizes the number of checking dominance relationships between pairs of points in S?n?. If we compute the exact number of checking domi- nance relationships between pairs of points in D after split- ting n by p, it is expensive. Thus, we estimate how many checking dominance relationships between pairs of the points in S?n? can be avoided by splitting n by p.
+
+Recall that, as presented in Section 3.3, we do not check the dominance relationships between a local skyline point p0 of a node n0 and every local skyline point of another node n if p0  does not dominate the virtual max point of n (i.e., p0 6? vpn). In addition, since every point in a node n00 marked as ?pruned? cannot be a skyline point,we donot check the dominance rela- tionships between each point of n00 and every other point inD.
+
+To find the split point of a node n, we first split n into child nodes with respect to p, for each candidate split point p 2 C?n?. Then, for each child node nc of n, we compute the sample virtual max point, denoted by ~vpnc , where ~vpnc?k? ? maxp02C?nc?p  0?k? with 1 ? k ? d. The estimated number of checking dominance relationships reduced by splitting n with respect to p, denoted by comp?n; p?, is computed as  comp?n; p? ? X  p02S?n?  X nc2n:child?fnrg; nc 6?n?p0?;p0 6? ~vpnc  jS?nc?j  ? jS?nr?j 	 ?jS?n?j ? 1?; (1)  where n:child is the set of the child nodes of n split by p, n?p0? is the child node of n whose region contains p0 and nr is the pruned child node of n (i.e., nr:min ? p). The first term of comp?n; p? adds the number of points in each unpruned node nc 2 n:child? fnrg such that nc 6? n?p0? for every point p0 2 S?n? which does not dominate ~vpnc . The second term of comp?n; p? denotes the number of checking dominance rela- tionships between each point of the pruned node nr satisfy- ing nr:min ? p and every other point. Finally, the point with the maximum comp?n; p? among the points in C?n? is selected as the split point of n which is denoted by sp?n? (i.e., sp?n? ? argmaxp2C?n?comp?n; p?).
+
+Example 4.1. Suppose that a sample S ? fp2; p4; p6; p8; p10;  p12; p14; p16g of data D in Fig. 1a is inserted into the root node n0 of a sky-qtree  ?. The sample points in the region of n0 are plotted in Fig. 2a. The skyline of S is SL?S? ? fp2; p4; p8; p10; p12; p14g and the skyline points become the candidate split points of n0 (i.e., SL?S? ? C?n0?). If n0 is split with respect to p4 into n1, n2, n3 and n4, S is split into S?n1? ? fp4g, S?n2? ? fp2; p10; p14; p16g, S?n3? ? fp8; p12g and S?n4? ? fp6g as shown in Fig. 2b. Since C?n2? ? fp2; p10; p14g, the sample virtual max point of n2 is ~vpn2 ?h5; 9i. We do not check whether p4 dominates the points in S?n2? because p4 does not dominate ~vpn2 . Thus, we save 4?? jS?n2?j? comparisons. For every sample point except p6, since p6 is located in the pruned node n4, we do not check whether it dominates p6. Since comp?n0; p4? ? comp?n0; pi? holds for every pi 2 C?n0?, we select p4 as the split point of n0.
+
+Splitting a Node. Similar to SKY-MR, when the number of the leaf nodes in a sky-qtree? becomes large, our SKY-MR?  prunes more points in the local skyline phase. However, since the virtual max, sky-filter and local skyline points of an unpruned node should be sent to the machines which com- pute the global skyline points of the other unpruned leaf nodes, a large number of leaf nodes result in large network overhead. While constructing a sky-qtree? recursively, we thus determine to split a leaf node n or not judiciously based on the estimated execution time of the local and global sky- line phases in SKY-MR?. We denote the estimated execution time of both phases in SKY-MR? with a sky-qtree? Q as bt?Q?.
+
+How to calculate bt?Q? will be presented in the Section 4.2.4.
+
+For a leaf node n, let Q and Q0 be the sky-qtree?s before split- ting n and after splitting n by its split point sp?n?, respec- tively. If splitting the leaf node n by sp?n? is beneficial (i.e., bt?Q? > bt?Q0?), we split n by sp?n?.
+
+Building a sky-qtree?. We initially generate a sky-qtree?  with a root node n0 only and insert a sample S of D into the root node. We next compute the candidate split points of n0 (i.e., C?n0? ? SL?S?) and annotate them with the root node.
+
+We also produce a max-heap consisting of the root node with the number of points in S?n0? (i.e., jS?n0?j) as its key.
+
+We maintain the max-heap with the leaf nodes to split where the number of the sampled points (i.e., jS?n?j) serves as the key of each leaf node n. We repeatedly select a node to split and split the node if the estimated execution time of the local as well as global skyline phases in SKY-MR? with the current sky-qtree? is larger than that with the expanded sky-qtree? by splitting the node.
+
+Since the execution times of the local and global skyline computations with the points belonging to the region of a leaf node n (i.e., P ?n?) is likely to be proportional to jP ?n?j, if the node whose region contains a large number of points is split into leaf nodes, we have a high chance of having sim- ilar numbers of points in all leaf nodes and thus the work- load of every machine can be more balanced. Thus, to select a leaf node to be split, we choose the leaf node among avail- able leaf nodes whose region contains the maximum num- ber of the sampled points. To find such a leaf node quickly, we extract the leaf node from the root of the max-heap.
+
+When splitting a node n, we select a point p with the maximum comp?n; p? defined by Equation (1) among the points in C?n? as the split point sp?n? and split the node into 2d nodes based on the split point p. Among its 2d child nodes, the child node nr such that nr:min ? p is marked as ?pruned? since every point in region?nr? is dominated by p.
+
+Furthermore, we distribute C?n? and S?n? into its 2d child nodes based on their covered regions. For each unpruned child node nc of n, if jC?nc?j ? 0 or nc:max ? p (note that it is not nc:min), we do not split the node nc anymore since there is no candidate split point in region?nc?. Otherwise, we insert nc into the max-heap to check later whether split- ting nc is beneficial or not.
+
+We repeatedly conduct the above steps until there is not any leaf node in the max-heap. In other words, when there is not any leaf node which improves the estimated execu- tion time by splitting, we stop splitting a leaf node and ter- minate the generation of the sky-qtree?.
+
+Example 4.2. Recall that the point p4 was the split point of the root node n0 of the sky-qtree? in Example 4.1. Assume that splitting n0 with respect to p4 is better than no splitting n0 based on the estimated execution time of the local and global skyline phases in SKY-MR?. Then, we split n0 into its child nodes n1, n2, n3 and n4 as shown in Fig. 2b. Since n4:min ? p4 ? h6; 3i, we mark n4 as ?pruned?. Further- more, since n2 has more sampled points in its region than n1 and n3 (i.e., S?n2? S?n3? S?n1?), we choose p14 as the split point of n2 because it has the maximum comp?n2; p? among candidate split points p in C?n2?. Sup- pose that splitting n2 by its split point p14 reduces the esti- mated execution time of the local and global skyline phases than no splitting n2. Then, we split n2 with respect to p14. For each n of unpruned leaf nodes, assume that split- ting n by sp?n? is always worse than no splitting. Then, the final sky-qtree? becomes the one shown in Fig. 2c.
+
+4.2 Effective Workload Balancing Since the local and global skyline phases of SKY-MR? utilize MapReduce, we next develop the workload balancing tech- niques to minimize the execution times of both phases.
+
+4.2.1 Estimating the Number of Skyline Points  Before we estimate the execution times of computing the local and global skyline points, we first estimate the number of the local skyline points in the region of each leaf node in a sky-qtree? by utilizing the skyline cardinality estimation method based on the log sampling technique [33]. It assumes that the number of skyline points in D is AlogBjDj where A and B are constants. To find the proper values of A and B, we utilize the sample S used to build the sky- qtree?. As suggested in [33], we first divide S into S1 and S2, and next calculate their skylines SL?S1? and SL?S2?.
+
+Since we have two equations, jSL?S1?j ? A logBjS1j and jSL?S2?j ? A logBjS2j, the values of the constants A and B are calculated as follows:  B ? log jSL?S2?j ? log jSL?S1?j log ?log jS2j? ? log ?log jS1j? ; A ?  jSL?S1?j logBjS1j : (2)  For a leaf node n, let S?n? and P ?n? be the sets of sampled points in S and data points in D belonging to region?n?, respectively. By assuming jP ?n?j ? jS?n?j jDjjSj, we estimate the number of the local skyline points contained in region?n? as A logB?jP ?n?j?.
+
+Example 4.3. Assume that the sample S in Example 4.1 is  split into S1 ? fp4; p6; p8; p10; p14; p16g and S2 ? fp2; p12g.
+
+Then, SL?S1? ? fp4; p8; p10; p14g and SL?S2? ? fp2; p12g.
+
+Since jS1j ? 6, jS2j ? 2, jSL?S1?j ? 4 and jSL?S2?j ? 2, we have B ? ?log ?2??log ?4??=?log ?log ?2???log ?log ?6??? ? 0:72 and A ? 4=log 0:72?6? ? 4:8 according to Equation (2).
+
+Thus, for the data D in Fig. 1a, the estimated size of the skyline jSL?D?j becomes A logB?jDj? ? 5:5.
+
+We next discuss how to balance the workloads of avail-  able machines for both local and global skyline phases.
+
+Fig. 2. An example of building a sky-qtree?.
+
+PARK ETAL.: EFFICIENT PROCESSING OF SKYLINE QUERIES USING MAPREDUCE 1035    4.2.2 Workload Balancing for the Local Skyline Phase  In the local skyline phase, for each unpruned leaf node n of the sky-qtree?, a reduce function is called with n and the set of data points in D belonging to region?n? (i.e., P ?n?). We next compute the local skyline of P ?n? (i.e., SL?P ?n??).
+
+Execution Time of the Local Skyline Phase. Since the execu- tion time of computing the local skyline of P ?n? tends to grow as the number of points in P ?n? as well as the number of local skyline points in SL?P ?n?? increase, we estimate the execution time of a reduce function by jSL?P ?n??j 	 jP ?n?j for computing the local skyline.
+
+Assume that there aremmachines and a set of leaf nodes  Li ? fni1 ; ni2 ; . . . ; nijLi j g is assigned to the ith machine to compute the local skyline SL?P ?nij?? for every nij 2 Li. The execution time of the machine is proportional to the value of  P n2Li jSL?P ?n??j 	 jP ?n?j. Since every machine computes  the local skylines in the regions of its assigned nodes inde- pendently in parallel, the execution time of the local skyline phase is equal to the longest execution time of the machines (i.e.,maxmi?1?  P n2Li jSL?P ?n??j 	 jP ?n?j??.
+
+Balancing Workloads of All Machines. To minimize the estimated execution time of the local skyline phase by utiliz- ing jSL?P ?n??j ? A logB?jP ?n?j? and jP ?n?j ? jS?n?j jDjjSj in Section 4.2.1, we define the following problem.
+
+Definition 4.4. (Local Workload Balancing Problem). Let N?Q? ? fn1; . . . ; njN?Q?jg be the set of all unpruned leaf nodes of a sky-qtree? Q and m be the number of machines available.
+
+By letting jSL?P ?n??j ? A logB?jP ?n?j? and jP ?n?j ? jS?n?j jDjjSj , the problem is to find a set of disjoint leaf node groups L?Q? ? fL1?Q?; . . . ; Lm?Q?g such that L1?Q? [ 	 	 	 [ Lm?Q? ? N?Q? and maxmi?1?  P n2Li?Q? jSL?P ?n??j 	 jP ?n?j?  is minimized.
+
+This problem is equivalent to the well-known multipro- cessor scheduling problem which is NP-Hard [15]. Since the longest processing time (LPT) algorithm [15] is an approximation algorithm running in linearithmic (i.e., O?jN?Q?jlog jN?Q?j?) time for this problem, we adapt LPT algorithm to solve our local workload balancing problem.
+
+In our modified LPT algorithm, every machine is initially not associated with any leaf node. The estimated execution time of a machine is calculated as the sum of those of all leaf nodes assigned to the machine. Thus, the estimated execution time of every machine is initially set to zero. We next sort the unpruned leaf nodes n by the decreasing order of their esti- mated execution times computed by jSL?P ?n??j 	 jP ?n?j. We next examine each leaf node in the sorted list one by one.
+
+While examining each leaf node, we assign it to the machine with the smallest estimated execution time. In [15], the approximation ratio of LPT algorithm is shown to be 4=3? 1=?3m?wherem is the number ofmachines available.
+
+4.2.3 Workload Balancing for the Global Skyline Phase  Similar to SKY-MR, in the global skyline phase, when the total number of local skyline points is small, SKY-MR? uti- lizes a serial algorithm to compute the global skyline on a single machine. When the total number of local skyline points is large, SKY-MR? computes the global skyline using MapReduce and thus the workload balancing is required.
+
+Execution Time of the Global Skyline Phase. In the global sky- line phase, a reduce function is called for each unpruned leaf  node n 2 N?Q? where N?Q? is the set of all unpruned leaf nodes of a sky-qtree? Q. The input of the reduce function con- sists of two types of points: (1) the local skyline points in the region of n (i.e., SL?P ?n??) and (2) the local skyline points which not only are in other leaf nodes but also dominate the virtual max point of n. We denote the point set of the second type as R?n? (i.e., R?n? ? S n02N?Q?;n0 6?nfp0 2 SL?P ?n0??jp0 ? vpng). Each reduce function requires O?jSL?P ?n??j 	 jR?n?j? time to check whether each local skyline point p in SL?P ?n?? is a global skyline point based on the dominance relationship between p and every local skyline point p0 in R?n?. Thus, we estimate the execution time of each reduce function called with a leaf node n as jSL?P ?n??j 	 jR?n?j.
+
+To estimate the execution time of the local skyline phase, since SL?P ?n?? of every leaf node n is not known before the local skyline phase, we utilized the estimated value of jSL?P ?n??j ? A logB?jP ?n?j? previously. However, to esti- mate the execution time of the global skyline phase, we can utilize the exact values of jSL?P ?n??js by counting the num- ber of the local skyline points for every leaf node n in the local skyline phase. However, to compute jR?n?j in the local skyline phase, we have to examine every local skyline point p in the region of other leaf nodes to check whether p domi- nates vpn. Since such counting is very expensive, we esti- mate jR?n?j with the upper bound of jR?n?j by using the following definition and lemma.
+
+Definition 4.5. A point pi is said to strongly dominate another point pj, denoted as pi ?? pj, if and only if pi?k? < pj?k? holds for 1 ? k ? d.
+
+Lemma 4.6. Given a set of all unpruned leaf nodes N?Q? of a sky-qtree? Q and a leaf node n 2 N?Q?, if we let  up?jR?n?j? ? X  n02N?Q?;n0 6?n;n0:min??n:max jSL?P ?n0??j;  we have up?jR?n?j? jR?n?j.
+
+Proof. When a point p0 is in the region of a leaf node n0, we  have n0:min?k? < p0?k? ? n0:max?k? for every dimension k ? 1; . . . ; d by the definitions of n0:min and n0:max in Section 4.1. If the point p0 dominates vpn, we have n0:min?k? < p0?k? ? vpn?k? ? n:max?k? for every dimen- sion k and n0:min strongly dominates n:max. Thus, we obtain  [ n02N?Q?;n0 6?n; n0 :min?n:max  SL?P ?n0?? ? [  n02N?Q?;n0 6?n fp0 2 SL?P ?n0??jp0 ? vpng:  From the above relationship and the fact that SL?P ?n0??s are disjoint for every leaf node n0, we have  up?jR?n?j? ? X  n02N?Q?;n0 6?n; n0 :min??n:max  jSL?P ?n0??j jR?n?j:  tu Similar to the local skyline phase, the execution time of  the global skyline phase is the longest execution time of the machines (i.e.,maxmi?1?  P n2Gi?Q? jSL?P ?n??j 	 up?jR?n?j??).
+
+Balancing Workloads of All Machines. We next define the workload balancing problem of the global skyline phase.
+
+Definition 4.7 (Global Workload Balancing Problem).
+
+Let N?Q? ? fn1; . . . ; njN?Q?jg be the set of all unpruned leaf     nodes of a sky-qtree? Q and m be the number of machines available. The problem is to find a set of disjoint leaf node groups G?Q? ? fG1?Q?; . . . ; Gm?Q?g such that G1?Q? [ 	 	 	 [ Gm?Q? ? N?Q? and maxmi?1 ?  P n2Gi?Q? jSL?P ?n??j 	 up?jR?n?j?? is minimized.
+
+To balance the workloads of machines in the global sky- line phase, the main function collects the number of the local skyline points in each unpruned leaf node n (i.e., jSL?P ?n??j) and computes up?R?n??. After estimating the workload of each machine, we adapt LPT algorithm again.
+
+Since our approximation algorithm for the global skyline phase is the same as that for the local skyline phase except that jP ?n?j is substituted by up?jR?n?j?, we omit the details of applying LPT algorithm here for the global skyline phase.
+
+4.2.4 Estimating the Execution Times of the Local and  Global Skyline Phases for the Sky-qtree+ Building  Phase  While building a sky-qtree? recursively, we determine to split a leaf node n or not judiciously based on the estimated execu- tion time of the local and global skyline phases in SKY-MR?.
+
+Given a sky-qtree? Q and m available machines, we define the estimated execution time of processing both local and global skyline phases of SKY-MR?, denoted by bt?Q?, as  bt?Q? / max i?1;...;m  X n2Li?Q?  jSL?P ?n??j 	 jP ?n?j @  A  ? max i?1;...;m  X n2Gi?Q?  jSL?P ?n??j 	 up?jR?n?j? @  A; (3)  where the former and latter terms represent the estimated execution times of the local and global skyline phases pre- sented in Sections 4.2.2 and 4.2.3, respectively. While we build a sky-qtree? in the first phase, since the exact value of jSL?P ?n??j for each leaf node n is not known, we utilize the approximation of jSL?P ?n??j ? A logB?jP ?n?j? to estimate the execution time of the global skyline phase as we did for workload balancing of the local skyline phase previously.
+
+We now show how to decide whether splitting a node is beneficial or not in terms of the estimated execution time.
+
+Example 4.8. Consider again Example 4.1 in which p4 is the split point of the root node n0 of the sky-qtree  ? in Fig. 2a.
+
+Assume that we have two machines (i.e., m ? 2). When n0 is not split, the estimated execution time of the local skyline phase is 88 since the estimated size of P ?n0? is jS?n0?j 	 jDj=jSj ? 16 and jSL?P ?n0??j is estimated as A logB?jP ?n0?j? ? 5:5 by using A ? 4:8 and B ? 0:72 com- puted in Example 4.3. The estimated execution time of the global skyline phase is jSL?P ?n0??j 	 up?jR?n0?j? ? 0 since there is a single leaf node (i.e., the root node n0) and up?jR?n0?j? is 0 by the definition. Thus, the total estimated execution time of both phases is 88.
+
+Meanwhile, when n0 is split with p4 as shown in Fig. 2b, the estimated execution times of computing the local skylines of the unpruned leaf nodes n1, n2 and n3 are 4, 36 and 13.2, respectively. Then, by LPT algorithm, the task of computing the local skyline of n2 is assigned to a machine while those of both n1 and n3 are allocated to the other machine. Thus, the estimated execution time of the local skyline phase ismax?36; 4? 13:2? ? 36.
+
+The values of up?jR?n1?j?, up?jR?n2?j? and up?jR?n3?j? are 0, 2 and 2, respectively, since n1:min strongly domi- nates n2:max and n3:max as well as jSL?P ?n1??j ? 2.
+
+Thus, the estimated execution times of computing the global skyline (i.e., jSL?P ?n??j 	 up?jR?n?j?) of n1, n2 and n3 become 0, 9 and 6.6, respectively, because jSL?P ?n1??j ? A logB?jP ?n1?j? ? 2, jSL?P ?n2??j ? 4:5 and jSL?P ?n3??j ? 3:3 where A ? 4:8 and B ? 0:72. By utiliz- ing LPT algorithm again, the estimated execution time of the global skyline phase becomes max?9; 0? 6:6? ? 9 and thus the estimated total execution time of the local and global skyline phases is 43. Since the esti- mated total execution time with the expanded sky- qtree? is less than that with the current sky-qtree?, we split n0 by p4.
+
+4.3 Dominance Power Filtering Although the dominance power filtering [16] is proposed for computing probabilistic skylines, we adapt it to our skyline computation problem. The dominance power of a point is the volume of the region dominated by the point. Since a point p is likely to dominate more points than another point q if the volume of the region dominated by p is larger than that of q, the dominance power of a point p is an effective measure to represent the number of points dominated by p.
+
+Definition 4.9. Consider a d-dimensional space h?0; b?1??; . . . ; ?0; b?d??i where ?0; b?k?? is its range of the kth dimension. For a point p ? hp?1?; . . . ; p?d?i, the dominance power of p is dom?p? ? Qdi?1?b?i? ? p?i??.
+
+In the local skyline phase, each mapper task Mi keeps a  dominating point set Fi with k points to check whether every point p in data Di (? D) assigned to the mapper task Mi is dominated by the points in Fi. If p is dominated by a point in Fi, p is not a skyline point. Otherwise, p is inserted into the unpruned point list Ui which keeps unpruned points in Di by the mapper taskMi.
+
+To maintain the k points in Fi with the largest dominat- ing powers and identify non-skyline points at the same time in each mapper task Mi, we utilize a min-heap Hi to store the dominating points of Fi where their dominance powers serve as their keys. The setup function of each mapper task Mi initializes the min-heap Hi and the unpruned point list Ui. Then, the map function invoked with a point p 2 Di checks if p is dominated by a point q in Hi. Whenever q ? p holds, the map function stops immediately since p is not a skyline point. Otherwise, we insert p into Ui and update Hi according to the dominance power of p. WhenHi is updated with p, if the number of points in Hi is less than k, we insert p into Hi. If Hi is full (i.e., jHij ? k) and the dominance power of p is greater than that of the point q0 in the root of min-heap Hi (i.e., dom?p? > dom?q0?), q0 is deleted from Hi and p is inserted intoHi with dom?p? as its key.
+
+Example 4.10. Consider the data D in Fig. 1a and assume  that the mapper task Mi processes Di ? fp1; p2; p3; p4g and the maximum size of the dominating point set is 2. In the local skyline phase, the setup function first initializes an empty min-heap Hi and the unpruned point list Ui.
+
+Then, the map function called with p1 inserts p1 into Hi (with dom?p1? ? 18 as its key) as well as Ui. A map func- tion is next called with p2. Since p1 6? p2 holds and Hi is not full, p2 is also appended into Ui and inserted into Hi with dom?p2? ? 25 as its key.
+
+PARK ETAL.: EFFICIENT PROCESSING OF SKYLINE QUERIES USING MAPREDUCE 1037    Since every non-skyline point identified by computing the skyline points in Ui cannot be a global skyline point, after all map functions are finished, each mapper task Mi computes the skyline SL?Ui? of Ui independently. In the reduce phase, we compute the local skyline of every unpruned leaf n in par- allel by considering all points in  S iSL?Ui?which belongs to  the region of n. Note that using SL?Ui?s only in the reduce phase decreases not only local skyline computation but also the network overhead between the map and reduce phases of the local skyline phase.
+
+4.4 SKY-MR+: Our Skyline Computation Algorithm By utilizing the proposed techniques in Sections 4.1, 4.2, and 4.3, we develop the MapReduce algorithm SKY-MR? whose pseudocode is in Fig. 3. Similar to SKY-MR [14], SKY-MR?  consists of the sky-qtree? building (lines 1-2 in Fig. 3), local skyline (lines 3-5) and global skyline phases (lines 6-12).
+
+Sky-qtree? Building Phase. After producing a sample S from data D (line 1 in Fig. 3), we invoke the procedure SKY- QTREE? with the sample S and the number of machines m (line 2) to build a sky-qtree? as described in Section 4.1.
+
+The pseudocode of SKY-QTREE? is presented in Fig. 4.
+
+After calculating the parameters A and B by Equation (2) (line 1 in Fig. 4), it initializes a sky-qtree? Q and a max-heap M (lines 2-6). Every node n of the sky-qtree? has two attrib- utes S and C to keep the sample points and the candidate split points in region?n?, respectively. The candidate split points of the root node n is set to the skyline of S by invok- ing BSkyTree-P [24] (line 4). By Equation (3), it next com- putes the estimated total execution time bt?Q? of the local and global skyline phases (line 7).
+
+For each leaf node n extracted from the max heap M, we check whether n is to be split or not (lines 9-13). The candi- date split point s in C?n?with the number of checking domi- nance relationships reduced the most by splitting n by s is selected as the split point (line 10). Let Q and Q0 be the sky- qtree?s before splitting n and after splitting n by s, respec- tively. If bt?Q0? bt?Q?, we decide not to split n. Otherwise (i.e., bt?Q0? < bt?Q?), the node n is split (lines 14-16). After splitting n, for each n?s child node nc, if region?nc?:min ? s, we mark nc as ?pruned?. Otherwise, if jC?nc?j 6? 0 and region?nc?:max 6? s, we insert nc into the heap M to be con- sidered later (lines 17-24). When the max heap is empty, the sky-qtree? Q is returned.
+
+Local Skyline Phase. By calling the procedure LocalBalance, SKY-MR? assigns each leaf node to a machine by our work- load balancing algorithm in Section 4.2.2 (line 3 in Fig. 3).
+
+After the sky-qtree? Q and leaf node assignment AL are broadcast, the MapReduce algorithm L-SKY-MR? finds the local skyline for all unpruned leaf nodes of Q (lines 4-5).
+
+The pseudocode of L-SKY-MR? is given in Fig. 5. The setup function of each mapper task Mi initializes a min- heap Hi for the dominance power filtering and a list Ui to store the points not pruned by the dominance power filter- ing. The sky-qtree? Q and the workload assignment AL broadcast by SKY-MR? are also loaded into the main mem- ory (lines 1-4 of L-SKY-MR?.setup). Then, each map func- tion is called with a point p. If p belongs to the region of an unpruned leaf node np ofQ and p is not dominated by every dominating point inHi, p is added into Ui andHi is updated with p (lines 1-4 of L-SKY-MR?.map).
+
+After all map functions are finished, the cleanup function of Mi computes the skyline SL?Ui? of Ui by utilizing BSky- Tree-P [24] (line 1 of L-SKY-MR?.cleanup). It next emits the key-value pair h?mid; np?; pi for each skyline point p 2 SL?Ui? to get the local skyline of the region of np where np is the leaf node containing p and mid is the id of the machine allocated by the assignment AL (lines 2-5).
+
+By modifying the Partitioner class in Hadoop, in the shuf- fling phase, the key-value pairs with the same mid emitted by all mapper tasks are gathered in the same machine. For each distinct machine id mid, a reduce function is next invoked to output the local skyline SL?n? computed by call- ing BSkyTree-P with every leaf node n assigned to the machine with id mid (lines 1-2 of L-SKY-MR  ?.reduce). The virtual max point and the sky-filter points for pruning in the global skyline phase are obtained by invoking the proce- dures VirtualMax and SkyFilter, respectively, and output to the files in HDFS. The number of local skyline points is also emitted to the file in HDFS to use for the workload balanc- ing of the global skyline phase (lines 3-5).
+
+Example 4.11. Consider the data D in Fig. 1a and the sky- qtree? in Fig. 2c. Figs. 6a, 6b, and 6c show an example of the data flow in the local skyline phase of SKY-MR?.
+
+By applying the workload balancing, the tasks to com- pute the local skylines of all unpruned leaf nodes in the sky-qtree? are assigned to the machines as shown on top of Fig. 6b. Assume that D consists of two chunks  Fig. 3. The SKY-MR? algorithm.
+
+Fig. 4. The SKY-QTREE? algorithm.
+
+D1 ? fp1; . . . ; p8g and D2 ? fp9; . . . ; p16g. Suppose that only p4 is pruned by the dominance power filtering among the points in D1. The point p6 is removed since p6 belongs to the pruned leaf node n4 of the sky-qtree  ?.
+
+The point p2 and p8 are removed by the local skyline computation in the clean up function of the mapper task for D1. Similarly, we obtain {p9, p10, p12, p15} as the skyline of the chunk D2. The key-value pairs out- put by each mapper task and shuffling phase are shown in Figs. 6a and 6b, respectively. After the shuf- fling phase, for each unpruned leaf node n, a reduce function computes the local skyline in region?n?. For example, the reduce function with the key ?2; n6? out- puts the local skyline fp1g. Fig. 6c shows the outputs of the reduce functions. For simplicity, the sky-filter points are not shown.
+
+Global Skyline Phase. If the total number of local skyline points is small (less than a size threshold d), we utilize a sin- gle machine algorithm G-SKY to compute the global skyline (line 7 in Fig. 3). Otherwise, the procedure GlobalBalance groups the leaf nodes for workload balancing as explained in Section 4.2.3. After broadcasting the sky-qtree?, leaf node assignment, virtual max points and sky-filter points, we  finally calculate the global skyline by invoking the MapRe- duce procedure G-SKY-MR? (lines 9-12).
+
+We provide the pseudocode of G-SKY-MR? in Fig. 7. The setup function loads the sky-qtree?, leaf node assignment, virtual max points and sky-filter points into main memory (lines 1-4 of G-SKY-MR?.setup). Then, each map function called with a local skyline point p discards p if p is domi- nated by any sky-filter point (line 1 in G-SKY-MR?.map).
+
+Otherwise, the key-value pair hmid; ??C?; np; p?i is emitted where np is the leaf node containing p, mid is the id of the machine assigned to compute the global skyline located in region?np? and the symbol ?C? represents that p is the local skyline point in region?np? (lines 2-4).
+
+The map function next checks whether p is required to compute the global skyline points belonging to the regions of other leaf nodes n? except np. If p dominates the virtual max point of another leaf node n?, p is required to compute the global skyline points belonging to the region of n? and thus the key-value pair hm0id; ??D?; np; p?i is emitted where m0id is the id of the machine to calculate the global skyline of n? and the symbol ?D? indicates that p may dominate the local skyline points in region?n??. If p dominates the virtual max points of several leaf nodes allocated to the same machine with id m0id, since the local skyline point p can be shared for such leaf nodes assigned to the machine, we emit the key-value pair hm0id; ??D?; np; p?i once for the set of such leaf nodes dedicated to the machine (lines 6-11).
+
+Similar to the local skyline phase, by overriding Parti- tioner class, all key-value pairs with the same mid are grouped together in the shuffling phase. A reduce function is called for each mid and its value list L consisting of two types of local skyline points: (1) the local skyline points in the region of every leaf node allocated to the machine mid (i.e., marked as ?C?) and (2) the local skyline points in leaf nodes which dominate the virtual max point of the leaf node assigned to the machine (i.e., marked as ?D?).
+
+The reduce function invoked with mid splits its value list L into two lists LC and LD containing the local skyline points marked as ?C? and ?D?, respectively (line 1 in G-SKY- MR?.reduce). Let Gmid?Q? ? fg1; . . . ; gjGmid ?Q?jg be the set of the leaf nodes of the sky-qtree? Q handled by the machine with id mid. The reduce function further splits LC into LNC ?g1?; . . . ; LNC ?gjGmid ?Q?j? where LNC ?gi? ? fp 2 LC jp 2 region?gi?g. For the set of all unpruned leaf nodes of Q denoted by N?Q? ? fn1; . . . ; njN?Q?jg, we similarly divide LD into LND?n1?; . . . ; LND?njN?Q?j? where LND?ni? ? fp 2 LDjp 2 region?ni?g (lines 2-3).
+
+Recall that, a local skyline point p in LNC ?gi? of a leaf node gi 2 Gmid?Q? is a global skyline point if it is not dominated  Fig. 5. The L-SKY-MR? algorithm.
+
+Fig. 6. An example of the data flow in the local and global skyline phases of SKY-MR?.
+
+PARK ETAL.: EFFICIENT PROCESSING OF SKYLINE QUERIES USING MAPREDUCE 1039    by every point in LND?n0? of all other leaf nodes n0 2 N?Q?.
+
+To avoid unnecessary dominance relationship checks between every pair of points in LNC ?gi? and LND?n0?, we use the virtual max point vpgi of L  N C ?gi?. More specifically, if a  point p0 in LND?n0? does not dominate vpgi , since p0 cannot dominate every point p 2 LNC ?gi?, we can skip the domi- nance relationship checks with all points in LNC ?gi? for the point p0 (line 8). After eliminating non-skyline points in LNC ?gi? by comparing with all points in LND?n0?, we update the virtual max point vpgi with the remaining points in LNC ?gi? to avoid the dominance relationship checks even fur- ther (line 11). After we evaluate every pair of points in LNC ?gi? and LND?n0? for all other leaf nodes n0, we obtain the global skyline point in LNC ?gi? (lines 4-13).
+
+Example 4.12. Reconsider the outputs of the local skyline  phase in Example 4.11. Figs. 6d, 6e, and6f illustrate an example data flow in the global skyline phase of SKY- MR?. The main function assigns each leaf node with at least a local skyline point to a machine based on the esti- mated execution time of calculating the global skyline.
+
+The estimated execution time of computing the global skyline of n6 is jSL?P?n6??j  ?jSL?P?n1??j ? jSL?P?n5??j? ? 3 since n1:min and n5:min strongly dominate n6:max. Simi- larly, those of n1, n3 and n5 are 0, 4 and 2, respectively.
+
+LPT algorithm allocates n1 and n3 to the same machine while assigning n5 and n6 to the other machine.
+
+Each map function checks whether a local skyline point is dominated by any sky-filter point. Since p15 is dominated by the sky-filter point p5, the point p15 is dis- carded. The map function called with p5 emits the key- value pair h1; ??C?; n1; p5?i because p5 is in region?n1? and n1 is assigned to the machine with id 1. Since p5 domi- nates the virtual max point of n3 assigned to the machine  with id 1, it also emits h1; ??D?; n1; p5?i. The key-value pairs after the shuffling phase are shown in Fig. 6e. After every reduce function calculates the global skyline among the points marked as ?C?, we obtain the skyline fp1; p3; p5; p7; p12g.
+
+5 EXPERIMENTS  In this section, we present the performance of our algorithm SKY-MR? by comparison with the existing algorithms [11], [12], [13], [14], [27], [28].
+
+5.1 Experimental Environments We empirically evaluated the performance of the tested algorithms using the parameters as summarized in Table 2.
+
+Onemachinewith Intel Xeon E5-2407 2.2 GHz CPU and 8 GB of memory served as the master node, while 40 machines with Intel i3 3.3 GHz CPU and 4 GB of memory were the slave nodes. The implementations of all algorithms pre- sented in Table 3 were compiled by Javac 1.7 and we used Hadoop 1.2.1 forMapReduce.We got the source code ofMR- GPMRS used in [11] and rewrote the code with a minor opti- mization. We also got the source code of BSkyTree-P used in [24] and adopt it to compute the local skylines in SKY-MR?  as mentioned in Section 4.4. In our experiments, we do not report the execution timeswhich exceed 10 hours.
+
+Data Sets. For our experimental study, we evaluate the algorithms on synthetic data sets as well as a real-life data set. We randomly generated the synthetic data sets by anti- correlated, independent and correlated distributions, referred  Fig. 7. The G-SKY-MR? algorithm.
+
+TABLE 2 Parameters  Parameter Range Default value  No. of samples (jSj) 100?10;000 400 for SKY-MR? 200 for SKY-MR  No. of dominating points (k) 10?1;000 100 for SKY-MR? Split threshold (r) 10?40 10 for SKY-MR No. of points (jDj) 107?4 109 2 108 No. of dimensions (d) 2?12 6 No. of machines (m) 10?40 20  TABLE 3 Implemented Skyline Algorithms  Algorithm Description  SKY-MR? Our proposed algorithm adaptively selects G-SKY-MR? or G-SKY with respect to the number of local skyline points.
+
+If it is less than 3 105, G-SKY is selected (i.e., d ? 3 105).
+
+SKY-MR?-KD SKY-MR? utilizing a k-d tree instead of a sky-qtree?.
+
+SKY-MR The state-of-the-art using MapReduce in [14].
+
+MR-GPMRS The MapReduce algorithm in [11].
+
+MR-BML The MapReduce algorithm in [12] PPF-PGPS The MapReduce algorithm in [13] STEP-1-MR The MapReduce implementation of the  1-step algorithm in [27] STEP-2-MR The MapReduce implementation of the  2-step algorithm in [27] PPPS-MR The MapReduce implementation of PPPS  algorithm in [28]     to as ANTI, IND and COR respectively, which are typically used to evaluate the performance of the skyline algo- rithms [11], [12], [13], [14]. The sizes of the resulting syn- thetic data sets are varied from 76 MB to 295 GB depending on the number of points (jDj) and the number of dimensions (d). We reported the number of skyline points with varying the number of dimension (d) for each data set when jDj ? 2 108 in Table 4. As d increases, the number of skyline points increases exponentially for ANTI and IND data sets. However, for COR data set, the number of skyline points increases linearly. We also utilized HEP- MASS (available from http://archive.ics.uci.edu/ml/ datasets/HEPMASS) to check the performance of the algo- rithms on real-life data. HEPMASS data set contains 10.5 M points with the 27 normalized features of particle colli- sions to detect a new particle of unknown mass.
+
+5.2 Performance Analysis We first present the experimental results with the synthetic data sets and next provide those with the real-life data set.
+
+5.2.1 Synthetic Data Sets  Default Values of jSj, k and r. To find the proper values of a sample size jSj for our SKY-MR? and the state-of-the-art SKY-MR, we ran both algorithms with varying jSj from 100 to 10,000. Since the number of dominating points k and the split threshold r are additionally required for SKY-MR?  and SKY-MR, respectively, we also varied k from 10 to 1,000 and r from 10 to 40. The average execution times of SKY- MR? and SKY-MR over the three data sets with the other default values are shown in Figs. 8a and 8b, respectively.
+
+Recall that, by utilizing a sample S, we construct a sky- qtree? and estimate the execution time of SKY-MR? for workload balancing. When the sample size jSj decreases, the performance of SKY-MR? degrades since a small sample could not reflect the data distribution precisely and thus the workloads of machines maybe skewed due to the inaccurate estimated execution time. On the other hand, the execution time of building a sky-qtree? grows with increasing jSj since the costs of computing SL?S? and finding the split points of every node of the sky-qtree? increase. As the size of the dom- inating point set k grows, the number of points removed by the dominating point set as well as the cost of maintaining the dominating point set increase. Thus, selecting either a small value or a large value of k is not effective. As plotted in Fig. 8a, SKY-MR? showed the best performance when jSj?400 and k?100. Thus, we select 400 and 100 as the default values of jSj and k, respectively. As illustrated in Fig. 8b, SKY-MR shows a similar pattern of SKY-MR? with increasing jSj. For SKY-MR, we choose 200 and 10 as the default values of jSj and r, respectively. We would like to emphasize that SKY-MR? is less affected by changing the parameter values than SKY-MR.
+
+Varying d. The execution times with varying the num- ber of dimensions d from 2 to 12 were reported in Fig. 9.
+
+For ANTI and IND data sets, the execution times in the graphs are plotted in log scale. As listed in Table 4, the number of the skyline points increases with increasing the number of dimensions d. The execution times of all algorithms increase as d grows since the number of check- ing dominance relationships between points to verify whether each point is a skyline point becomes large and the time complexity of checking the dominance relation- ship is O?d?.
+
+The algorithms on COR data set (see Fig. 9c) are faster than those on ANTI and IND data sets (see Figs. 9a and 9b) since the number of skyline points of COR data set is much smaller than those of ANTI and IND data sets. As plotted in Figs. 9a, 9b, and 9c, for every case, SKY-MR? is superior to the other algorithms due to adaptive sky-qtree? building, effective pruning of non-skyline points and workload bal- ancing for the local and global skyline phases.
+
+For the experimentwithANTIdata set (see Fig. 9a), when d is large (d 6),MR-GPMRSwith two phases shows theworst performance since MR-GPMRS does not benefit from the local skyline phase that decreases the overheads of comput- ing the skyline and distributing the points over the network in the global skyline phase. We could not plot the execution times ofMR-GPMRSwhen d is 8, 10 and 12 since it did not fin- ish in 10 hours. Meanwhile, when d is small (d < 6), the per- formances of GRID-1-MR and GRID-2-MR are worse than those of the other algorithms due to the overhead of grid par- titioning and pruning the grids. As d grows, GRID-1-MR and GRID-2-MR become better than PPPS-MR, PPF-PGPS and  TABLE 4 The Number of Skyline Points (jSL?D?j) When jDj ? 2 108  Dimension d ANTI IND COR  2 29 22 14 4 3,154 1,368 104 6 62,265 27,485 213 8 441,984 248,029 571 10 1,792,231 1,456,457 666 12 4,988,259 5,616,015 996  Fig. 8. Varying parameters for SKY-MR? and SKY-MR.
+
+Fig. 9. Varying the number of dimensions (d).
+
+PARK ETAL.: EFFICIENT PROCESSING OF SKYLINE QUERIES USING MAPREDUCE 1041    MR-BNL since PPPS-MR, PPF-PGPS and MR-BNL utilize a single machine to compute the global skyline. Furthermore, although the state-of-the-art algorithm SKY-MR is faster than the other algorithms except SKY-MR?, SKY-MR still takes more than 10 hours when d?12. On the other hand, our SKY- MR? finishedwithin one hour and a half.
+
+For IND and COR data sets, the algorithms show similar patterns with ANTI data set. Thus, in Figs. 9b and 9c, we report the execution times of the representative algorithms (the proposed algorithm SKY-MR?, the state-of-the-art algo- rithm SKY-MR, the angle-based partitioning algorithm PPF- PGPS and the grid partitioning algorithm MR-GPMRS with two phases) only. To show the effectiveness of splitting space based on a sky-qtree?, we also implemented an algo- rithm SKY-MR?-KD that is the same as SKY-MR? except using a k-d tree instead of a sky-qtree?. After splitting a node n of a sky-qtree?, there is at least a child node pruned by the split point of n. However, other data structures such as k-d trees have no such property. Thus, the experimental results when d is larger than 6 with IND data sets show that SKY-MR? is superior to SKY-MR?-KD.
+
+Varying jDj. We plotted the running times of SKY-MR?, SKY-MR, MR-GPMRS and PPF-PGPS with varying the number of points jDj from 107 to 4 109 in Fig. 10. The exe- cution times in the graphs are plotted in log scale. We did not plot the execution times of GRID-1/2-MR, PPPS-MR and MR-BNL since they show similar patterns shown in [14] and they are slower than SKY-MR? in our experiments. The exe- cution times of the representative algorithms on COR data set are less than those on the other data sets since the num- ber of skyline points is small and non-skyline points are removed by checking dominance relationships with a few dominating points. Furthermore, as jDj increases, the num- ber of skyline points grows and the execution times of all algorithms increase. Similar to the previous experiments, SKY-MR? is the best performer for every data set.
+
+Varyingm. We next experimented with varying the num- ber of machines m from 10 to 40. In this experiment, we measured the average execution time of each algorithm run- ning on ANTI, IND and COR data sets. For each algorithm, we calculated the ?relative speed? which is the ratio between the average execution time with 10 machines and that with the current number of machines. For example, if  the average execution times of SKY-MR? with 10 and 40 machines are T10 and T40, respectively, the relative speed becomes T10=T40 form ? 40. In an ideal case, if the number of machines increases by 4 times from 10 to 40, the speed will be 4 times faster. We plot the relative speed of algorithms with the default-sized data sets (jDj ? 2 108), medium- sized data sets (jDj ? 109) and large data sets (jDj ? 4 109) in Fig. 11. We only present the relative speeds of the top-5 scalable algorithms (SKY-MR?, SKY-MR, GRID-1-MR, MR- GPMRS and PPF-PGPS) and the ideal speedup curve. The algorithms show sub-linear speedups when the size of the data set is small (i.e., jDj ? 2 108) since the overhead of using MapReduce offsets the speedup of short execution times. However, when the size of the data set becomes large (i.e., jDj ? 109 and jDj ? 4 109), SKY-MR? shows a linear speedup due to the effectiveworkload-balancing algorithms.
+
+Furthermore, as the size of data set increases, the speed up of SKY-MR? becomesmore linear.
+
+The Effects of Optimization Techniques. In Table 5, we reported the execution times (in seconds) of SKY-MR? with the dominance power filtering only (D), SKY-MR? with the workload balancing only (B), SKY-MR? with both techni- ques (ALL), and SKY-MR? without both techniques (NONE) when the numbers of dimensions are 6 and 12.
+
+When workload balancing is not adopted for SKY-MR?, we rely on the default partitioning by Hadoop. Thus, we esti- mate the execution times of the local and global skyline phases with the default partitioning to build a sky-qtree?.
+
+For all data sets, since the dominance power filtering prunes non-skyline points in the local skyline phase resulting in the reduced overheads of computing the skylines and distribut- ing the points via the network, it reduces the execution times of both phases. As reported in Table 4, when d is small or COR data set is used, the number of skyline points is small. In such cases, since the execution times of computing the local as well as global skylines are short and the devia- tion of the workloads of machines is not large, the effect of the workload balancing becomes marginal, as presented in Table 5. In contrast, our workload balancing techniques become more effective as the size of the skyline grows (i.e., for ANTI and IND data sets with d ? 12) since the longest execution time of the machines is reduced by balancing the  Fig. 10. Varying the number of points (jDj).
+
+Fig. 11. Relative speed with varying the number of machines (m).
+
+workloads of available machines. Thus, SKY-MR? with both techniques is the best performer.
+
+Proportionality between Actual and Estimated Execution Times. In Section 4.2, we assumed that the execution time of computing the local and global skyline of a leaf node n is pro- portional to jSL?P ?n??j 	 jP ?n?j and jSL?P ?n??j 	 up?jR?n?j?, respectively. Although we do not know the proportionality constant, we can balance the workloads of both skyline phases if there is a correlation between the estimated and actual execution times. To show the correlation between esti- mated and actual execution times, we measure Pearson cor- relation coefficient (PCC) [34] and Kendall?s t coefficient [35]. For the local skyline phase, average PCC over IND, COR and ANTI data sets is 0.37 which represents weak corre- lation. Meanwhile, the average PCC for the global skyline phase is 0.74 which means strong correlation. Kendall?s t coefficients are 0.33 (i.e., weak correlation) and 0.57 (i.e., mod- erate correlation) for the local and global skyline phases, respectively. To estimate the execution times of the local sky- line phase, we also estimate jSL?P ?n??j using a sample of D as explained in Section 4.2.1. However, since we estimate the execution times of the global skyline phase based on the actual sizes of jSL?P ?n??j, the estimated execution times of the global skyline phase show stronger correlation than those of the local skyline phase.
+
+5.2.2 Real-Life Data Set  Since the data distribution and statistics of the real-life data set are fixed, we can vary only a few parameters for the real-life data set HEPMASS.
+
+Default Values of jSj, k and r. With the first 10 features of HEPMASS (i.e., d?10 and jDj?1:05 107), we ran our SKY-MR? and SKY-MR with varying jSj from 100 to 10,000.
+
+We also varied k for SKY-MR? from 10 to 1,000 and r for SKY-MR from 10 to 40. The execution times of both algo- rithms are shown in Fig. 12. As we expected, SKY-MR? is less affected by the parameter values than SKY-MR since SKY-MR? not only builds a sky-qtree? adaptively based on the estimated execution times but also applies the workload balancing techniques. Since SKY-MR? showed the best per- formance when jSj?100 and k?10, we select 100 and 10 as  the default values of jSj and k respectively. Similarly, for SKY-MR, we choose 100 and 20 as the default values of jSj and r respectively.
+
+Varying d and jDj. With the first d features of HEPMASS where 2 ? d ? 14, we reported the execution times of the algorithms SKY-MR?, SKY-MR, PPF-PGPS and GRID-2-MR in Fig. 13a. We could not plot the execution times of MR- GPMRS with d 10 and GRID-1-MR with d ? 14 since they did not finish in 10 hours. We also plotted the running times with varying the number of points jDj from 5 106 to 1:05 107 where the first 10 features are used (i.e., d ? 10) in Fig. 13b. SKY-MR? is also the best performer on the real- life data set since it adaptively splits data space according to the data distribution and balances workloads.
+
+6 CONCLUSION  We study the parallel skyline computation using MapRe- duce and develop the algorithm SKY-MR?. We first build a sky-qtree? with an adaptive quadtree building technique to utilize the dominance relationships between regions and apply the dominance power filtering method to effectively prune out non-skyline points in advance. SKY-MR? parti- tions the data based on the regions split by the sky-qtree?  and computes the candidate skyline points independently for each partition. Finally, we check whether each skyline candidate point is actually a skyline point in every partition independently. To make the estimated execution times of all available machines to be similar, we develop workload balancing techniques. Our experimental results confirm the effectiveness and scalability of SKY-MR?.
+

@@ -1,0 +1,196 @@
+FLEXIBLE PARALLEL ALGORITHMS FOR BIG DATA OPTIMIZATION
+
+ABSTRACT  We propose a decomposition framework for the parallel optimiza- tion of the sum of a differentiable function and a (block) separa- ble nonsmooth, convex one. The latter term is typically used to enforce structure in the solution as, for example, in LASSO prob- lems. Our framework is very flexible and includes both fully parallel Jacobi schemes and Gauss-Seidel (Southwell-type) ones, as well as virtually all possibilities in between (e.g., gradient- or Newton-type methods) with only a subset of variables updated at each iteration.
+
+Our theoretical convergence results improve on existing ones, and numerical results show that the new method compares favorably to existing algorithms.
+
+Index Terms? Parallel optimization, Jacobi method, LASSO, Sparse  solution.
+
+1. INTRODUCTION  The minimization of the sum of a smooth function, F , and of a non- smooth (separable) convex one, G,  min x?X  V (x) ? F (x) +G(x), (1)  is an ubiquitous problem that arises in many fields of engineering, so diverse as compressed sensing, basis pursuit denoising, sensor net- works, neuroelectromagnetic imaging, machine learning, data min- ing, sparse logistic regression, genomics, metereology, tensor factor- ization and completion, geophysics, and radio astronomy. Usually the nonsmooth term is used to promote sparsity of the optimal so- lution, that often corresponds to a parsimonious representation of some phenomenon at hand. Many of the mentioned applications can give rise to extremely large problems so that standard optimiza- tion techniques are hardly applicable. And indeed, recent years have witnessed a flurry of research activity aimed at developing solution methods that are simple (for example based solely on matrix/vector multiplications) but yet capable to converge to a good approximate solution in reasonable time. It is hardly possible here to even summa- rize the huge amount of work done in this field; we refer the reader to the recent works [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] as entry points to the literature.
+
+It is clear however that if one wants to solve really large prob- lems, parallel methods exploiting the computational power of multi- core processors have to be employed. It is then surprising that while serial solutions methods for Problem (1) have been widely investi- gated, the analysis of parallel algorithms suitable to large-scale im- plementations lags behind. Gradient-type methods can of course be easily parallelized. However, beyond that, we are only aware of very few papers, all very recent, that deal with parallel solution methods [2, 6, 13, 17]. These papers analyze both randomized and determin- istic block Coordinate Descent Methods (CDMs) that, essentially, are still (regularized) gradient-based methods. One advantage of the analyses in [2, 6, 13, 17] is that they provide an interesting (global) rate of convergence. On the other hand they apply only to convex  The order of the authors is alphabetic. The work of Scutari was sup- ported by the USA National Science Foundation under Grants CMS 1218717 and CAREER Award No. 1254739  problems and are not flexible enough to include, among other things, very natural Jacobi-type methods (where at each iteration a partial minimization of the original function is performed with respect to a block variable while all other variables are kept fixed) and the possi- bility to deal with a nonconvex F .
+
+In this paper, building on the approach proposed in [20, 21], we present a broad, deterministic algorithmic framework for the solu- tion of Problem (1) with the following novel features: i) it is paral- lel, with a degree of parallelism that can be chosen by the user and that can go from a complete parallelism (each variable is updated in parallel to all the others) to the sequential (one variable only is up- dated at each iteration); ii) it can tackle a nonconvex F ; iii) it is very flexible and includes, among others, updates based on gradient- or Newton-type methods; and iv) it easily allows for inexact solutions.
+
+Our framework allows us to define different schemes, all converging under the same conditions, that can accommodate different problem features and algorithmic requirements. Even in the most studied case in which F is convex and G(x) ? 0 our results compare favourably to existing ones and the numerical results show our approach to be very promising.
+
+2. PROBLEM DEFINITION  We consider Problem (1), where the feasible set X = X1?? ? ??XN is a cartesian product of lower dimensional convex sets Xi ? Rni , and x ? Rn is partitioned accordingly to x = (x1, . . . ,xN ), with each xi ? Rni . F is smooth (and not necessarily convex) and G is convex and possibly nondifferentiable, with G(x) = ?Ni=1gi(xi) with xi ? Xi. This format is very general and includes problems of great interest. Below we list some instances of Problem (1).
+
+?G(x) = 0; in this case the problem reduces to the minimization of a smooth, possibly nonconvex problem with convex constraints.
+
+? F (x) = ?Ax ? b?2 and G(x) = c?x?1, X = Rn, with A ? R  m?n, b ? Rm, and c ? R++ given constants; this is the very famous and much studied LASSO problem [22].
+
+? F (x) = ?Ax ? b?2 and G(x) = c?Ni=1 ?xi?2, X = Rn, with A ? Rm?n, b ? Rm, and c ? R++ given constants; this is the group LASSO problem [23].
+
+? F (x) = ?mj=1 log(1+e?aiyTi x) and G(x) = c?x?1 (or G(x) = c ?N  i=1 ?xi?2), with yi ? Rn, ai ? R, and c ? R++ given con- stants; this is the sparse logistic regression problem [24, 25].
+
+? F (x) = ?mj=1 max{0, 1 ? aiyTi x}2 and G(x) = c?x?1, with ai ? {?1, 1}, yi ? Rn, and c ? R++ given; this is the ?1- regularized ?2-loss Support Vector Machine problem, see e.g. [18].
+
+? Other problems that can be cast in the form (1) include the Nu- clear Norm Minimization problem, the Robust Principal Component Analysis problem, the Sparse Inverse Covariance Selection problem, the Nonnegative Matrix (or Tensor) Factorization problem, see e.g.
+
+[16, 26] and references therein.
+
+Given (1), we make the following standard, blanket assumptions: (A1) Each Xi is nonempty, closed, and convex; (A2) F is C1 on an open set containing X; (A3) ?F is Lipschitz continuous on X with constant LF ; (A4) G(x) =  ?N i=i gi(xi), with all gi continuous and convex on  Xi; (A5) V is coercive.
+
+3. MAIN RESULTS  We want to develop parallel solution methods for Problem (1) whereby operations can be carried out on some or (possibly) all (block) vari- ables xi at the same time. The most natural parallel (Jacobi-type) method one can think of is updating all blocks simultaneously: given xk, each (block) variable xk+1i is computed as the solution of minxi [F (xi,x  k ?i)+ gi(xi)] (where x?i denotes the vector obtained from  x by deleting the block xi). Unfortunately this method converges only under very restrictive conditions [27] that are seldom verified in practice. To cope with this issue we introduce some ?memory" and set the new point to be a convex combination of xk and the solu- tions of minxi [F (xi,x  k ?i) + gi(xi)]. However our framework has  many additional features, as discussed next.
+
+Approximating F : Solving each minxi [F (xi,x  k ?i) + gi(xi)] may  be too costly or difficult in some situations. One may then prefer to approximate this problem, in some suitable sense, in order to fa- cilitate the task of computing the new iteration. To this end, we assume that for all i ? N ? {1, . . . , N} we can define a function Pi(z;w) : Xi?X ? R having the following properties (we denote by?Pi the partial gradient of Pi with respect to z): (P1) Pi(?;w) is convex and continuously differentiable on Xi for  all w ? X; (P2) ?Pi(xi;x) = ?xiF (x) for all x ? X; (P3) ?Pi(z; ?) is Lipschitz continuous on X for all z ? Xi.
+
+Such a function Pi should be regarded as a (simple) convex ap- proximation of F at the point x with respect to the block of variables xi that preserves the first order properties of F with respect to xi.
+
+Based on this approximation we can define at any point xk ? X a regularized approximation h?i(xi;xk) of V with respect to xi where F is replaced by Pi while the nondifferentiable term is preserved, and a quadratic regularization is added to make the overall approxi- mation strongly convex. More formally, we have  h?i(xi;x k)?Pi(xi;xk)+  ?i  ( xi ? xki  )T Qi(x  k) ( xi ? xki  ) ? ?? ?  ?hi(xi;xk)  +gi(xi),  where Qi(xk) is an ni ? ni positive definite matrix (possibly de- pendent on xk). We always assume that the functions hi(?,xki ) are uniformly strongly convex.
+
+(A6) All hi(?;xk) are uniformly strongly convex on Xi with a common positive definiteness constant q > 0; furthermore, Qi(?) is Lipschitz continuous on X .
+
+Note that an easy and standard way to satisfy A6 is to take, for any i and for any k, ?i = q > 0 and Qi(xk) = I. However, if Pi(?;xk) is already uniformly strongly convex, one can avoid the proximal term and set ?i = 0 while satisfying A6.
+
+Associated with each i and point xk ? X we can define the following optimal solution map:  x?i(x k, ?i) ? argmin  xi?Xi h?i(xi;x  k). (2)  Note that x?i(xk, ?i) is always well-defined, since the optimization problem in (2) is strongly convex. Given (2), we can then introduce  X ? y 	? x?(y, ? ) ? (x?i(y, ?i))Ni=1 .
+
+The algorithm we are about to described is based on the computation of x?. Therefore the approximating functions Pi should lead to as easily computable functions x? as possible. An appropriate choice depends on the problem at hand and on computational requirements.
+
+We discuss some possible choices for Pi after introducing the main algorithm (Algorithm 1); see [28] for more details.
+
+Inexact solutions: In many situations (especially in the case of large-scale problems), it can be useful to further reduce the compu- tational effort needed to solve the subproblems in (2) by allowing in- exact computations zk of x?i(xk, ?i), i.e., ?zki ? x?i  ( xk, ?  ) ? ? ?ki , where ?ki measures the accuracy in computing the solution.
+
+Updating only some blocks: Another important feature of our al- gorithmic framework is the possibility of updating only some of the variables at each iteration, a feature that has been observed to be very effective numerically. In fact, our schemes are guaranteed to converge under the update of only a subset of the variables at each iteration; the only condition is that such a subset contains at least one (block) component which is within a factor ? ? (0, 1] ?far away? from the optimality, in the sense explained next. First of all xki is optimal for h?i(xi;xk) if and only if x?i(xk, ?i) = xki . Ideally we would like then to select the indices to update according to the op- timality measure d ki ? ?x?i(xk, ?i) ? xki ? (e.g., opting for blocks exhibiting larger d ki ?s); but in some situations this could be compu- tationally too expensive. Building on the same idea, we can intro- duce alternative less expensive metrics based on a computationally cheaper error bound, i.e., a function Ei(x) such that  si?x?i(xk, ?i)? xki ? ? Ei(xk) ? s?i?x?i(xk, ?i)? xki ?, (3) for some 0 < si ? s?i. Of course we can always set Ei(xk) = ?x?i(xk, ?i) ? xki ?, but other choices are also possible; we discuss some of them after introducing the algorithm.
+
+We are now ready to formally introduce our algorithm, Algo- rithm 1, that enjoys all the features discussed above. Its convergence properties to stationary solutions1 of (1) are given in Theorem 1, whose proof is omitted because of space limitation, see [28].
+
+Algorithm 1: Inexact Parallel Algorithm (FLEXA)  Data : {?ki } for i ? N , ? ? 0, {?k} > 0, x0 ? X , ? ? (0, 1].
+
+Set k = 0.
+
+(S.1) : If xk satisfies a termination criterion: STOP; (S.2) : For all i ? N , solve (2) with accuracy ?ki :  Find zki ? Xi s.t. ?zki ? x?i ( xk, ?  ) ? ? ?ki ; (S.3) : Set Mk ? maxi{Ei(xk)}.
+
+Choose a set Sk that contains at least one index i for which Ei(xk) ? ?Mk.
+
+Set z?ki = z  k i for i ? Sk and z?ki = xki for i ?? Sk  (S.4) : Set xk+1 ? xk + ?k (z?k ? xk); (S.5) : k ? k + 1, and go to (S.1).
+
+Theorem 1 Let {xk} be the sequence generated by Algorithm 1, under A1-A6. Suppose that {?k} and {?ki } satisfy the following conditions: i) ?k ? (0, 1]; ii) ?k ? 0; iii) ?k ?k = +?; iv)?  k  ( ?k  )2 < +?; and v) ?ki ? ?k?1 min{?2, 1/??xiF (xk)?}  for all i ? N and some nonnegative constants ?1 and ?2. Addition- ally, if inexact solutions are used in Step 2, i.e., ?ki > 0 for some i and infinite k, then assume also that G is globally Lipschitz on X .
+
+Then, either Algorithm 1 converges in a finite number of itera- tions to a stationary solution of (1) or every limit point of {xk} (at least one such points exists) is a stationary solution of (1).
+
+On Algorithm 1. The proposed algorithm is extremely flexible. We can always choose Sk = N resulting in the simultaneous update  1We recall that a stationary points x? of (1) is a point for which a subgra- dient ? ? ?G(x?) exists such that (?F (x?) +?)T (y ? x?) ? 0 for all y ? X . If F is convex, stationary points coincide with global minimizers.
+
+of all the (block) variables (full Jacobi scheme); or, at the other ex- treme, one can update a single (block) variable per time, thus ob- taining a Gauss-Southwell kind of method. One can also compute inexact solutions (Step 2) while preserving convergence, provided that the error term ?ki and the step-size ?  k?s are chosen according to Theorem 1. We emphasize that the Lipschitzianity of G is required only if x?(xk, ?) is not computed exactly for infinite iterations. At any rate this Lipschitz conditions is automatically satisfied if G is a norm (and therefore in LASSO and group LASSO problems for example) or if X is bounded.
+
+On the choice of the stepsize ?k. An example of step-size rule satisfying i-iv in Theorem 1 is: given ?0 = 1, let  ?k = ?k?1 ( 1? ? ?k?1  ) , k = 1, . . . , (4)  where ? ? (0, 1) is a given constant; see [21] for others rules. This is actually the rule we used in our practical experiments (cf. Sec.
+
+4). Note that while this rule may still require some tuning for opti- mal behaviour, it is quite reliable, since in general we are not using a (sub)gradient direction, so that many of the well-known practical drawbacks associated with a (sub)gradient method with diminish- ing step-size are mitigated in our setting. Furthermore, this choice of step-size does not require any form of centralized coordination, which is a favourable feature in a parallel environment.
+
+We remark that it is possible to prove convergence of Algorithm 1 also using other step-size rules, such as a standard Armijo-like line- search procedure or a (suitably small) constant step-size; see [28] for more details. We omit the discussion of these options because of lack of space, but also because the former is not in line with our parallel approach while the latter is numerically less efficient.
+
+On the choice of Ei(x).
+
+? As we mentioned, the most obvious choice is to take Ei(x) = ?x?i(xk, ?i) ? xki ?. This is a valuable choice if the computation of x?i(x  k, ?i) can be easily accomplished. For instance, in the LASSO problem with N = {1, . . . , n} (i.e., when each block reduces to a scalar variable), it is well-known that x?i(xk, ?i) can be computed in closed form using the soft-thresholding operator.
+
+? In situations where the computation of ?x?i(xk, ?i) ? xki ? is not possible or advisable, we can resort to estimates. Assume momen- tarily that G ? 0. Then it is known [29, Proposition 6.3.1] under our assumptions that ??Xi(xki ? ?xiF (xk)) ? xki ? is an error bound for the minimization problem in (2) and therefore satisfies (3), where ?Xi(y) denotes the Euclidean projection of y onto the closed and convex set Xi. In this situation we can choose Ei(xk) = ??Xi(xki ??xiF (xk)) ? xki ?. If G(x) ?? 0 things become more complex. In most cases of practical interest, adequate error bounds can be derived from [15, Lemma 7].
+
+? It is interesting to note that the computation of Ei is only needed if a partial update of the (block) variables is performed. However, an option that is always feasible is to take Sk = N at each iteration, i.e., update all (block) variables at each iteration. With this choice we can dispense with the computation of Ei altogether.
+
+On the choice of Pi(xi;x).
+
+? The most obvious choice for Pi is the linearization of F at xk with respect to xi: Pi(xi;xk) = F (xk) +?xiF (xk)T (xi ? xki ).
+
+With this choice, and taking for simplicity Qi(xk) = I, x?i(xk, ?i) is given by  argmin xi?Xi  { F (xk) +?xiF (xk)T (xi ? xki ) +  ?i ?xi ? xki ?2 + gi(xi)  } .
+
+(5) This is essentially the way a new iteration is computed in most se- quential (block-)CDMs for the solution of (group) LASSO problems  and its generalizations. Note that contrary to most existing schemes, our algorithm is parallel.
+
+? Assuming F (xi,xk?i) convex, at another extreme we could just take Pi(xi;xk) = F (xi,xk?i), which setting for simplicity Qi(x  k) = I leads to  x?i(x k, ?i) = argmin  xi?Xi  { F (xi,x  k ?i) +  ?i ?xi ? xki ?2 + gi(xi)  } ,  (6) thus giving rise to a parallel nonlinear Jacobi type method for the constrained minimization of V (x).
+
+? Between the two ?extreme? solutions proposed above one can con- sider ?intermediate? choices. For example, If F (xi,xk?i) is con- vex, we can take Pi(xi;xk) as a second order approximation of F (xi,x  k ?i), i.e., Pi(xi;x  k) = F (xk) +?xiF (xk)T (xi ? xki ) + (xi ? xki )T?2xixiF (xk)(xi ? xki ). When gi(xi) ? 0, this es-  sentially corresponds to taking a Newton step in minimizing the ?re- duced? problem minxi?Xi F (xi,x  k ?i), resulting in  x?i(x k, ?i) = argmin  xi?Xi  { F (xk) + ?xiF (xk)T (xi ? xki )+  +  (xi ? xki )T?2xixiF (xk)(xi ? xki ) +  ?i ?xi ? xki ?2 + gi(xi)  } .
+
+The framework described in Algorithm 1 can give rise to very different instances, according to the choices one makes for the many variable features it contains, some of which have been detailed above.
+
+For lack of space, we cannot fully discuss here all possibilities. We provide next just a few instances of possible algorithms that fall in our framework; more examples can be found in [28].
+
+Example #1?(Proximal) Jacobi algorithms for convex functions: Consider the simplest problem falling in our setting: the uncon- strained minimization of a continuously differentiable convex func- tion, i.e., assume in (1) that F is convex, G(x) ? 0, and X = Rn.
+
+Although this is possibly the best studied problem in nonlinear opti- mization, classical parallel methods for this problem [27, Sec. 3.2.4] require very strong contraction conditions. In our framework we can take Sk = N , Pi(xi;xk) = F (xi,xk?i), resulting in a fully paral- lel Jacobi-type method which does not need any additional assump- tions. Furthermore our theory shows that we can even dispense with the convexity assumption and still get convergence of a Jacobi-type method to a stationary point.
+
+Example # 2?Parallel coordinate descent method for LASSO Consider the LASSO problem, i.e., problem (1) with F (x) = ?Ax? b?2, G(x) = c?x?1, and X = Rn. Probably, to date, the most suc- cesful class of methods for this problem is that of CDMs, whereby at each iteration a single variable is updated using (5). We can easily obtain a parallel version for this method by taking ni = 1, Sk = N and still using (5). Alternatively, instead of linearizing F (x), we can better exploit the convexity of F (x) and use (6). Furthermore, we can easily consider similar methods for the group LASSO problem (just take ni > 1). As a final remark, we observe that convergence conditions of existing (deterministic) fully distributed parallel ver- sions of CDMs such as [2, 17] impose a constraint on the maximum number of variables that can be simultaneously updated (linked to the spectral radius of some matrices), a constraint that in many large scale problems is likely not satisfied. A key feature of the proposed scheme is that we can parallelize over (possibly) all variables while guaranteeing convergence.
+
+4. NUMERICAL RESULTS In this section we provide some numerical results providing a solid evidence of the viability of our approach; they clearly show that our algorithmic framework leads to practical methods that exploit well     parallelism and compare favourably to existing schemes, both paral- lel and sequential. The tests were carried out on LASSO problems, one of the most studied instance of (1); other classes of problems are considered in [28]. We generate four instances of problems us- ing the random generation technique proposed by Nesterov in [7]; ; this method permits to control the sparsity of the solution. For the first three groups, we considered problems with 10,000 variables with the matrix A having 2,000 rows. The three groups differ in the number of non zeros of the solution, which is 20% (low sparsity), 10% (medium sparsity), and 5% (high sparsity) respectively. The last group is an instance with 100,000 variables and 5000 rows, and solutions having 5% of non zero variables (high sparsity).
+
+We implemented the instance of Algorithm 1 that we described in Example # 2 in the previous section, with the only difference that we used (6) instead of the proximal-linear choice (5). Note that in the case of LASSO problems, the unique solution (6) can be computed in closed form using the soft-thresholding operator, see e.g. [30].
+
+The free parameters of the algorithm are chosen as follows. The proximal parameters are initially set to ?i = tr(ATA)/2n for all i, where n is the total number of variables. Furthermore, we allowed a finite number of possible changes to ?i according to the following rules: (i) all ?i are doubled if at a certain iteration the objective func- tion does not decrease; and (ii) they are all halved if the objective function decreases for ten consecutive iterations. We updated ?k ac- cording to (4) with ?0 = 0.9 and ? = 1e ? 5. Note that since ?i are changed only a finite number of times, conditions of Theorem 1 are satisfied, and thus this instance of Algorithm 1 is guaranteed to converge. Finally we choose not to update all variables but set Ei(x  k) = ?x?i(xk, ?i)? xki ? and ? = 0.5 in Algorithm 1.
+
+We compared our algorithm above, termed FLEXible parallel  Algorithm (FLEXA), with a parallel implementation of FISTA [30], that can be regarded as the benchmark algorithm for LASSO prob- lems, and Grock, a parallel algorithm proposed in [17] that seems to perform extremely well on sparse problems. We actually tested two instances of Grock, namely: i) one where only one variable is updated at each iteration; and ii) a second instance where the num- ber of variables simultaneously updated is equal to the number of the parallel processors (16 for the first three set of test problems, 32 for the last). Note that the theoretical convergence of Grock is in jeopardy as the number of updated variables increases; convergence conditions for this method are likely to hold only if the columns of A are ?almost? orthogonal, a feature enjoyed by most our test problems but not satisfied in most applications. As benchmark, we also imple- mented two classical sequential schemes: (i) a Gauss-Seidel (GS) method computing x?i, and then updating xi using unitary step-size, in a sequential fashion, and (ii) a classical Alternating Method of Multipliers (ADMM) [31] in the form of [32]. Note that ADMM can be parallelized, but it is known not to scale well and therefore we did not consider this possibility here.
+
+All codes have been written in C++ and use the Message Passing Interface for parallel operations. All algebra is performed by using the GNU Scientific Library (GSL). The algorithms were tested on a cluster computer at the State University of New York at Buffalo.
+
+All computations were done on one 32 core node composed of four 8 core CPUs with 96GB of RAM and Infiniband card. The 10,000 variables problems were solved using 16 parallel processes while for the 100,000 variables problems 32 parallel processes were used.
+
+GS and ADMM were always run on a single process. Results of our experiments are reported in Fig. 1, where we plot the relative error (V (xk)? V ?)/V ? versus the CPU time, where V ? is the op- timal value of V . The CPU time includes communication times (for distributed algorithms) and the initial time needed by the methods to  0 5 10 15  ?4  ?2   time (sec)  (V ?  V *)  /V *     FLEXA FISTA GRock P=1 GRock P=16 ADMM GS  (a)  0 5 10 15  ?4  ?2   time (sec)  (V ?  V *)  /V *     FLEXA FISTA GRock P=1 GRock P=16 ADMM GS  (b)  0 5 10 15  ?4  ?2   time (sec)  (V ?  V *)  /V *     FLEXA FISTA GRock P=1 GRock P=16 ADMM GS  (c)  0 500 1000 1500  ?4  ?3  ?2  ?1     time (sec)  (V ?  V *)  /V *     FLEXA FISTA GRock P=1 GRock P=32 ADMM GS  (d) Fig. 1. Relative error vs. time (in seconds, logarithmic scale): (a) medium size and low sparsity - (b) medium size and sparsity - (c) medium size and high sparsity - (d) large size and high sparsity  perform all pre-iterations computations (this explains why the plot of FISTA starts after the others; in fact FISTA requires some nontrivial initializations based on the computation of ?A?22). The curves are averaged over ten random realizations for each of the 10,000 vari- ables groups, while for large 100,000 variables problems the average is over 3 realizations.
+
+Fig 1 shows that on the tested problems FPA outperforms in a consistent manner all other implemented algorithms. Sequential methods behave strikingly well on the 10,000 variables problems, if one keeps in mind that they only use one process; however, as expected, they cannot compete with parallel methods when the di- mensions increase. FISTA is capable to approach relatively fast low accuracy solutions, but has difficulties in reaching high accuracies.
+
+The parallel version of Grock is the closest match to FLEXA, but only when the problems are very sparse and the dimensions not too large. This is consistent with the fact that at each iteration Grock updates only a very limited number of variables, and also with the fact that its convergence properties are at stake when the problems are quite dense. Our experiments also suggest that, differently from what one could think (and often claimed in similar situations when using gradient-like methods), updating only a (suitably chosen) sub- set of blocks rather than all variables may lead to faster algorithms; see [28] for a detailed discussion on this issue. In conclusion, we believe the results overall indicate that our approach can lead to very efficient practical methods for the solution of large problems, with the flexibility to adapt to many different problem characteristics.
+
+5. CONCLUSIONS We proposed a highly parallelizable algorithmic scheme for the min- imization of the sum of a differentiable function and a block-separable nonsmooth one. Our framework easily allows us to analyze parallel versions of well-known sequential methods and leads to entirely new algorithms. When applied to large-scale LASSO problems, our al- gorithm was shown to outperform existing methods.
+
+6. REFERENCES  [1] F. Bach, R. Jenatton, J. Mairal, and G. Obozinski, ?Op- timization with sparsity-inducing penalties,? arXiv preprint arXiv:1108.0775, 2011.
+
+[2] J. K. Bradley, A. Kyrola, D. Bickson, and C. Guestrin, ?Parallel coordinate descent for l1-regularized loss minimization,? arXiv preprint arXiv:1105.5379, 2011.
+
+[3] P. L. B?hlmann, S. A. van de Geer, and S. Van de Geer, Statis- tics for high-dimensional data. Springer, 2011.
+
+[4] R. H. Byrd, J. Nocedal, and F. Oztoprak, ?An Inexact Succes- sive Quadratic Approximation Method for Convex L-1 Regu- larized Optimization,? arXiv preprint arXiv:1309.3529, 2013.
+
+[5] K. Fountoulakis and J. Gondzio, ?A Second-Order Method for Strongly Convex L1-Regularization Problems,? arXiv preprint arXiv:1306.5386, 2013.
+
+[6] I. Necoara and D. Clipici, ?Efficient parallel coordinate de- scent algorithm for convex optimization problems with sepa- rable constraints: application to distributed MPC,? Journal of Process Control, vol. 23, no. 3, pp. 243?253, 2013.
+
+[7] Y. Nesterov, ?Gradient methods for minimizing composite functions,? Mathematical Programming, pp. 1?37, 2012.
+
+[8] ??, ?Efficiency of coordinate descent methods on huge- scale optimization problems,? SIAM Journal on Optimization, vol. 22, no. 2, pp. 341?362, 2012.
+
+[9] Z. Qin, K. Scheinberg, and D. Goldfarb, ?Efficient block- coordinate descent algorithms for the group lasso,? Mathemat- ical Programming Computation, pp. 1?27, 2010.
+
+[10] A. Rakotomamonjy, ?Surveying and comparing simultaneous sparse approximation (or group-lasso) algorithms,? Signal pro- cessing, vol. 91, no. 7, pp. 1505?1526, 2011.
+
+[11] M. Razaviyayn, M. Hong, and Z.-Q. Luo, ?A unified con- vergence analysis of block successive minimization methods for nonsmooth optimization,? SIAM Journal on Optimization, vol. 23, no. 2, pp. 1126?1153, 2013.
+
+[12] P. Richt?rik and M. Tak?c?, ?Iteration complexity of random- ized block-coordinate descent methods for minimizing a com- posite function,? Mathematical Programming, pp. 1?38, 2012.
+
+[13] ??, ?Parallel coordinate descent methods for big data opti- mization,? arXiv preprint arXiv:1212.0873, 2012.
+
+[14] S. Sra, S. Nowozin, and S. J. Wright, Eds., Optimization for Machine Learning, ser. Neural Information Processing. Cam- bridge, Massachusetts: The MIT Press, Sept. 2011.
+
+[15] P. Tseng and S. Yun, ?A coordinate gradient descent method for nonsmooth separable minimization,? Mathematical Pro- gramming, vol. 117, no. 1-2, pp. 387?423, 2009.
+
+[16] Y. Xu and W. Yin, ?A block coordinate descent method for multi-convex optimization with applications to nonnegative tensor factorization and completion,? DTIC Document, Tech. Rep., 2012. [Online]. Available: http://www.caam.rice.edu/?optimization/bcu/multiconvex.html  [17] Z. Yin, P. Ming, and Y. Wotao, ?Parallel and Dis- tributed Sparse Optimization,? 2013. [Online]. Available: http://www.caam.rice.edu/?optimization/disparse/  [18] G.-X. Yuan, K.-W. Chang, C.-J. Hsieh, and C.-J. Lin, ?A com- parison of optimization methods and software for large-scale l1-regularized linear classification,? The Journal of Machine Learning Research, vol. 9999, pp. 3183?3234, 2010.
+
+[19] S. J. Wright, ?Accelerated block-coordinate relaxation for reg- ularized optimization,? SIAM Journal on Optimization, vol. 22, no. 1, pp. 159?186, 2012.
+
+[20] G. Scutari, F. Facchinei, P. Song, D. P. Palomar, and J.-S. Pang, ?Decomposition by partial linearization in multiuser systems,? Signal Processing (ICASSP 2013), May 4-9 2013, pp. 4424? 4428.
+
+[21] G. Scutari, F. Facchinei, P. Song, D. Palomar, and J.-S. Pang, ?Decomposition by Partial linearization: Parallel optimization of multi-agent systems,? IEEE Trans. Signal Process., vol. 62, pp. 641?656, Feb. 2014.
+
+[22] R. Tibshirani, ?Regression shrinkage and selection via the lasso,? Journal of the Royal Statistical Society. Series B (Methodological), pp. 267?288, 1996.
+
+[23] M. Yuan and Y. Lin, ?Model selection and estimation in regres- sion with grouped variables,? Journal of the Royal Statistical Society: Series B (Statistical Methodology), vol. 68, no. 1, pp.
+
+49?67, 2006.
+
+[24] S. K. Shevade and S. S. Keerthi, ?A simple and efficient al- gorithm for gene selection using sparse logistic regression,? Bioinformatics, vol. 19, no. 17, pp. 2246?2253, 2003.
+
+[25] L. Meier, S. Van De Geer, and P. B?hlmann, ?The group lasso for logistic regression,? Journal of the Royal Statistical Soci- ety: Series B (Statistical Methodology), vol. 70, no. 1, pp. 53? 71, 2008.
+
+[26] D. Goldfarb, S. Ma, and K. Scheinberg, ?Fast alternating lin- earization methods for minimizing the sum of two convex func- tions,? Mathematical Programming, pp. 1?34, 2012.
+
+[27] D. P. Bertsekas and J. N. Tsitsiklis, Parallel and Distributed Computation: Numerical Methods, 2nd ed. Athena Scientific Press, 1989.
+
+[28] F. Facchinei, S. Sagratella, and G. Scutari, ?Parallel Algorithms for Big Data Optimization,? IEEE Trans.
+
+Signal Process., (under review). [Online]. Available: http://arxiv.org/pdf/1402.5521v2.pdf.
+
+[29] F. Facchinei and J.-S. Pang, Finite-Dimensional Variational In- equalities and Complementarity Problem. Springer-Verlag, New York, 2003.
+
+[30] A. Beck and M. Teboulle, ?A fast iterative shrinkage- thresholding algorithm for linear inverse problems,? SIAM Journal on Imaging Sciences, vol. 2, no. 1, pp. 183?202, 2009.
+
+[31] S. Boyd, N. Parikh, E. Chu, B. Peleato, and J. Eckstein, ?Dis- tributed optimization and statistical learning via the alternating direction method of multipliers,? Foundations and Trends R? in Machine Learning, vol. 3, no. 1, pp. 1?122, 2011.
+
+[32] Z.-Q. Luo and M. Hong, ?On the linear convergence of the alternating direction method of multipliers,? arXiv preprint arXiv:1208.3922, 2012.
+

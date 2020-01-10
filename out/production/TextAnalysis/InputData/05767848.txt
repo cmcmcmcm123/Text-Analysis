@@ -1,0 +1,370 @@
+Bidirectional Mining of Non-Redundant Recurrent Rules from a Sequence Database
+
+Abstract? We are interested in scalable mining of a non- redundant set of significant recurrent rules from a sequence database. Recurrent rules have the form ?whenever a series of precedent events occurs, eventually a series of consequent events occurs?. They are intuitive and characterize behaviors in many domains. An example is the domain of software specification, in which the rules capture a family of properties beneficial to program verification and bug detection. We enhance a past work on mining recurrent rules by Lo, Khoo, and Liu to perform mining more scalably. We propose a new set of pruning properties embedded in a new mining algorithm. Performance and case studies on benchmark synthetic and real datasets show that our approach is much more efficient and outperforms the state-of- the-art approach in mining recurrent rules by up to two orders of magnitude.
+
+
+
+I. INTRODUCTION  Data mining has been shown useful in various domains including finance, marketing, bioinformatics and recently soft- ware engineering, e.g., [1], [2]. Many valuable data sources are in sequential formats ranging from logs, transaction histories, medical histories, program traces, and many more.
+
+To analyze sequential data, Lo et al. propose recurrent rules stating: ?Whenever a series of events occurs, eventually another series of events occurs?. Recurrent rules capture temporal constraints that repeat a substantial number of times both within a sequence and across multiple sequences [3].
+
+The rule format is general and is not limited by look-ahead limit or window-width constraint. This enables the rule to capture significant candidates for not only temporal short- distance but also long-distance cause-and-effect relationships in a dataset. There are many instance of recurrent rules in day-to-day settings: 1) Resource Locking Protocol: whenever a lock is acquired, eventually it is released; 2) Internet Banking: whenever a connection is made and an authentication is completed and fund transfer command is issued, eventually the fund is transferred; 3) Network Protocol: whenever an HDLC connection is made and an acknowledgement is re- ceived, eventually a disconnection message is sent and an acknowledgement is received.
+
+In software specification and verification domain, recurrent rules correspond to a family of program properties useful for program verification (c.f., [4]). The first example given above  is a program property. Research in software verification ad- dresses approaches checking the correctness of a software with respect to a formal specification that often corresponds to a set of properties (c.f., [5]). However, documented specifications might often be outdated or missing due to software evolution, reluctance in writing formal specifications and short-time-to- market cycle of software development (c.f., [6], [7]).
+
+There are past studies on mining association rules from sets of items [8]. These studies are later extended to mine for sequential patterns and episodes that consider ordering among events in sequences [9], [10]. Rules can be formed from both sequential patterns and episodes [11], [10]. Different from a pattern, a rule expresses a constraint involving its premise (i.e., pre-condition) and consequent (i.e., post-condition). These constraints are needed for their potential usages in filtering erroneous sequences, detecting outliers, etc.
+
+However, rules generated from sequential patterns and episodes have different semantics from recurrent rules. A sequential rule ???? ???? states: ?Whenever a sequence is a super-sequence of ??? it will also be a super-sequence of ??? concatenated with ?????. An episode rule ???? ???? states: ?Whenever a window is a super-sequence of ??? it will also be a super-sequence of ??? concatenated with ?????.
+
+As an illustration, consider the following sequences:  Seq ID. Sequence ?1 ?lock, use, use, use, use, unlock? ?2 ?lock, use, use, use, use, unlock, lock, lock, exit? From sequence ?1, episode rule mining with a window  size of two is not able to mine the rule: ????? must be followed by ??????? as the two events are separated by more than two events. From sequences ?1 and ?2, sequential rule mining would report ????? must be followed by ?????? with a perfect confidence or likelihood (i.e., 2 out of 2 sequences)? despite the last two ???? operations in ?2 are not paired with any subsequent ?????? operations. Considering both ?1 and ?2, recurrent rule mining would report ????? is followed by ?????? in 2 out of 4 cases?.
+
+Recurrent rules generalize sequential rules where for each rule, multiple occurrences of the rule?s premise and conse- quent both within a sequence and across multiple sequences     are considered. Recurrent rules generalize episode rules by allowing precedent and consequent events to be separated by an arbitrary number of events in a sequence database. Also, a set of sequences rather than a single sequence is considered during mining. Furthermore, rather than mining all rules we mine a non-redundant set of rules.
+
+Recurrent rules could be formalized in Linear Temporal Logic (LTL) [12]. LTL has been widely studied and used by many tools e.g., [5], [13]. Model checker is one of them [5].
+
+It verifies correctness of safety critical systems based on the satisfaction of rules and properties formalized in LTL. The new semantics of recurrent rules, as compared to association, sequential and episode rules, necessitates new pruning strate- gies and algorithms that utilize these strategies to efficiently mine for recurrent rules.
+
+With the growth in the size of data currently available, a more scalable algorithm than the one proposed in [3] is needed. On larger datasets or lower support thresholds, we find the need to improve scalability. This work fills this gap by proposing a more scalable algorithm that embeds new pruning properties to mine recurrent rules more efficiently.
+
+Our approach works in several steps: 1) Mining pruned pre-conditions, 2) Mining pruned post-conditions, 3) Rule formation, and 4) Redundant rules removal. A number of new pruning strategies and a new data structure are employed for efficient mining of a non-redundant set of recurrent rules.
+
+Under a condition which holds in many cases, the complexity of the proposed algorithm is smaller by an exponential factor than the complexity of the one proposed in [3] (see Section VI- D). Performance study conducted on benchmark datasets, both synthetic and real, shows that runtime is improved by up to 134 times. We also conducted a case study on a dataset of real software traces extracted from multiple user interactions with an instant messaging application.
+
+The outline of this paper is as follows. In Section II, we discuss related work. Section III presents recurrent rule se- mantics in Linear Temporal Logic (LTL). Section IV describes some notations and definitions used in subsequent sections.
+
+Section V presents various theorems and properties used to prune search spaces. Section VI presents our algorithm and compares it with [3]. Section VII describes our performance study and case study. Finally, we conclude and describe future work in Section VIII.
+
+
+
+II. RELATED WORK  In this section, we discuss closely related past studies and compare them with our approach.
+
+Past Studies on Temporal Logics. In this work we mine recurrent rules, which is under the family of Linear Temporal Logic properties [12]. Temporal logics itself has been widely used for various purposes ranging from specifying communi- cation protocols among agents or models of agents? behav- iors [14], modeling bio-molecular interactions [15], querying XML documents [16], supporting historical databases [17], verifying correctness of systems [5], etc. Many studies de- scribed above use temporal logics to accomplish a particular  task. Different from these past studies, our goal is to mine temporal logic expressions automatically from datasets.
+
+Mining Frequent Itemsets & Association Rules. Association rule mining is first proposed by Agrawal and Srikant in [8].
+
+Association rule captures a relationship among items in a set, where the ordering of items is irrelevant. Association rules are generated by post-processing frequent itemsets. Notions of support and confidence are used as measures to distinguish sig- nificant rules. There are many work extending association rule mining, of special interest are work on closed frequent itemsets (e.g., [18]) and non-redundant association rules (e.g., [19]).
+
+Different from association rules, recurrent rules express or- dering constraints among events in a sequence database.
+
+Therefore pruning properties, suitable mining algorithms and the notion of rule redundancy are different.
+
+Mining Patterns & Rules from Sequences. Sequential pat- tern mining [9], [20] discovers patterns that are supported by a significant number of sequences. A pattern is supported by a sequence if it is a sub-sequence of it. To remove redun- dant patterns, closed sequential pattern mining was proposed by Yan et al. [21] and improved by Wang and Han [22].
+
+Spiliopoulou proposed the generation of sequential rules from sequential patterns [11]. Recurrent rules generalize sequential rules by considering multiple occurrences of the premise and consequent events within a sequence and across multiple sequences in the database. This generalization is significant since the precedent and consequent events of a rule can po- tentially appear repeatedly in a sequence. Considering program execution traces, due to loops and recursion, it is common to see program properties observed repeatedly in a trace.
+
+Mannila et al. performed episode mining to discover fre- quent episodes within a sequence of events [10]. An episode is defined as a series of events occurring relatively close to one another (i.e. they occur at the same window). An episode is supported by a window if it is a sub-sequence of the series of events appearing in the window. There are many extensions of the work. Harms et al. mine for constrained episode rules where the distance between the precedent and consequent of a rule is further limited by a value smaller than the overall window size [23]. Garriga extends Mannila et al.?s work to replace a fixed-window size with a gap constraint between one event to the next in an episode [24]. Recurrent rules generalize rules formed from episodes by allowing precedent and consequent events to be separated by an arbitrary number of events. This generalization is significant since precedent and consequent events might possibly be separated by an arbitrary number of events in sequences. For example, useful program properties, such as: ?acquiring of a lock (????) is eventually followed by its release (??????)?, or ?an opened file (????) is eventually closed (??????)? (c.f [2], [3]), often have their associated events occur at some arbitrary distance away from one another in an execution trace. Also, we analyze a sequence database and mine non-redundant rules.
+
+In [2], Lo et al. proposed iterative patterns to discover software specifications, which are defined based on the se- mantics of Message Sequence Charts (MSC). In [25], Ding et     TABLE I  LTL EXPRESSIONS AND THEIR MEANINGS ? (??????)  Meaning: Eventually unlock is called ?? (??????)  Meaning: From the next event onwards, eventually unlock is called ?(???? ? ?? (??????))  Meaning: Globally whenever lock is called, then from the next event onwards, eventually unlock is called ?(???? ? ??(???? ? (? ?? (?????? ? ?? (???)))))  Meaning: Globally whenever main followed by lock are called, then from the next event onwards, eventually unlock followed by end are called  TABLE II  RULES AND THEIR LTL EQUIVALENCES  Notation LTL Notation ? ? ? ?(? ? ???)  ??, ?? ? ? ?(? ? ??(? ? ???)) ? ? ??, ?? ?(? ? ?? (? ????))  ??, ?? ? ??, ?? ?(? ? ??(? ? ?? (? ????))) al. proposed an approach to mine for repetitive sub-sequences.
+
+Our work could be viewed as an extension of their approaches to mine for repetitive rules following the semantics of Linear Temporal Logics. In the software domain, LTL (but not MSC) is one of the most widely-used formalism for program verifi- cation (i.e., ensuring correctness of a software system) [5].
+
+Since the underlying target formalisms and semantics are different, both the search space pruning strategies and the mining algorithm needed to efficiently mine recurrent rules are different from those used in the past studies in [2] and [25].
+
+Mining recurrent rules is first proposed in [3]. In this work, we speed up the mining process further. We propose new pruning strategies and a new algorithm that embed the strategies into an effective approach to prune search space.
+
+Under a condition which holds in many cases, the complexity of our approach is exponentially better than the complexity of the approach in [3] (see Section VI-D). Furthermore, our empirical evaluation shows that our approach is able to outperform [3] by up to 2 orders of magnitude.
+
+
+
+III. RULE SEMANTICS IN LTL  Our mined rules can be expressed in Linear Temporal Logic (LTL) [12]. LTL is a logic that specifies properties of a sequence (i.e., a series of events). Among LTL operators, we are only interested in the operators: ?G?,?F?, and ?X?.
+
+The operator ?G? specifies that globally for every event in a sequence a certain property holds. The operator ?F? specifies that a property holds either at the current event or finally (or eventually) in one of the subsequent events in a sequence. The operator ?X? specifies that a property holds at the next event.
+
+Some examples are listed in Table I.
+
+Our mined rules state whenever a series of precedent events occurs eventually another series of consequent events also occurs. A mined rule denoted as ??? ? ????, can be mapped to its corresponding LTL expression. Examples of such correspondences are shown in Table II. Note that although the operator ?X? might seem redundant, it is needed to specify rules such as ??????, ?? where the ?b?s refer to different occurrences of ?b?.
+
+The set of LTL expressions corresponding to the set of  recurrent rules and are minable by our mining framework is shown in Backus-Naur Form (BNF) as follows:  ????? := ?(???????) ??????? := ?????? ??????????? ??(???????)  ???? := ?? (?????)??? (????? ??? (????))  Example 1: To illustrate the semantics of recurrent rules, consider a sequence:  ? = ?????, ????, ???, ??????, ????, ???? The LTL property corresponding to the rule ?????, ????? ? ???????, ???? is the property ?(???? ? ??(???? ? ?? (????????? (???)))). This property is violated by ? as the second occurrence of ???? is not eventually followed by ?????? and ???. Note however, the property corresponding to ?????, ????, ???? ? ???????, ????, which is ?(????? ??(???? ? ??(??? ? ?? (?????? ? ?? (???))))) is satisfied. This is the case since the second occurrence of ???? immediately before ??? in ? is not followed by a ???.
+
+
+
+IV. NOTATIONS & DEFINITIONS  This section presents some preliminary notations and defi- nitions pertinent to mining recurrent rules. Many of these are taken from [3].
+
+A. Basic Notations  Let ? be a set of distinct events considered. The input to our mining problem is a sequence database denoted as SeqDB = {?1, ?2, . . . , ??SeqDB?}. Each sequence is an ordered list of events, denoted as ??1, ?2, . . . , ????? where ?? ? ? .
+
+We define a pattern ? to be a series of events. We use first(? ) and last(? ) to denote the first and last event of ? respectively. A pattern ?1++?2 denotes the concatenation of patterns ?1 and ?2, also said to be the forward extension of ?1 or backward extension of ?2. A pattern ?1 = ??1, ?2, . . . , ??? is a subsequence (sub-pattern) of another pattern ?2 = ???1, ??2, . . . , ?  ? ?? (or, ?2 is a super-pattern of ?1) if there exists  integers 1 ? ?1 < ?2 < . . . < ?? ? ? such that ?1 = ???1 , ?2 = ?  ? ?2  , ? ? ? , ?? = ???? (denoted as ?1 ? ?2, or ?1 ? ?2 if they are not equal).
+
+Each recurrent rule ? has the form ???? ? ?????. ???? and ????? are two series of events (i.e., two patterns). ???? is referred to as the premise or pre-condition of the rule, while ????? is referred to as the consequent or post-condition of ?.
+
+B. Concepts and Problem Statement  In this subsection, we discuss various concepts and defini- tions and define our problem statement. We use the database in Table III as our running example throughout this paper.
+
+TABLE III  EXAMPLE SEQUENCE DATABASE ? SeqDB  Seq ID. Sequence ?1 ?a, b, e, c, b, d, c, d? ?2 ?a, c, b, e, a, e, d, c, b, d?     Each recurrent rule we mine expresses:  ?Whenever a series of events has just occurred at a point in time (i.e. a temporal point), eventually another series of  events occurs?  From the above semantics, to generate recurrent rules, we need to ?peek? at interesting temporal points and ?see? what series of events are likely to occur next. We will first formalize the notion of temporal points and occurrences.
+
+Definition 4.1 (Temporal Points & Prefixes & Suffixes): Consider a sequence ? of the form ??1, ?2, . . . , ???. All events in ? are indexed by their positions in ?, starting from 1 (e.g., ?[2] = ?2). These positions are called temporal points in ?. For a temporal point ?, the first ? events ??1, . . . , ??? is the ?-prefix of ?; the last ? events ?????+1, . . . , ??? is the ?-suffix of ?.
+
+Definition 4.2 (Occurrences & Instances): Given a pat- tern ? and a sequence ?, an occurrence of ? in ? is defined to be a temporal point ?, such that the ?-prefix of ? is a super- sequence of ? and ????(? )=?[?].
+
+Each of such ?-prefixes is said to be an instance of the pattern ? in ?, i.e., it is a super-sequence of ? and ????(? ) is indexed by ?. An instance of ? in ? is minimum iff it is the shortest one, i.e., there is no ? < ? such that ?-prefix of ? is an instance of ? .
+
+Example 2: Consider a pattern ? ??, ?? and the sequence ?1 in Table III (i.e., ?a, b, e, c, b, d, c, d?). Temporal points {2, 5} are the occurrences of ? in ?1, and the corresponding instances are ?a, b? and ?a, b, e, c, b?, where the instance ?a, b? is the minimum one.
+
+Definition 4.3 is a standard database projection (c.f. [21], [22]) capturing series of events occurring after the first tem- poral point. Definition 4.4 captures series of events occurring after each temporal point introduced in [3].
+
+Definition 4.3 (Projection & Sequence Support): A database projected on a pattern ? is defined as: SeqDB? = {(?, ??) ? ?? ? SeqDB , satisfying ?? = ??++??,  and ?? is the minimum instance of ? in ??, i.e., ?? is the shortest prefix of ?? containing ?}.
+
+For a pattern ? , we define the sequence support sup(? ,SeqDB) to be the size of SeqDB? (or equivalently, the number of sequences in SeqDB containing ? ). Reference to the database is omitted if it is clear from the context.
+
+Definition 4.4 (All-Projection & Instance Support): A database all-projected on a pattern ? is defined as:  SeqDB???? = {(?, ??) ? ?? ? SeqDB , satisfying ?? = ??++??, and ?? is an instance of ? in ??}.
+
+For a pattern ? , we define the instance support supall(?,SeqDB) to be the size of SeqDB???? (or equivalently, the total number of instances of ? in all sequences of SeqDB ).
+
+Reference to the database is omitted if it is clear from the context.
+
+Example 3: To illustrate the above concepts, we list the pro- jected and all-projected database SeqDB w.r.t. ?a, b? in Table
+
+III. From the support notations, we have sup(?a, b?,SeqDB)  = ?SeqDB ?a,b?? = 2, supall(?a, b?,SeqDB) = ?SeqDB????a,b?? = 4.
+
+TABLE IV  PROJECTION AND ALL-PROJECTION  Projection SeqDB?a,b? (1, ?e, c, b, d, c, d?) (2, ?e, a, e, d, c, b, d?)  All-Projection SeqDB????a,b? (1, ?e, c, b, d, c, d?) (1, ?d, c, d?) (2, ?e, a, e, d, c, b, d?) (2, ?d?)  The two projection methods associated notions of sup and supall are different. Specifically, supall reflects the number of occurrences of ? in SeqDB rather than the number of sequences in SeqDB supporting ? . They would differ a lot if sequences in SeqDB are long, and ? repeats multiple times in single sequences.
+
+Each recurrent rule ?, in the form of ???? ? ?????, where ???? (pre-condition) and ????? (post-condition) are two series of events (patterns), expresses that: whenever ???? occurs at a temporal point, ????? likely occurs (after ????). From the above notions of temporal points, projected databases and supports of patterns, we define the support and confidence of ?.
+
+Definition 4.5 (Support & Confidence of Rule): Consider a recurrent rule ? (??????????) in SeqDB .
+
+The sequence support (or instance support) of ?, denoted as sup(?,SeqDB) (or supall(?,SeqDB)), is defined to be the sequence support (or instance support) of ????++????? in SeqDB1:  sup(?,SeqDB) = sup(????++?????,SeqDB),  supall(?,SeqDB) = supall(????++?????,SeqDB).
+
+The confidence of ?, denoted as conf (?,SeqDB), is de- fined to be the ratio:  conf (?,SeqDB) = sup(?????,SeqDB  ??? ????)  supall(????,SeqDB) .
+
+SeqDB is omitted if it is clear from the context.
+
+The confidence of ?, conf (?,SeqDB), can be interpreted  as the likelihood of ????? happening after ????. It is de- fined to be the ratio of two quantities: supall(????,SeqDB)? the number of times that ???? occurs in SeqDB , and sup(?????,SeqDB  ??? ????)?the number of times that ????? oc-  curs after ???? in SeqDB .
+
+Example 4: Consider a sequence database SeqDB in Ta-  ble III and a recurrent rule ?, ?a, b? ? ?c, d?. The sequence support of ? is the number of sequences in SeqDB containing (or being a super-sequence of) the concatenation of pre- condition and post-condition, i.e., ?a, b, c, d?. Both ?1 and ?2 (in Table III) contain it, so sup(?) = 2. The instance support  1We standardize definitions of sup(?,SeqDB) and supall (?,SeqDB).
+
+In [3], sup(?,SeqDB) is defined as sup(????,SeqDB) while supall (?,SeqDB) is defined as supall (????++?????,SeqDB). The current definition of sup follows typical definitions of support in association rule mining and sequential rule mining.
+
+of ? is the number of occurrences of pattern ?a, b, c, d? in SeqDB , i.e., supall(?) = supall(?a, b, c, d?) = 3.
+
+The confidence of the rule ? (?a, b? ? ?c, d?) is the likelihood of ?c, d? occurring after each temporal point of ?a, b?. Refer to SeqDB????a,b? in Table IV, there is an occurrence of ?c, d? after each of the first three occurrences of ?a, b? (i.e., supall(?a, b?,SeqDB) = 4 and sup(?c, d?,SeqDB????a,b?) = 3).
+
+So, conf (?) = 3/4.
+
+Mining Recurrent Rules. We aim to mine significant rules (with sufficient supports and confidence). In a sequence database SeqDB , given threshold min sup for sequence sup- port, threshold min supall for instance support, and threshold min conf for confidence, our goal is to find all rules ? in the form of ?????????? s.t. sup(?,SeqDB) ? min sup, supall(?,SeqDB) ? min supall , and conf (?,SeqDB) ? min conf (significant rule).
+
+To reduce the number of rules and improve efficiency (while not to lose much information), in [3], Lo et al. define a no- tion of rule redundancy based on super-sequence relationship among rules having the same support and confidence values.
+
+This is similar to the notion of closed patterns applied to sequential patterns [21], [22].
+
+Definition 4.6 (Rule Redundancy): A rule ? = ???? ? ????? is redundant if there is another rule ?? = ????? ? ?????? such that: 1) ? is a sub-sequence of ?? ( ????++????? ? ?????++?  ? ????);  2) both rules have the same support and confidence values; 3) in the case that the concatenations are the same (????++????? = ?????++?  ? ????) and 2) holds, to break the tie,  we define the one with longer pre-condition as being redundant (i.e., we wish to retain the rule with a shorter pre-condition and a longer post-condition).
+
+Example 5: Following Example 4, a rule ??: ?a, b? ? ?c? is redundant in SeqDB , because another rule ?: ?a, b? ? ?c, d? has the same (sequence & instance) supports and confidence as ??? .
+
+In this work, we mine non-redundant significant rules.
+
+
+
+V. PRUNING PROPERTIES FOR SCALABLE MINING OF RECURRENT RULES  The basic idea of our algorithm for mining non-redundant recurrent rules is: first, we find a candidate set of pre- conditions, and a candidate set of post-conditions; then, we pair two elements, one from each candidate set, to form a recurrent rules. For the scalable mining of rules, we study the anti-monotonicity property of confidence used to speed up the pairing procedure, and propose strategies for shrinking the two candidate sets and pruning redundant rules in advance.
+
+This section is organized as follows. The anti-monotonicity property of confidence and pruning strategies rely on two other types of projections, called prefix projection and suffix projection, which are introduced in Section V-A. The anti- monotonicity property of confidence is presented in Section V- B. The strategies for shrinking candidate sets and pruning redundant rules are described in Section V-C. The description  of the complete algorithm and its analysis are deferred to Section VI.
+
+A. Suffix Projection and Prefix Projection  Recall projection (Definition 4.3) and all-projection (Defini- tion 4.4) essentially project sequences to their suffixes after the instances of a pattern. Differently, here we introduce suffix pro- jection (suf-projection) and prefix projection (pre-projection), which project sequences to the minimum suffixes containing a pattern and the complementary prefixes, respectively. Using the two new types of projections, we will introduce the anti- monotonicity property of confidence (Section V-B) and the strategies for pruning redundant rules (Section V-C).
+
+Definition 5.1 (Suffix Projection and Prefix Projection): The ?th suf-projection of SeqDB w.r.t. a pattern ? is defined as:  SeqDB?????? = {(?, ??) ? ?? ? SeqDB , satisfying ?? = ??++??, and ?? is the ?th minimum suffix of ??  containing ?}.
+
+The pre-projection of SeqDB w.r.t. a pattern ? is defined as:  SeqDB???? = {(?, ??) ? ?? ? SeqDB , satisfying ?? = ??++??, and ?? is the minimum suffix of ?? containing  ?}.
+
+The (1st) minimum suffix of ?? containing ? is ?? iff no suffix shorter than ?? contains ? . The ?th minimum suffix of ?? containing ? is ?? iff no suffix, starting with ?????(? ), shorter than ??, and longer than the (??1)th minimum suffix containing ? , contains ? .
+
+Example 6: We still use SeqDB in Table III to illustrate the above concepts. Consider pattern ?c, d? here. The 1st suf- projection, the 2nd suf-projection, and the pre-projection of SeqDB w.r.t. ?c, d? are shown in Table V.
+
+TABLE V  SUF-PROJECTION AND PRE-PROJECTION  Suf-Projection SeqDB????1?c,d? (1, ?c, d?) (2, ?c, b, d?) Suf-Projection SeqDB????2?c,d? (1, ?c, b, d, c, d?) (2, ?c, b, e, a, e, d, c, b, d?)  Pre-Projection SeqDB????c,d? (1, ?a, b, e, c, b, d?) (2, ?a, c, b, e, a, e, d?)  B. Anti-Monotonicity Property of Confidence  Consider a recurrent rule ? in the form ???? ? ????? in SeqDB . In this subsection, we discuss how to utilize SeqDB???????? to calculate conf (?). We also present the anti- monotonicity property of confidence.
+
+Suppose we have the confidence conf (?) = ?. This rule implies that in the database, the consequence ????? of the rule appears after a fraction ? of the occurrences of the premise ???? of the rule. Note both ???? and ????? can appear one or more times in a sequence ?? ? SeqDB . Occurrences of premise ???? which are not followed by an occurrence of ????? contribute negatively to the confidence of the rule. On the other hand, those followed by one or more occurrence of ????? contribute positively to the confidence.
+
+Of importance is the portion of each sequence before the last occurrences of the consequent ??????this portion of sequences is exactly formulated as the prefix projection SeqDB???????? .
+
+For each ?? in SeqDB , occurrences of ???? appearing before the last occurrence of ????? contribute positively to the confidence, because there is at least one instance of ????? afterwards. There are totally supall(????,SeqDB  ??? ?????  ) such occurrences of ????. On the other hand, those appearing after the last occurrence of ????? contribute negatively to the confidence.
+
+Formally, we can prove that sup(?????,SeqDB ??? ????) is  equal to supall(????,SeqDB ??? ?????  ), and thus the confidence of a rule can be also defined using pre-projection via ?????, as stated in the following proposition. We omit its proof due to the space limit.
+
+Proposition 1: Consider a rule ?, in the form of ???? ? ?????, and a sequence database SeqDB . We have  conf (?,SeqDB) = supall(????,SeqDB  ??? ?????  )  supall(????,SeqDB) . (1)  Example 7: Using the same setting as that of Example 4, now we compute the confidence of recurrent rule ?, ?a, b? ? ?c, d?, in SeqDB (Table III) in the way suggested by the above proposition. SeqDB????c,d? is listed in Table V. It is easy to see there are three instances of ?a, b? in SeqDB????c,d? (two in ?1 and one in ?2). Therefore, we have supall(?a, b?,SeqDB????c,d?) = 3. According to Equation 1, we have conf (?) = 3/4, obtaining the same result as in Example 4.
+
+Proposition 1 also suggests the anti-monotonicity property of conf (?) w.r.t. ?????: as ????? grows (i.e., ?++?????), SeqDB???????? shrinks (the border shifts to the left, i.e., for each (?, ??) ? SeqDB???????? , the prefix ?? becomes shorter).
+
+Thus supall(????,SeqDB  ??? ?????  ) and conf (?) decrease. We formulate this as Proposition 2, and illustrate it in Example 8.
+
+Proposition 2: Consider two rules ? and ?? in a sequence database SeqDB , with ????? = ???? and ?  ? ???? = ?++?????  for some event ? ? ? . Then we have conf (?) ? conf (??).
+
+Proof: Consider any two prefixes of the same sequence  ?? in SeqDB from the prefix projections w.r.t. ? and ??, respectively. Suppose they are: (?, ??) ? SeqDB???????? and (?, ???) ? SeqDB????????? . Since ?  ? ???? = ?++?????, we must  have ?? is a super-sequence of ???. Therefore, there are at least as many occurrences of ???? in ?? as the ones of ????? in ???. This implies the following which completes the proof.
+
+supall(????,SeqDB ??? ?????  ) ? supall(?????,SeqDB?????????)  Example 8: Consider two rules ? = ??, ?? ? ??, ?? and ?? = ??, ?? ? ??, ?, ?? in the sequence database SeqDB (Table III). Recall SeqDB????c,d? shown in Table V. SeqDB  ??? ?e,c,d?  contains two elements: (1, ?a, b?) and (2, ?a, c, b, e, a?). As can be verified, each sequence in SeqDB????c,d? is a super- sequence of the corresponding sequence in SeqDB????e,c,d?; and, we can calculate conf (??) = 2/4 ? 3/4 = conf (?) (since supall(??, ??,SeqDB?????,?,??) = 2).
+
+Theorem 1 (Anti-Monotonicity Property of Confidence): Consider two rules ? and ?? in a sequence database SeqDB , with ????? = ???? and ????? = ???++?  ? ????, where ???  is an arbitrary series of events. Then we have conf (?) ? conf (??). In other words, if ? is not confident enough (conf (?) < min conf ), ?? is not either.
+
+Proposition 2 directly leads to Theorem 1. Theorem 1 can be utilized to speed up the pairing of pre-condition candidates and post-condition candidates by avoiding generating rules with insufficient confidence. The basic idea is that, when we try to pair a pre-condition candidate with a post-condition candidate to form a rule, if the confidence of the resulting rule is lower than the threshold, we no longer try to pair the same pre- condition with any backward extension of the post-condition.
+
+Details are deferred to Section VI.
+
+C. Strategies for Eliminating Redundant Rules  Aside from early detection of rules with low confidence, we also desire to detect redundant rules (see Definition 4.6) early.
+
+A rule is redundant if there exists another rule, which is a super-sequence and has the same support and confidence. Our goal is to detect the redundancy early in the pre-condition and post-condition candidates, so as to prune the pre-conditions and post-conditions which definitely lead to the formation of redundant rules. We still need to test whether a rule generated from pre/post-condition candidates is redundant afterwards, but our pruning strategies can reduce the number of pre/post- condition candidates by a lot.
+
+Two strategies are introduced in Theorem 2 and Theorem 3, for pruning redundant pre-conditions and post-conditions, re- spectively. Theorem 2 is borrowed from [3].
+
+Theorem 2 (Pruning Redundant Pre-Conds): In a sequence database SeqDB , consider a pre-condition candidate ????. If there is a pre-condition candidate ????? ? ???? s.t. (i) ????? = ?1++?++?2 while ???? = ?1++?2, for some event ? and nonempty ?1, ?2, and (ii) SeqDB???? = SeqDB????? , then for any post-condition candidate ???? and any forward extension ????++? , the rule (????++? )? ???? is redundant.
+
+Theorem 2 implies that, there is no need to put ???? or its forward extension (????++? ) into the pre-condition candidate set, if ???? satisfies the stated properties (i)-(ii). The intuition is that: (????++? ) ? ???? is redundant because there is a longer rule (?????++? ) ? ???? with the same support and confidence.
+
+As Theorem 2 has been presented and proved in [3], thus in the following part of this subsection, we focus on how to prune post-conditions (Theorem 3). In [3], another theorem to prune redundant post-condition is given; however, applying that theorem requires performing one mining operation on the projected database for every single pre-condition candidate, which is not efficient enough for large datasets.
+
+We first discuss when a post-condition candidate is redun- dant w.r.t. confidence (Lemma 1), and then discuss when it is redundant w.r.t. support (Lemma 2). Finally, we combine them as our pruning strategy for post-conditions (Theorem 3).
+
+Lemma 1 and 2 state that, if for a post-condition candidate, inserting some event in the middle does not change the pre- projection and suf-projection of SeqDB w.r.t. it, then any backward extension of this post-condition can only generate redundant rules.
+
+Lemma 1: In a sequence database SeqDB , consider a post- condition candidate ?????. If there is a post-condition candi- date ?????? ? ????? s.t.
+
+(i) ?????? = ?1++?++?2 while ????? = ?1++?2, for some event ?, subsequences ?1, and (nonempty) ?2, and (ii) SeqDB???????? = SeqDB  ??? ??????  , then for any pre-condition candidate ??? and any backward ex- tension ?++????? of ?????, the rule ? = ???? (?++?????) is not confidence-closed (i.e., there exists another rule ?? ? ? s.t. conf (?) = conf (??)).
+
+Proof: To prove this lemma, it suffices to prove the existence of ??. We construct ?? = ??? ? (?++??????). In fact, from (ii) SeqDB???????? = SeqDB  ??? ??????  and Equation (1) in Proposition 1, we directly get conf (?) = conf (??), which completes the proof.
+
+Lemma 2: In a sequence database SeqDB , consider a post- condition candidate ?????. If there is a post-condition candi- date ?????? ? ????? s.t.
+
+(i) ?????? = ?1++?++?2 while ????? = ?1++?2, for some event ?, and subsequences ?1 and (nonempty) ?2, (iii) ??: SeqDB?????????? = SeqDB  ????? ??????  , and  (iv) ??: ???? ( SeqDB??????????  )??? ?????  ???? = ???? ( SeqDB???????????  )??? ??????  ????, then for any pre-condition candidate ??? and any backward ex- tension ?++????? of ?????, the rule ? = ???? (?++?????) is not support-closed (i.e., there exists another rule ?? ? ? s.t. sup(?) = sup(??) and supall(?) = supall(??)).
+
+Proof: Similar to the proof of Lemma 2, we prove the existence of ??. And again, we construct ?? = ??? ? (?++??????) and only need to prove sup(?) = sup(?  ?) and supall(?) = supall(??) to complete the proof.
+
+To prove sup(?) = sup(??), we only need to prove, for each sequence ?? ? SeqDB , ? ? ?? (i.e., ???++?++????? ? ??) if and only if ?? ? ?? (i.e., ???++?++?????? ? ??): From (iii), for each (?, ??) ? SeqDB????1????? = SeqDB  ????1 ??????  , we know ?????, ?????? ? ??. Suppose ?? = ??++??, if ???++? ? ??, then we have both ? ? ?? and ?? ? ??, otherwise, neither is true.
+
+To prove supall(?) = supall(??), we only need to show, for each sequence ?? ? SeqDB , ? (???++?++?????) and ?? (???++ ?++??????) have the same number of instances in ??: Suppose the shortest prefix of ?? containing ???++? is ??0.
+
+Consider (?, ??) ? SeqDB?????????? = SeqDB  ????? ??????  and let ?? = ??++??. Let ?? be the minimum ? that satisfies ??0 ? ??. Let (?, ???) ? SeqDB??????????? = SeqDB  ?????? ??????  and ?? = ???++???.
+
+From (iv), ????? has the same number of instances in ??? as ?????? has in ??  ?. So, ? has the same number of instances in ?? as ?? does.
+
+Theorem 3 (Pruning Redundant Post-Conds): In a sequence database SeqDB , consider a post-condition  candidate ?????. If the properties (i)-(iv) in Lemma 1 and 2 are satisfied, then for any pre-condition candidate ??? and any backward extension ?++?????, the rule ??? ? (?++?????) is redundant.
+
+Theorem 3 directly follows from Lemma 1 and 2, and it implies that, there is no need to put ????? or its backward extension ?++????? into the post-candidate set, if (i)-(iv) in Lemma 1 and 2 are satisfied.
+
+Example 9: Consider a post-condition candidate ????? = ??? in the sequence database SeqDB (Table III). Recall the suf- projection and pre-projection of SeqDB w.r.t. ??, ?? is shown in Table V. Choosing ?????? = ??, ??, we can easily verify that ????? here satisfies properties (i)-(iv) in Lemma 1 and 2.
+
+So from Theorem 3, any backward extension of ??? can only generate redundant rules. Take the backward extension ??, ?? for example: consider the rule ? = ??? ? ??, ?? and ?? = ??? ? ??, ?, ??; ? is redundant because we have conf (?) = conf (??) = 2/3, sup(?) = sup(??) = 2, and supall(?) = supall(??) = 3.
+
+Theorem 2 and 3 discardpre- and post-condition candidates that are generating redundant rules, before we try to pair them.
+
+These theorems are early-stop conditions in the pattern-growth generation of pre- and post-condition candidates.
+
+In the next section, we will utilize the pruning strategies, namely Theorem 1, 2, and 3, in a holistic mining algorithm.
+
+
+
+VI. ALGORITHM  In this section, we first introduce our framework to mine (non-redundant) rules in Section VI-A. Two stages of our mining framework are detailed in Section VI-B and VI-C. We analyze our algorithm in Section VI-D. We call our framework BidirectiOnal pruning-Based recurrent rule mining algorithm (BOB).
+
+A. Algorithm Framework  Recall the goal of our mining algorithm is, given a sequence database SeqDB and three thresholds min sup, min supall , and min conf , we want to find all the rules ?s in SeqDB with support sup(?) no less than min sup, instance support supall(?) no less than min supall , and confidence conf (?) no less than min conf .
+
+Our mining algorithm consists of two major stages. In the first stage, we use a pattern-growth algorithm to find a candidate set of pre-conditions and a candidate set of postconditions - strategies introduced by Theorem 2 and 3 are used to prune candidates for mining non-redundant rules.
+
+In the second stage, pre-conditions and post-conditions are paired to form rules, with the significant (sufficient supports and confidence) non-redundant ones output ? Theorem 1 is used to speed up the pairing procedure. The algorithm is as follows:  1) (Mining Pruned Pre-Conditions) Mine a set of pre- condition candidates ??? satisfying min sup. Candi- dates are pruned based on Theorem 2.
+
+2) (Mining Pruned Post-Conditions) Mine a set of post- condition candidates ???? satisfying min sup. Can- didates are pruned based on Theorem 3.
+
+Algorithm 1 Mining (Pruned) Candidates Input: sequence database SeqDB = {?1, ?2, . . . , ??}; threshold min sup Output: pre-/post-condition candidates ???/????  1: ? ? all events appearing in SeqDB ; ???,???? ? ?; 2: for each ? ? ? do 3: ForwardGrow(?,SeqDB? ); 4: BackwardGrow(?,SeqDB???? ); 5: return ??? and ???? ;  Subroutine ForwardGrow(?,SeqDB? ) Input: pattern ? and projected database SeqDB? w.r.t. ? Objective: add pre-condition candidates with prefix ? into  ???  6: if ?SeqDB? ? ? min sup then 7: if ? satisfies (i)-(ii) in Theorem 2 then prune ? else 8: ???? ??? ? {?}; 9: for each event ? appearing in SeqDB? do  10: ForwardGrow(?++?,SeqDB?++?);  Subroutine BackwardGrow(?,SeqDB???? ) Input: pattern ? and pre-projected database SeqDB???? w.r.t.
+
+? Objective: add post-condition candidates with suffix ? into  ????  11: if ?SeqDB? ? ? min sup then 12: if ? satisfies (i)-(iv) in Theorem 3 then prune ? else 13: ????? ???? ? {?}; 14: for each event ? appearing in SeqDB???? do 15: BackGrow(?++?,SeqDB????++? );  3) (Forming Rules) For each ??? ? ???, pair it with each ???? ? ???? to form a rule ? (in some order).
+
+Test whether a rule is significant (sufficient supports and confidence), and keep all significant rules in a set ?????. Theorem 1 is used to speed up the pairing .
+
+4) (Removing Redundant Rules) Remove the remaining redundant rules (Definition 4.6) in ?????, and output the rest.
+
+Step 1 and 2 above belong to the first stage, which will be elaborated in Section VI-B. Step 3 and 4 belong to the second stage, which will be described in more detail in Section VI-C.
+
+B. Stage I: Mining Pruned Candidates  We propose a new pattern-growth algorithm to find pre- condition (???) and post-condition (???? ) candidates.
+
+The algorithm for mining pruned candidates is outlined in Algorithm 1. It is important to note that both the mining of pre-condition candidates and the mining of post-condition candidates are done using pattern-growth (i.e., depth-first search of the pattern space). The difference is: to mine pre- conditions, patterns are grown forward (? is grown to ?++?), and thus we utilize the projections of SeqDB (projected to the suffixes); on the other hand, to mine post-condition candidates,  Algorithm 2 Forming Rules from Candidates Input: pre-/post-condition candidates ???/???? in SeqDB ; thresholds min sup, min supall , and min conf Output: Significant and non-redundant rules  1: Store ??? in a Prefix Hash Tree ?????? ; 2: Store ???? in a Prefix Hash Tree ??????? ; 3: for each ??? ? ??? do 4: for each ???? ? ??????? (in DFS order) do 5: Let ? be the rule ???? ????; 6: if conf (?) < min conf or  sup(?) < min sup then skip the subtree below ????;  7: Add ? into ?????; 8: Eliminate redundant rules in ?????; 9: return ?????  patterns are grown backward (?++? ), and thus we utilized the pre-projections of SeqDB (projected to the prefixes). The subroutine BackwardGrow and ForwardGrow implement the forward and backward pattern growth strategy respectively.
+
+The reason for differentiating mining pre-conditions from mining post-conditions is to facilitate the pruning strategies presented in Theorem 2 and 3.
+
+Line 6 and 11 utilize the anti-monotonicity property of sup- port (longer patterns cannot have higher sequence supports).
+
+Line 7 and 12 apply the pruning strategies in Theorem 2 and 3, respectively. It should be noted that, once a pattern ? is pruned, we stop growing from ? , because Theorem 2(3) states that any of its forward(backward) extension can only lead to redundant rules.
+
+Representation of Projected Databases. The remaining question is how to represent projected databases SeqDB? , SeqDB???? , SeqDB  ??? ? , and SeqDB  ????? ? (used in Theorem 2  and 3), which are referred to in Algorithm 1. It is not space- efficient to store them explicitly. Interestingly, all the projected databases are either prefixes or suffixes of the original se- quences. Therefore, we only need to store the ending/starting positions of prefixes/suffixes in the original sequences, instead of explicitly storing the prefixes/suffixes.
+
+C. Stage II: Forming Rules  This subsection describes Step 3-4 of our algorithm frame- work, i.e., how to form significant non-redundant rules from the two candidate sets ??? and ???? obtained in Step 1-2.
+
+The basic idea is to pair each pre-condition from ??? with each post-condition from ???? to form a rule, and then test whether its supports and confidence are high enough and whether it is redundant. Since the strategies in Theorem 2 and 3 (line 7 and 12 in Algorithm 1) could not prune all of redundant rules, the redundancy test is still needed. The main purpose of Theorem 2 and 3 is to shrink the candidate sets, and thus speed up the mining and pairing of candidates.
+
+This stage is outlined in Algorithm 2. There are four remaining questions: (i) how to organize ??? and ????     to facilitate the pairing procedure; (ii) in what order to pair each ??? ? ??? with each ???? ? ???? ; (iii) how to compute the supports and confidence of a rule; (iv) how to test whether a rule is redundant.
+
+Prefix Hash Tree. We use a prefix hash-tree (PHT) data structure to organize the set of candidates ??? and ???? .
+
+For ???? , all patterns are stored in the PHT in reverse order.
+
+Each node in this tree represents a pattern (obtained by fol- lowing the path from root to this node) and is associated with its corresponding projected databases: SeqDB? , SeqDB  ??? ? ,  and SeqDB???? . Each projected database is stored implicitly (discussed in Section VI-B). Each node has a hash table to quickly locate one of its child in a constant lookup operation given an event. Figure 1 shows an example of a PHT.
+
+A  B  C  C  Proj. DBs of <A,B>  Proj. DBs of <A,B,C>  Proj. DBs of <A,C>  Statistics PHT  Fig. 1. Prefix Hash-Tree (PHT) Data Structure  Embedding the Anti-Monotonicity Property. We store ???? in a PHT in reverse order and scan ????? ? ???? in DFS order. By following the DFS order to visit nodes in the PHT, a post-condition is always scanned earlier than its backward extensions. This feature enables us to embed the anti-monotonicity properties of confidence (Theorem 1) and sequence support into the pairing algorithm (i.e., line 6 in Al- gorithm 2): for any ???? ? ???, once a rule ???? ? ????? has a low support or low confidence, we can skip scanning the whole subtree below ?????. For example, in Figure 1 (suppose it is the PHT of post-condition candidates), for some pre-condition candidate ????, if we find ???? ? ?a, b? has a low support or confidence, we can skip scanning ?a, b, c?, and continue to ?a, c?.
+
+Computing Supports and Confidence. We store both ??? and ???? in PHTs. For a rule ? = ???? ? ?????, its supports and confidence can be computed from the projected databases w.r.t. ???? and ????? stored in the PHTs. To compute ???(?) we compare ????????? with ?????  ??? ?????  and look for common sequences where the premise ???? occurs first before ?????. For computing conf (?), we use the formula defined in Proposition 1 and use the projected database ???????????? and ?????  ??? ?????  . The ratio of the occurrences of ???? in ?????  ??? ?????  to all occurrences of ???? is conf (?). ??????(?) is the size of ???????????++???? which is usually in the PHTs. However, there are cases where ???? ? ????? is a significant rule while ????++????? is neither in ?????? nor ??????? . For these cases, we need to re-scan the database to find the instance support of ?.
+
+Eliminating Redundant Rules. In line 8 of Algorithm 2 we want to remove redundant rules. Some redundant rules have  been pruned early in stage I. But to eliminate all redundant rules, this step is needed. To illustrate the need for this stepafter applying Theorem 2 and 3, consider the following database :  Seq ID. Sequence ?1 ?a, b, b, c? ?2 ?a, b, b, c?  The rule ?1 = ??????? has a sequence support, instance support, and confidence of 2, 2, and 100%. These are the same as those of rule ?2 = ??????, ??. Although ?2 subsumes ?1, yet, the pre-condition ??? is not considered redundant due to ??? by Theorem 2. Similarly ??? is not considered redundant due to ??, ?? by Theorem 3.
+
+We map rules ??s with the same supports and confidence, i.e., the same triple (sup(?), supall(?), conf (?)), into a bucket (using, e.g., a hash table). Then, for each bucket, we want to remove the redundant rules (i.e., the ones with their super-pattern in the same bucket).
+
+D. Algorithm Comparative Analysis  Consider a database containing a set of sequences with events coming from an alphabet ?. The worst case complexity of mining frequent patterns of length at most ? from such a database is O(????) database scan operations. Consider a set of patterns ? , the worst case complexity of constructing ??? from patterns in ? is O(?? ?) database scan operations. In our analysis, we use database scan as the unit of operation. We ignore the time needed to eliminate redundant rules since no database scan operation is involved.
+
+In BOB, we perform: 1. two mining operations on the original sequence database to obtain the set of ??? and ???? , 2. construction of ?????? and ??????? , and 3. Composition of premises and consequents to form non-redundant rules. Let us also assume that both the premises and consequents have a maximum length of ?.
+
+The complexity of our approach is at most O(???? + ???? + ???? + ???? + ?????? ??? ???? ?) = O(???? + ?????? ??? ???? ?). The first term of the first formula (i.e., ????) is due to the mining of the premises, the second is due to the mining of the consequents, the third and fourth are due to the construction of ?????? and ??????? , and the last is due to the composition of premises and consequents to form rules. Remember many rules can be constructed without requiring any additional database scan operation. Some how- ever require the re-scanning of the database to compute their instance support values (see Section VI-C).
+
+The algorithm in [3] (LKL08) takes as input a sequence database ????? and works in two steps: 1. Mine a pruned set of pre-conditions obeying minimum sequence support thresh- old and Theorem 2 from ?????, 2. For each pre-condition, mine a set of post-conditions obeying the minimum confidence and minimum instance support thresholds. At the end of the first step, for each pre-condition ???, LKL08 constructs a projected database ???????????. Another mining operation is then performed on this projected database. The complexity is thus O(???? ? ????). Notice that if ?????? ??? ???? ?     is not large, the complexity of our approach is smaller by an exponential factor than that of LKL08. In the worst case, ?????? ??? ???? ? = ???? ? ???? though.
+
+However, in frequent pattern mining, worst case analysis is often not interesting. This is so as in the worst case, all pruning properties do not work. In the worst case, all possible rules up to a particular length are significant and none of them is redundant. The following points summarize reasons behind the superiority of our approach as compared to [3]:  1) We employ two new pruning strategies described by Theorem 1 and 3. These strategies are embedded into our new mining algorithm to remove search space not pruned before by the approach in [3].
+
+2) The projected database created in [3] could be very large especially if patterns recur in a sequence many times.
+
+For a premise ???, the projected database ??????????? could be larger than the original ????? especially in cases where the number of repetitions of ??? within each sequence containing it is high. Also, projecting w.r.t. a premise can produce a very localized dataset (i.e., a single sequence is split into its many suffixes), resulting in hard-to-mine dense dataset with a large number of frequent patterns even at a high support threshold.
+
+3) During the mining of premises and consequents from ?????, for each pattern ? , we store summary informa- tion, e.g., ????????? and ?????  ??? ? . This information  is used to immediately prune insignificant rules not satisfying minimum sequence support and confidence thresholds (see Section VI-C). For this pruning, we do not need to re-scan the database, rather only the sum- mary information needs to be analyzed. The algorithm in [3] can only perform database scan operations to prune candidate rules.
+
+To compare effectiveness of various pruning strategies, experiments on various datasets are needed. We perform this empirical evaluation in Section VII.
+
+
+
+VII. EMPIRICAL EVALUATION  Experiments have been performed to evaluate the scalability of our approach. A case study on analyzing traces from an instant messaging application has also been conducted.
+
+Environment and Pattern Miners. All experiments are per- formed on a Pentium Core 2 Duo 3.17GHz PC with 3GB main memory running Windows XP Professional. Algorithms are written in Visual C#.Net. We compare the approach presented in [3] with our approach. We refer to the two approaches as LKL08 and BOB respectively.
+
+Datasets. To reduce the threat of external validity (i.e., the generalizability of our result), we investigate a variety of datasets. Four datasets, two synthetic and two real, are studied.
+
+IBM synthetic data generator is used [9]. It is modified to produce sequences of events, rather than sequences of sets of events. The generator accepts a set of parameters. We focus on four parameters: D, C, N, and R. They correspond to the number of sequences (in 1000s), the average number of events per sequence, the number of different events (in  1000s), and the repetition level (range: 0 to 1) respectively.
+
+All other parameters of the synthetic data generator are set to their default values. We experiment with two syn- thetic datasets: D5C20N10R0.5 and D10C10N10R0.5. Dataset D5C20N10R0.5 contains sequences with an average length of 64.4 and a maximum length of 275. Dataset D10C10N10R0.5 contains sequences with an average length of 31.2 and a maximum length of 133. D5C20N10R0.5 has less sequences of longer lengths. On the other hand, D10C10N10R0.5 has more sequences of shorter lengths.
+
+We also experiment on a click stream dataset (i.e., Gazelle dataset) from KDDCup 2000 which has also been used to evaluate frequent sequential pattern miners, i.e., CloSpan [21] and BIDE [22]. The dataset contains 29,369 sequences with an average length of 3 and a maximum length of 651. Compared to the two synthetic datasets, this real data has a lower average length but contains sequences of longer lengths. The gap in the lengths of long and short sequences is also wider.
+
+To evaluate our algorithm performance on mining from program traces, we generate traces from TotInfo program in the Siemens Test Suite [26]. The test suite comes with 893 correct test cases. We run these test cases to obtain 893 traces.
+
+Each trace is a sequence of events where every event is a method invocation. We refer this dataset as the TotInfo dataset.
+
+The TotInfo dataset contains sequences with an average length of 12.1 and a maximum length of 136.
+
+Results. In Figure 2 and 3, we plot the runtime needed and the number of rules mined from D5C20N10R0.5 when varying the minimum sequence support threshold and the minimum confidence threshold respectively. For simplicity sake, we set the minimum instance support threshold to be equal to the minimum sequence support threshold. Each of the runtime graphs has two lines corresponding to the two algorithms? runtime at various thresholds.
+
+We note that BOB is up to one order of magnitude (i.e., 10 times) faster than LKL08. BOB pruning strategy is also effective in reducing required runtime when the minimum confidence threshold is raised from 50% to 90%. On the other hand, no significant performance change could be noticed in LKL08 case.
+
+Fig. 2. Runtime (left) & ?Rules? (right) for D5C20N10R0.5 dataset when varying min s-sup (at min conf=50%)  In Figure 4 and 5, we plot the runtime needed and the number of rules mined from the D10C10N10R0.5 dataset when varying the minimum sequence support threshold and the minimum confidence threshold respectively. Again, BOB is up to 10 times faster than LKL08 and the gap between     Fig. 3. Runtime (left) & ?Rules? (right) for D5C20N10R0.5 dataset when varying min conf (at min s-sup =2.4%)  the performance of BOB and LKL08 is increased when the minimum confidence threshold is raised from 50% to 90%.
+
+We do not experiment mining at lower confidence thresholds as low confidence rules have little use and are likely to only capture noises.
+
+Fig. 4. Runtime (left) & ?Rules? (right) for D10C10N10R0.5 dataset when varying min s-sup (at min conf=50%)  Fig. 5. Runtime (left) & ?Rules? (right) for D10C10N10R0.5 dataset when varying min conf (at min s-sup =0.5%)  In Figure 6 and 7, we plot the runtime needed and the number of rules mined from the Gazelle dataset when varying the minimum sequence support threshold and the minimum confidence threshold respectively. We notice that BOB im- proves the performance of LKL08 by two orders of magnitude (i.e., more than 100x faster). At support level 0.020%, LKL08 is not able to finish within 8 hours. Thus BOB can successfully mine rules at a lower support threshold that is not minable by LKL08 in a reasonable amount of time.
+
+Fig. 6. Runtime (left) & ?Rules? (right) for Gazelle dataset when varying min s-sup (at min conf=50%)  Fig. 7. Runtime (left) & ?Rules? (right) for for Gazelle dataset when varying min conf(at min sup=0.034%)  In Figure 8 and 9, we plot the runtime needed and the number of rules mined from the TotInfo dataset when varying the minimum sequence support threshold and the minimum confidence threshold respectively. At all support levels shown in Figure 8 and 50% minimum confidence threshold, LKL08 is not able to run due to an out of memory exception while BOB is able to finish in less than 2 minutes. When we decrease the minimum confidence threshold, we see an exponential increase in the runtime of LKL08. BOB runtime on the other hand remains the same. LKL08 performs a pattern mining operation for every projected database of each mined pre-conditions, this causes the high runtime values.
+
+LKL08 is not able to run  Fig. 8. Runtime (left) & ?Rules? (right) for TotInfo dataset when varying min s-sup (at min conf=50%)  Fig. 9. Runtime (left) & ?Rules? (right) for TotInfo dataset when varying min conf (at min s-sup =5.6%)  Case Study. In past studies, recurrent rules, either in full or restricted form, have been mined from various software datasets [3], [27]. Mined rules correspond to interesting tem- poral properties extracted from execution traces of programs.
+
+In [3], Lo et al. mined rules from execution traces generated by running test cases of JBoss Application Server. In [27], in a study within Microsoft, Lo et al. mined a restricted form of two-event recurrent rules with quantification from Windows device drivers and other Windows applications.
+
+In this study, we consider another trace data obtained from user interactions with a drawing utility of an instant messaging application.Many systems like the one that we analyze do not     come with sufficient test cases. We ask a student who is not involved in this study to interact with the system.
+
+Premise                                   Consequent  Map PC.createWritersMap() void PC.showWindow() void PC.unselect() void PC.showWindow() JID PC.getMyJID() void PC.draw(Shape)   PH.addShapeDrawnByMe(?)  Legend PC-  nu.fw.jeti.plugins.drawing.shapes.PictureChat PH -  nu.fw.jeti.plugins.drawing.shapes.PictureHistory  Fig. 10. Jeti Instant Messaging Application: Drawing Scenario  We use Jeti [28], a popular instant messaging application which supports many features. We record 30 interactions with the drawing tool of Jeti application and collect 30 traces.
+
+The traces have an average length of 1,430 and a maximum length of 11,838 events. Each event is a method call. The purpose of this case study is to show the usefulness of the mined rules by discovering frequent and significant rules describing behaviors of the drawing sub-component of Jeti.
+
+Using minimum sequence support and instance support of 25 traces/instances and a minimum confidence threshold of 90%, BOB could complete in 57 seconds while LKL08 is only able to complete in 2844 seconds. A total of 19 rules are collected after applying the following post-processing steps: 1. Density. Only report a mined rule iff the number of its  unique events is more than 80% of its length.
+
+2. Ranking. Order mined rules according to their lengths  and support values.
+
+A sample mined rule is shown in Figure 10. The rule captures the scenario when a user draws an object (e.g., a rectangle, a line, etc) to a canvas. First, a resource, i.e., a Map object, is created by a PictureChat object. Next, multiple invocations of showWindow(...) method are made by different callers. When the application starts, an empty window is first shown or displayed. After an object is drawn, the drawn object (i.e, rectangle, line, etc.) would request the canvas (i.e., PictureChat object) to ?unselect? and redraw itself. The system next retrieves the identifier of the user that draws the object by the invocation of getMyJID(...) method. This identifier is later affixed to the object drawn. Finally, the canvas records the operation in a PictureHistory object.
+
+
+
+VIII. CONCLUSION  This work proposes a new approach to mine recurrent rules in the form of ?Whenever a series of events occurs, another series of events also occurs?. The proposed approach is more scalable than the previous approach in [3]. Rather than performing a mining operation for each non-redundant pre-condition as proposed in [3], our new approach employs a number of new pruning strategies embedded in a new mining algorithm that requires only two mining and some additional database scanning operations. Under a condition which holds in many cases, the complexity of the proposed algorithm is smaller by an exponential factor than the complexity of  the one proposed in [3]. We have experimented on various datasets: synthetic and real. Experiments have shown that the new algorithm improves the runtime of the previous algorithm by up to two orders of magnitude. In the future, we are looking into more applications of the mining algorithm and opportunities to further speed up the mining process.
+

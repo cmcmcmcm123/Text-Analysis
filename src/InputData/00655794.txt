@@ -1,0 +1,230 @@
+A Tightly-Coupled Architecture for Data Mining
+
+Abstract  Current approaches to data mining are based on the use of a decoupled architecture, where data are ?rst extracted from a database and then processed by a spe- cialized data mining engine. This paper proposes in- stead a tightly coupled architecture, where data min- ing is integrated within a classical SQL server. The premise of this work is a SQL-like operator, called MINE RULE, introduced in a previous paper. We show how the various syntactic features of the operator can be managed by either a SQL engine or a classical data mining engine; our main objective is to identify the border between typical relational processing, executed by the relational server, and data mining processing, executed by a specialized component. The resulting architecture exhibits portability at the SQL level and integration of inputs and outputs of the data mining operator with the database, and provides the guide- lines for promoting the integration of other data min- ing techniques and systems with SQL servers.
+
+1 Introduction Data mining is a recent technique for data anal-  ysis, aiming at the discovery of regularities among data which can reveal business-critical information.
+
+The extraction of association rules has emerged as the most important paradigm for data mining; thus, it has been deeply investigated by researchers and at the same time supported by many products. Several papers have considered this problem from an algorith- mic point of view, showing the practicability of data mining on very large databases.
+
+The approach to data mining followed by several products is based on a decoupled architecture; a data mining tool executes on data which is previously ex- tracted from the database and transformed into a suit- able format. We believe that the decoupled approach has several inconveniences:  ? It requires the data analyst to perform a long prepa- ration for extracting data (by means of queries) and preparing data (by means of explicit encoding), so as to achieve the format required by the tool.
+
+? It o?ers a limited data mining paradigm, that some- times matches well with speci?c requirements, but does not o?er su?cient generality.
+
+? Once extracted, rules are contained in the data mining tool, and it is quite hard to combine the in- formation embedded into them with the data in the database.
+
+Some systems [9] are able to retrieve data from SQL server, thus the data access problem is partially solved.
+
+In this paper, we propose a tightly-coupled approach to data mining; we specify data mining operations by means of a SQL-like operator for data mining, called MINE RULE ([11]), which extends the semantics of asso- ciation rules in order to cover a wide class of problems (e.g. traditional rules, sequential patterns-like rules, etc.). SQL is used in the extraction of the source data (by means of an unrestricted query on the database) and in the de?nition of generic association conditions (based on the grouping and further clustering of at- tributes) and mining conditions (selection predicates on rules). These SQL expressions, embedded in the MINE RULE operator, guarantee the speci?cation of dif- ferent semantics for association rules.
+
+In this paper, we specify how the MINE RULE op- erator can be implemented on top of a SQL server; thus, this paper concentrates on the development of an integrated, tightly-coupled architecture.
+
+Previous literature on the mining of association rules has established that rule extraction is e?ciently performed by an iterative process [1], with ad hoc memory-resident data structures. In particular, ref- erences [3, 12, 13] have shown how the algorithm's e?ciency can be improved by means of variants in the data structures, and that the number of input-output operations, when data does not ?t into main mem- ory, can be reduced to a minimum (more than one but less than two) by means of suitable sampling [7].
+
+The outcome of this work gives evidence that the im- plementation of MINE RULE cannot be fully relational (e.g., by means of SQL query expressions) even in the context of a tightly-coupled architecture; the core part of data mining is the responsibility of a non-SQL pro- cedure, that we call core operator, which receives data retrieved by the SQL sever, extracts rules, and returns them in the format of database relations.
+
+Nevertheless, many features of the MINE RULE op- erator (like sub-query evaluation, grouping, etc.) are better managed in SQL, outside of the core operator.
+
+Thus, one of the main problems in designing such an    architecture (not only from a research viewpoint, but also from and industrial viewpoint), is to identify the border between typical relational processing, to be ex- ecuted by the SQL server, and mining processing, to be executed by the core operator, such that each com- ponent executes the tasks for which it is best suited.
+
+This work os inuenced by our wishes of:  ? Ensuring portability, in order that the implementa- tion does not depend on a particular DBMS.
+
+? Exploiting the use of SQL queries in order to obtain a reasonable e?ciency.
+
+In the rest of the paper, we discuss the data mining architecture in detail: we show its components, the process ow between SQL server and core operator, and the relevant aspects of a translation required in order to generate the proper SQL queries from the data mining operator. The core operator is described in functional terms (i.e., in terms of its inputs and outputs); its innovative features have required several adaptations of the well known algorithms proposed in literature, briey described in Section 3.
+
+Observe that similar work has been done in [2, 6, 8].
+
+However, we need to follow a di?erent approach, due to the semantic richness of our operator.
+
+The paper is organized as follows: Section 2 sum- marizes the most important features of the MINE RULE operator and gives its syntax; Section 3 presents the global tighty-coupled architecture and summarizes the features of the core operator. Section 4 describes the architectural components in detail, focusing on the in- terfaces among them. Section 5 draws the conclusions.
+
+2 The Mine Rule Operator We summarize the main features of the MINE RULE  operator by showing it \at work" on the most classical data mining problem, consisting of mining association rules relative to regularities in purchases in store.
+
+The database contains data about customers, prod- ucts, and purchases. Each customer buys a set of products (also called items); the whole purchase is re- ferred to as a transaction having a unique identi?er, a date and a customer code. Each transaction contains the set of bought items with the purchased quantity and the price. These data are stored in the (nonnor- malized) table Purchase, depicted in Figure 1.
+
+Suppose that we are interested in ?nding out when 1995 purchases of items by a given customer, with  tr. cust. item date price q.ty  1 cust1 ski pants 12/17/95 140 1  1 cust1 hiking boots 12/17/95 180 1  2 cust2 col shirts 12/18/95 25 2  2 cust2 brown boots 12/18/95 150 1  2 cust2 jackets 12/18/95 300 1  3 cust1 jackets 12/18/95 300 1  4 cust2 col shirts 12/19/95 25 3  4 cust2 jackets 12/19/95 300 2  Figure 1: The Purchase table for a big-store.
+
+price greater than or equal to $100 (the \premise" of rule), are followed by purchases of items having price less than $100 by the same customer (the \con- sequence"), such that the second purchases occur in the same date, successive to the date of the premise.
+
+In order not to extract too many rules, we further im- pose that extracted correlation rule be present in 20% of the customers, and that it occurs at least 30% of the times when the premise of the rule occurs.
+
+The above problem speci?es a rather complex as- sociation rule, which is characterized by the pair of items representing the premises and consequences of the rule. The premise is called the body of the rule, while the consequence is called the head of the rule.
+
+This problem is speci?ed as follows.
+
+MINE RULE FilteredOrderedSets AS  SELECT DISTINCT 1..n item AS BODY, 1..n item AS HEAD, SUPPORT, CONFIDENCE  WHERE BODY.price>=100 AND HEAD.price<100 FROM Purchase  WHERE date BETWEEN 1/1/95 AND 12/31/95 GROUP BY customer  CLUSTER BY date HAVING BODY.date<HEAD.date EXTRACTING RULES WITH SUPPORT: 0.2,  CONFIDENCE: 0.3  Next, we sketch the \operational semantics" of the operator; such semantics is essential for understand- ing the meaning of each clause in the operator. A complete characterization of the MINE RULE operator, together with the speci?cation of the semantics in a suitable extended relational algebra, is discussed in [11]. The operator performs the following steps.
+
+1. FROM .. WHERE clause. Extracts the relevant tu- ples of the Purchase table (those relative to 1995 pur- chases); the result of this clause is the actual input table of the data mining process.
+
+2. GROUP BY clause. Logically divides the Purchase table into disjoint groups based on the attribute customer; rules are extracted fromwithin groups, and express regularities among them.
+
+3. CLUSTER BY clause. Partitions groups into sub- groups called clusters on the attribute date (Fig- ure 2.a). Each cluster can be mapped to both the body and the head of a given rule; we indicate the for- mer case as body cluster and the latter as head cluster.
+
+If the cluster clause is not present, all tuples within a group are considered as both the body group and the head group.
+
+4. HAVING clause. All body and head clusters are paired, and only pairs such that the body cluster has a date less than the head cluster are considered for extracting items. If the HAVING clause is not present, all pairs survive.
+
+5. SELECT ... WHERE clause, EXTRACTING clause.
+
+For each pair of body and head clusters surviv- ing the HAVING clause, items are extracted to form a rule, so that they satisfy the mining condi- tion WHERE BODY.price >= 100 AND HEAD.price < 100; rules must have su?cient support and con?dence.
+
+All cluster pairs contribute to the evaluation of sup- port (the number of groups containing the rule on the total number of groups), while all body clusters are    used for computing con?dence (the number of groups containing the rule on the number of groups contain- ing the body). In this case, the minimum support is 0.2 and the minimum con?dence is 0.3.
+
+6. Finally, the resulting rules are stored into a SQL3 table called FilteredOrderedSets, shown in Fig- ure 2.b; observe the representation for association rules is, e.g., fbrown boots,jacketsg)fcol shirtsg.
+
+cust date item tr. price q.ty  ski pants 1 140 1  cust1 12/17/95 hiking boots 1 180 1 12/18/95 jackets 3 300 1  col shirts 2 25 2  12/18/95 brown boots 2 150 1  cust2 jackets 2 300 1  col shirts 4 25 3  12/19/95 jackets 4 300 2  a)  BODY HEAD S. C.
+
+fbrown bootsg fcol shirtsg 0.5 1  fjacketsg fcol shirtsg 0.5 0.5  fbrown boots,jacketsg fcol shirtsg 0.5 1  b)  Figure 2: a) The Purchase table grouped by customer and clustered by date. b) The output table FilteredOrderedSets.
+
+3 Architecture In this section, we illustrate the architecture of a  data mining system, i.e. a system whose fundamental task is to support MINE RULE requests on top of a rela- tional database server. The design of this architecture aims at the following objectives:  1. Relational Interoperability. The architecture in- cludes a relational server supporting SQL92.
+
+2. Algorithm Interoperability. For mining both con- ventional and general association rules, the architec- ture is independent of the particular mining algorithm.
+
+3. Ease of use. Unexperienced users which are not familiar with the SQL-like style of the operator are supported by a user-friendly interface.
+
+4. Ease of view. The user support provides facilities for viewing rules generated by the analysis process.
+
+Mining of simple association rules can be done with an arbitrary mining algorithm based on an ar- bitrary approach, e.g. partitioning-based approaches (e.g. [13]) or sampling-based approaches ([7, 13]); typically each of them has better performance un- der speci?c assumptions about data and rule distri- bution. Mining of complex rules supported by the MINE RULE operator (with advanced semantic features such as clusters, mining condition, etc.) requires an extension of those algorithms, because these se- mantic features are not considered by known algo- rithms [1, 3, 7, 12, 13].
+
+In order to guarantee algorithm interoperability, the real source data are hidden to the algorithm and  made fully uniform by means of their preliminary encoding. This encoding requires several relational transformations which are e?ectively and e?ciently evaluated by the SQL server itself, rather than being implemented ad-hoc. Given that such transformations refer to the actual schema of the database, the corre- sponding SQL clauses are evaluated before encoding and standardizing the source data. Consequently, the system includes a signi?cant preprocessing of input data into a suitable input format for the algorithms, in a way which is totally transparent to the user.
+
+The previous considerations led us to de?ne the architecture shown in Figure 3; in the ?gure, thick lines denote process ow, dashed lines denote data/information ow. The system is divided in three fundamental modules:  ? User Support, which has the responsibility of in- teracting with the user; ? Kernel, which interprets the mining statement and perform rule extraction; ? DBMS, which stores source data, output rules and intermediate results.
+
+In this paper, we focus on the kernel of the mining system; user support is described in a related paper [4].
+
+The main kernel components are in Figure 3.a):  1.Translator. The translator interpretes a MINE RULE statement, checks the correctness of the statement by accessing the DBMS Data Dictionary, and produces translation programs used by the preprocessor and postprocessor. It is invoked when the user submits a mining statement.
+
+2. Preprocessor. The preprocessor retrieves source data, evaluates the mining, grouping and cluster con- ditions of the mining statement, and encodes data that will appear in rules; it produces a set of Encoded Ta- bles, stored again into the DBMS. Note that the same preprocessing could be in common to the execution of several data mining queries, thus saving its cost.
+
+3. Core Operator. The core operator performs the actual generation of association rules. It works on the Encoded Tables, prepared by the preprocessor, and produces the set of Encoded Rules, i.e. association rules whose elements are still encoded. This compo- nent is invoked after the preprocessor, and uses direc- tives from the translator to decide the mining tech- nique to apply: in fact, depending on the particular mining statement, the mining process changes to cap- ture the semantics of the statement. As a result, the core operator can be constituted of a pool of mining algorithms.
+
+4. Postprocessor. At the end of the chain, the post- processor decodes the rules, producing the relations containing the desired rule set in a normalized, user- readable form; results take a tabular form (Output Rules) and are stored into the database. It is in- voked when the core operator terminates, receiving directives from the translator about the ?nal format of rules. It ends the mining process, and the control passes again to the user support.
+
+This architecture guarantees algorithm interoper- ability because the core operator is decoupled from    translator  core operator  Source Tables  Encoded Tables  Encoded Rules  Output Rules  USER SUPPORT  Data Dictionary  KERNEL  DBMS  preprocessor postprocessor  User  Translator  SQL Server  SQL Server  SQL Programs  SQL Programs  Source Relations  RULE Expression  MINE  Output Relations  SQL ServerSQL Programs  Source RelationsGeneral Association Rules  Input Relations  General Alg.
+
+Simple Mining Expressions  Input Relations  Rule Set  Translator Preprocessor  Core Operator  Postprocessor  Simple Alg.
+
+a) b)  Figure 3: a) Architecture of the Data Mining System. b) Translations required by the mining system.
+
+the other components of the kernel, and the only in- teraction is through the encoded source data and the encoded rules, stored in the DBMS, and the directives received by the translator. Consequently, algorithms are completely hidden to the rest of the system.
+
+The preprocessor is implemented by means of a pool of SQL programs generating the input relations for the core operator; these programs are in turn generated by the translator; depending on the class of mining statements, di?erent sets of programs are necessary (see Section 4.2 for a detailed discussion).
+
+Figure 3.b) outlines as well that the envisioned ar- chitecture has two versions of the core process, called simple, and general; each of them corresponds to a precise class of MINE RULE expressions.
+
+1. The ?rst one includes the simple association rules, in which the head and body of the rule concern the same attribute(s) , and neither the CLUSTER BY clause nor the mining condition are speci?ed;  2. The second one includes the general association rules, i.e. statements for which the above restrictions do not hold; thus, statements extracting general as- sociation rules may contain the CLUSTER BY clause or the mining condition, and the body and head of rules may be de?ned on two di?erent sets of attributes.
+
+For each one of the two classes, the core operator applies a variant of the algorithm, designed to take advantage by the peculiar features of the class.
+
+In the rest of this paper, we concentrate on the components of the kernel, which are speci?c of our ar- chitecture; these are the translator, preprocessor, and postprocessor of Figure 3.a).
+
+4 The Architectural Components This section presents each architectural component.
+
+4.1 The Translator  The translator checks the correctness of the min- ing statement, and classi?es it so that the subsequent modules activate only those computations which are required for its processing. The classi?cation is made through a syntactic analysis of MINE RULE statements.
+
+The MINE RULE operator uses the following syn- tax, where symbols enclosed by < > denote nontermi- nals and square brackets denote optionality. Symbols like <group attr list>, <body schema> and <head schema are list of attributes, while simbols like <group cond> are search conditions.
+
+<mine rule op> ::= MINE RULE <output table name> AS  SELECT DISTINCT <body descr>,<head descr> [,SUPPORT] [,CONFIDENCE]  [ WHERE [<mining cond>] FROM <from list> [WHERE <source cond>]  GROUP BY <group attr list> [HAVING <group cond>] [ CLUSTER BY <cluster attr list>  [HAVING <cluster cond>] ] EXTRACTING RULES WITH SUPPORT:<uns number>,  CONFIDENCE:<uns number> <output table name>::= <identifier>  <body descr>::= [<cardspec>] <body schema> AS BODY /* default card: 1..n */  <head descr>::= [<cardspec>] <head schema> AS HEAD /* default card: 1..1 */  <card spec>::= <uns int> .. (<uns int> | n) <from list>::= <table ref> {, <table ref>}    In the rest of the paper, we will use symbols of the grammar to refer to the actual substrings in MINE RULE speci?cations. For instance, considering the ex- ample of Section 2, <mining cond> refers to the string BODY.price >= 100 AND HEAD.price < 100.
+
+The translator performs the following semantic checking, in order to ensure correctness of expressions:  1. All attribute lists must be de?ned on the schema of source tables.
+
+2. Grouping attributes (<group attr list>) and  clustering attributes (<cluster attr list>) must be disjoint sets of attributes, and attribute sets constitut- ing the body schema (<body schema>) and the head schema (<head schema>) must be disjoint fromgroup- ing and clustering attributes.
+
+3. The HAVING clause for grouping (clustering) can refer only to grouping (clustering) attributes.
+
+4. The mining condition (<mining cond>) can refer to every attribute but the grouping and clustering ones.
+
+We classify the MINE RULE expressions on the basis of their syntactic clauses by de?ning several boolean variables; these are used as directives for the three components performing the mining process (i.e. pre- processor, core operator and postprocessor).
+
+The following boolean variables are orthogonal, i.e.
+
+each value does not depend on the other ones.
+
+? H: true when the body and head are relative to di?erent attributes.
+
+? W : true in presence of the <source cond> (and of the corresponding tables in the <from list>).
+
+? M : true in presence of the <mining cond>.
+
+? G: true in presence of the <group cond>.
+
+? C: true in presence of the CLUSTER BY clause.
+
+Instead, the following boolean variables depend on the above ones.
+
+? K: true in presence of the <cluster cond>. Ob- serve that the <cluster cond> needs the presence of the CLUSTER BY clause; thus K ) C.
+
+? F : true in presence of aggregate functions in the <cluster cond>; thus F ) K.
+
+? R: true in presence of aggregate functions in the <group cond>; thus R) G.
+
+4.2 The Preprocessor The preprocessing phase prepares the input data  for the core operator, which are di?erent depending on the class of mining statements. In particular, in the case of simple association rules, only the encoding of items and groups is necessary; in contrast, in the case of general association rules, additional information is required, concerning clusters and mining conditions.
+
+4.2.1 Preprocessing for Simple Rules.
+
+In Figure 4.a), we illustrate the transformations re- quired for encoding of the source data when we aim at producing simple association rules. The encoding pro- duces tables containing all the large items (i.e. items with su?cient support); this is the input for all algo- rithms known in the literature.
+
+? At ?rst, it is necessary to retrieve the source data by computing the query in the FROM ... WHERE clause; this is done by query Q0, which materializes a view  totg  Q1: (count total n. groups)  W  basic tables  H  HattlistHid  H  Hset  Source  Q2: GROUP BY [HAVING]G  Q0: FROM clause [WHERE clause]W  Q8  Gid Bid Hid[BCid]C [HCid]C  InputRules  (create elementary rules)  Q9: (compute support of large rules)  Bid Hid support  LargeRules  Q10: (delete not large rules)  C  Gid Cid Cattlist [Cagglist]F  ClusterCouples  Q7  Gid BCid HCid  C  Clusters  (create cluster couples)  Gid Bid  CodedSource  Bid Battlist  Bset  Q3 (create Bset)  Gid Gattlist  Gid Bid [Mineattlist]M[Hid]H[Cid]C  Q4: create encoded table  a)  b)Source  Q6: CLUSTER BY  Bid Battlist  Bset  K  K  Gid Gattlist  M  Q5 (create Hset)  Gid Bid [Hid]H[Cid]C  Q4b: create mining table  MiningSource  CodedSource  Q11  (create a view for CodedSource)  ValidGroups  M  ValidGroups  Figure 4: Structure of the preprocessor.
+
+Source, containing the actual data to analize. Ob- serve that this query is skipped when W is false, i.e.
+
+only one table is present in the clause, and no condi- tion is speci?ed.
+
+? Next, it is necessary to count the total number of groups inside the source data; this counter is neces- sary to evaluate support of items and rules, and is performed by query Q1.
+
+? In presence of the HAVING predicate in the GROUP BY clause (when G is true), a selection of groups must be done; this is done by query Q2, which also encodes groups, substituting the set of attributes which iden- tify groups with a unique numerical identi?er.
+
+? Next, each item candidate to appear in rules is en- coded: this encoding step is required to make the core operator unaware of the real item structure. As an e?ect, query Q3 generates table Bset, in which each item (identi?ed by attributes in Battlist), is associ- ated a unique identi?er Bid.
+
+? Finally, the encoded version of table Source is gener- ated, in such a way that each tuple in the source data is described by the identi?er of the group to which the tuple belongs (Gid), and the identi?er of the item that can be extracted from the tuple (Bid). This work is done by query Q4, that generates table CodedSource in such a way only tuples containing large items are actually encoded, since tuples with no large items can- not participate to the rule generation process.
+
+Appendix A describes the SQL queries which are    needed by this transformation; they are the most sig- ni?cant for supporting data mining on a commercial relational server, and at the same time formally spec- ify the preprocessor task (more details are in [5]).
+
+4.2.2 Preprocessing for General Rules.
+
+Figure 4.b) shows the additional encoding required by general association rules, i.e., rules with either clus- ters, or mining conditions, or body and head having di?erent schema. The challenge of this translation consists in determining a suitable borderline between the preprocessor and the core operator, in order to ob- tain algorithm interoperability in this novel context.
+
+Part of the preprocessing for simple association rules is repeated in the general case (queries Q0, Q1, Q2 and Q3). However, if the body and head schema are di?erent (when H is true), two distinct encodings for items for body and head must be performed. As- suming that items for body are encoded into table Bset, query Q5 encodes items for head, generating ta- ble Hset.
+
+In presence of the CLUSTER BY clause (when the boolean veriable C is true) it is necessary to encode at- tributes identifying clusters as well. This is performed by query Q6, which produces the cluster encoding into the temporary table Clusters. In this table, group identi?er (Gid) and cluster identi?er (Cid) uniquely identify a cluster.
+
+Finally, a di?erent version of the CodedSource ta- ble is generated by queries Q4b and Q11. We have designed the encoding of the source table as a natural extension of the encoding for simple association rules; each input tuple in the source data is described in terms of group identi?er Gid, cluster identi?er Cid (if C is true), body item identi?er Bid, head item iden- ti?er Hid (if H is true). Notice that the generation of the CodedSource table proceeds through the genera- tion of the intermediate MiningSource table by query Q4b: this table associates to each encoded tuple the set Mineattlist of attributes appearing in the mining condition (if M is true), that will be used in a succes- sive query; then, query Q11 de?nes CodedSource as a not materialized view of MiningSource (thus there is no computation). Table CodedSource is the actual input to the core operator; MiningSource is hidden to the core operator. Observe that the schema of ta- bles CodedSource and MiningSource is not ?xed, but changes depending on which of C, H and M is set to true; if a variable is not true, the corresponding portion of the schema is not present.
+
+Let us now discuss the remaining tasks of the pre- processing: these concern selection of cluster pairs and evaluation of the mining condition.
+
+Recall from Section 2 that in presence of the HAVING predicate in the CLUSTER BY clause (K is true), not all pairs of clusters inside a group are valid for rule extrac- tion. In order to make the core operator unaware of attributes and predicates in this clause, the selection of valid cluster pairs is performed by query Q7, which may use the results (associated to each cluster in ta- ble Clusters) of the evaluation of aggregate functions possibly present in the cluster condition, performed by  query Q6; valid cluster pairs are stored into the input table ClusterCouples.
+
+When speci?ed, the mining condition must be eval- uated on the mining attributes in order to form el- ementary rules with one item in the body and one item in the head; in such a way, the predicate is evaluated by the SQL, and no information concern- ing the attributes involved in the predicate arrives to the core operator. An elementary rule is de- scribed in terms of group identi?er, cluster identi?ers for the body and the head, identi?ers of the body and head items. Elementary rules are generated by query Q8, which uses table MiningSource and pos- sibly table ClusterCouples, to generate the ?rst in- stance of table InputRules. Elementary rules with not su?cient support are discarded: query Q9 com- putes support of each rule, generating the temporary table LargeRules, then query Q10 discards rules with- out su?cient support, and generates the ?nal instance of table InputRules. Notice that the con?dence of rules is not considered here, because it involves the evaluation of support for bodies, built by the core op- erator.
+
+Depending on the class of mining statement, not all the input tables are generated; in particular, if the mining condition is not speci?ed, table InputRules is not computed; analogously, if the cluster condition is not speci?ed, table ClusterCouples is not generated.
+
+In contrast, the input table CodedSource is always produced. In Figure 4, input tables for core processing have a thick border. Queries Q0 to Q11 are reported in [5].
+
+4.3 The Core Operator The core operator performs the actual discovery of  the association rules that satisfy the mining request; it incorporates all those computations which cannot e?ciently be programmed as SQL queries.
+
+4.3.1 Core Processing of Simple Rules  The simple core processing algorithm is one of the traditional data mining algorithm, described in [1, 3, 12], whose general approach is summarized below.
+
+The algorithm incrementally builds the so-called large itemsets, i.e. sets of items (elements that will appear in ?nal rules) with su?cient support, moving up from singleton itemsets to itemsets of generic cardinality by adding one new item to already computed large itemsets. The ?xpoint of the process is reached when no new large itemsets are generated. Support of an itemset is evaluated by counting elements in an asso- ciated list that contains identi?ers of groups in which the itemset is present; the list is computed when the new itemset is generated. Then, rules are built from large itemsets by extracting subsets of items: indicat- ing with L a large itemset and with H ? L a subset, we form the rule (L ? H) ) H when it has suitable con?dence.
+
+4.3.2 Core Processing of General Rules  With general association rules, the core operator starts from the initial set of large elementary rules, and proceeds discovering rules with bodies and heads of arbitrary cardinality from the initial set of rules.
+
+The discovery of rules of arbitrary cardinality pro- ceeds as follows: given the set of rules m?n, where m is the cardinality of the body and n is the cardinality of the head, the algorithm computes the set of rules (m + 1) ? n and the set of rules m ? (n + 1), from which rules with insu?cient support are pruned. This process determines a lattice: at the top, we ?nd the set of elementary rules; given a rule set m?n, the left child contains rules (m+ 1)? n, while the right child contains rules m ? (n+ 1).
+
+The process of rule discovery starts by considering all the rules in the set at the top of the lattice; then, it generates rules for the rule sets in the subsequent layer, and so on, until a layer with empty rule sets is produced. Observe that rule sets m ? n, with m and n both greater than 1, can be obtained in two alternative ways: both from the rule set (m ? 1)? n, and from the rule set m?(n?1). The e?ciency of the algorithm is maximized if, at each step, we start from the set with lower cardinality. A detailed description of the algorithm is outside the scope of this paper and can be found in [5, 10].
+
+Observe that the generation of elementary rules is performed by the preprocessor (in SQL) in presence of mining condition, because it involves the evaluation of a SQL predicate. In this case, elementary rules are re- trieved by the core operator from table InputRules.
+
+In the other cases, the core operator itself performs the precomputation of elementary rules, which con- ceptually requires the building of the cartesian prod- uct of the source tuples belonging to the same group.
+
+The resulting elementary rules are associated with the identi?er of the groups and possibly the clusters from which they are extracted; the cluster condition se- lects over this cartesian product only certain cluster pairs, reported in table ClusterCouples. The carte- sian product is not materialized: it is described by pointers between source tuples. For this reason, this computation is part of the core operator instead of being done in SQL.
+
+4.4 The Postprocessor The last component of the architecture produces  the output rules. Conceptually, the core operator pro- duces rules as associations between two itemsets, the ?rst one for the body, the second one for the head, where each itemset is a set of item identi?ers. Thus, the output of the MINE RULE operator should include attributes built by the set type constructor; however, this feature is not standardized and not yet available on most relational systems.
+
+In order to avoid any portability problem (and to achieve algorithm independence also from the viewpoint of the produced outputs), the core op- erator generates a normalized form based on the use of three tables. In the ?rst one, each tuple corresponds to a rule, and has schema (BodyId, HeadId, SUPPORT, CONFIDENCE); attributes BodyId and HeadId are identi?ers of encoded bodies and heads, returned by the core operator in two auxiliary tables OutputBodies (with schema (BodyId, Bid)) and OutputHeads (with schema (HeadId, Hid)), re- spectively.
+
+Each item in these tables is referred to by means of its identi?er. Thus, while table <output table name> is already in the user format, ta- bles OutputBodies and OutputHeads must be trans- lated by the postprocessor into the corresponding, user readable, <output table name> Bodies and <output table name> Heads, by means of the tem- porary tables Bset (and Hset too when H is true).
+
+5 Conclusions The integration of mining of association rules with  relational processing is a step towards the development of tightly integrated environments for on-line analyti- cal processing. We believe that the current diversity of data mining products represents just the initial step in the natural evolution of this market sector, and that sooner or later standardization will become a must also for data mining products. Then, integration with the SQL language and processing will be two key suc- cess factors.
+
+The main contribution of this paper is to identify an architecture for the seamless integration of the data mining process with a SQL server. We show that the integration is feasible, provided that the \core process- ing" of data mining is performed e?ciently by special- ized algorithms. We propose a \borderline" between relational and data mining processing, and we demon- strate that with this choice of borderline the trans- lation process for an arbitrary data mining operation can be done in a rather easy and e?cient way.
+

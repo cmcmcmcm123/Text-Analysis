@@ -1,0 +1,138 @@
+Efficient Updates in Cross-Object Erasure-Coded Storage Systems
+
+Abstract?In the past few years erasure codes have been increasingly embraced by distributed storage systems as an alternative for replication, since they provide high fault-tolerance for low overheads. Erasure codes, however, have few shortcomings that need to be addressed to make them a complete solution for networked storage systems. Lack of support for efficient data repair and data update are the two most notable shortcomings.
+
+We recently proposed to use a 2-dimensional product code ?Reed-Solomon coding per object and simple XORing across objects? and showed that at a reasonable storage overhead, it can greatly reduce the repair cost. In this paper we propose an efficient approach to handle data updates in cross-object erasure-coded storage systems. Our proposed solution has been implemented and experimentally evaluated. Our results show that compared to the naive approach (re-encoding the data), our proposed scheme can considerably decrease the update cost, especially for when the number of updated blocks is small.
+
+
+
+I. INTRODUCTION  In the past few years erasure codes, most prominently Reed Solomon (RS) codes, have been increasingly embraced by distributed storage systems as an alternative for replication.
+
+In the coding scheme of RS(n,k), an object consisting of k blocks is encoded into n blocks (k < n) in a way that the original object can be recreated from any k subset of the n encoded pieces.
+
+The main advantage of erasure codes compared to repli- cation is that they provide higher fault-tolerance for lower overheads. However, as erasure codes were originally designed for a different environment (error control in transmission of one-time messages over an erasure channel), they do not con- sider two of the essential constraints/properties of distributed storage systems: (i) data is scattered among a large number of storage nodes connected through a network with limited bandwidth, and (ii) data has a long lifespan, during which its content may be updated. These constraints, result in several shortcomings that need to be addressed to make erasure codes a complete solution for networked storage systems. Two of the most notable such shortcomings are lack of support for efficient data repair and update.
+
+The naive approach to address these problems are costly.
+
+More specifically, to repair one single block in a storage system encoded with RS(n,k), k other blocks must be fetched and  This work was supported by A*Star SERC Grant No: 102 158 0038. Aatish Chiniah contributed to this work while he was a student at NTU.
+
+then decoded. Likewise, upon updating one single block in the same system, all the k blocks are fetched and re-encoded again. These are clearly inefficient solutions, especially in cases where the repair/update size (i.e., number of affected data blocks) is small, and the costs are not amortized.
+
+Recently, we proposed [1] to use cross-object redundancy to reduce repair cost by combining simple and mature tech- niques ? juxtaposing RS codes with RAID-4 like parity. This proposal was later realized [2], [3] as CORE storage primitive (hereafter CORE) and its benefits in terms of repairability over the other alternatives were demonstrated through analytical and experimental studies.
+
+In this paper we aim at addressing the update problem in CORE by designing an update scheme that is more efficient than re-encoding the whole data. At a very high level, our solution belongs to the family of parity update solutions [4], [5], [6] in which first data diff-blocks ?i.e., the difference between the old and the new versions of the updated blocks? are computed and then they are used to compute the new versions of the affected parity blocks. However, as we argue in Section II-C, apart from the general idea, the existing proposals on parity update are not applicable to CORE and the representation of RS codes that it uses. To address these issues we make the following contributions in this paper:  ? we define the theoretical foundations for parity update in the generator polynomial representation of RS codes,  ? we implement the re-encoding as well the parity update approaches and integrate them into the CORE system,  ? we study the effectiveness of the aforementioned up- date techniques analytically and experimentally.
+
+We would like to note that the applicability of theoretical aspects reported in this paper (particularly, the first contribution in the list above) is not limited to the CORE system and can in fact be adopted by any system that uses similar codes/representations, and specifically this includes the stan- dard codes/representations, and specifically this includes the standard HDFS-RAID implementation [7].
+
+The rest of this paper is structured as follows. We first give a short overview of the relevant background in Section II. Then we explain the details of CORE?s update handling approaches     a6 a7 a8  b6 b7 b8  c6 c7 c8  p6 p7 p8  c3 c4 c5c0 c1 c2  a3 a4 a5  b3 b4 b5  a0 a1 a2  b0 b1 b2  p3 p4 p5p0 p1 p2  Three Objects in a RS(9,6) Scheme  Vertical XOR Parities  Fig. 1: Illustration of CORE?s Basic Idea  in Section III. A brief description of the implementation is given in Section IV and the subsequent experimental results are presented in Section V. Finally, the paper is concluded in Section VI.
+
+
+
+II. BACKGROUND  This section gives a short overview of the background i.e., the CORE storage primitive (II-A), the two representations of RS codes (II-B), and a very brief survey of the related work on efficient updates in erasure coded storage systems (II-C).
+
+A. The CORE Storage Primitive  CORE builds upon a simple observation [1]: by introducing a RAID-4 like parity over t erasure encoded pieces ?resulting in what?s called CORE matrix of size (n,k,t)? it is possible to achieve significant reduction in the expected cost to repair missing/corrupt blocks. In fact, in the average case, not only fewer blocks are needed to carry out repairs but also the required computations are simpler and cheaper (XOR instead of RS decoding).
+
+Figure 1 shows an example of CORE(9,6,3): three distinct objects ?a, b, and c? each comprising of 6 blocks are first individually encoded using an RS(9,6) code. Note that each data object?s parity blocks are depicted next to it (in gray color). Additionally, a simple XOR parity check is computed over each column?s blocks and thereby a new row is added at the bottom of the matrix. In this example, repairing any single failure would only require XORing 3 blocks.
+
+It is worth noting that the price paid for CORE?s repair efficiency is the extra storage overhead (the last row in Fig- ure 1). However, as the detailed analysis and discussions in [2] show, in realistic settings this extra overhead is reasonably low and comparable with those of the existing repairable code alternatives.
+
+This idea, along with a set of related algorithms (e.g., ef- ficient scheduling of multiple repairs) were later implemented as the CORE storage primitive [2], [3] and its performance was thoroughly evaluated.
+
+B. Reed-Solomon Representations  The construction method proposed in the original Reed- Solomon code paper [8] is based on Vandermonde matrices, and is non-systematic, hence it is seldom used for storage sys- tems. However, two other methods ?one using a matrix repre- sentation and the other one using a polynomial representation? were later proposed to construct systematic Reed-Solomon codes:  ? Cauchy Generator Matrix [9]: this representation is based on a Cauchy matrix Gn?k which contains the Identity matrix Ik?k. As shown below, to encode a message M of size k, it is multiplied by G, resulting in a codeword composed of the original data message M and the parity message P of size n? k: ? ??????????  1 . . 0 . . . .
+
+. . . .
+
+0 . . 1  g0,0 . . g0,k?1 . . . .
+
+. . . .
+
+gn?k?1,0 . . gn?k?1,k?1  ? ??????????  ?  ? ??  m0 .
+
+.
+
+mk?1  ? ?? =  ? ??????????  m0 .
+
+.
+
+mk?1 p0 .
+
+.
+
+pn?k?1  ? ??????????  For a detailed example of the process see [10].
+
+? Generator Polynomial [11]: This approach uses a generator polynomial, g(x) which consists of n?k+1 factors and its roots are consecutive elements of the Galois Field (GF):  g(x) = n?k?  i=0  gix i  Moreover, the message elements are also represented as coefficients of a polynomial, m(x). To encode m(x), it is first multiplied by xn?k and then divided by the generator polynomial, g(x). The coefficients of the remainder polynomial r(x) are the output parity elements:  m(x) ? xn?k ? r(x) mod g(x) (1) or  k?1?  i=0  mix i+n?k ?  n?k?1?  i=0  rix i mod  n?k?  i=0  gix i (2)  A set of numerical example of the process can be found in [12].
+
+Except for few recent instances (including HDFS-RAID [7] which the CORE implementation is built upon), the storage community has been traditionally using the generator matrix representation. On the other hand, as noted in [11], in the error control literature the generator polynomial representation is more commonly used.
+
+C. Related Work  Research on updates in erasure coded storage systems has been centered around size-preserving1 block updates [13], [6], [14], [5], [15], [16]. The naive approach to handle updates in erasure-coded storage system is to re-encode the data blocks and generate new parity blocks from scratch. This approach is clearly quite expensive, especially when the update size (number of updated blocks) is small. Hence, improving the efficiency of update handling in erasure-coded storage systems is crucial. In storage systems like CORE that maintain additional redundancies, the need for efficient update solutions in even more crucial.
+
+1Size-increasing and size-decreasing updates can be handled through adding new blocks and zero-padding of the updated blocks, respectively.
+
+a6 a7 a8  b6 b7 b8  c6 c7 c8  p6 p7 p8  c3 c4 c5c0 c1 c2  a3 a4 a5  b3 b4 b5  a0 a1 a2  b0 b1 b2  p3 p4 p5p0 p1 p2  (a) Re-encoding  a6 a7 a8  b6 b7 b8  c6 c7 c8  p6 p7 p8  c3 c4 c5c0 c1 c2  a3 a4 a5  b3 b4 b5  a0 a1 a2  b0 b1 b2  p3 p4 p5p0 p1 p2  (b) Parity Update  Fig. 2: The Two Update Approaches in CORE  Apart from few recent proposals [15], [16] that aim at designing new and inherently update-efficient erasure codes, the majority of previous work [13], [6], [14], [5] on up- date in erasure-coded storage systems use the classic Reed- Solomon codes and are primarily concerned with the concur- rency/consistency tradeoff. There are, nonetheless, a number of papers [4], [5], [6] in which the idea of efficient update of erasure coded data has been discussed.
+
+The existing solutions, however, are not directly applicable to the CORE system for the following reasons: (i) they all target the generator matrix representation of RS code (see [4] for detailed explanations and formulas) and not the generator polynomial representation which is used in HDFS-RAID and consequently in our CORE implementation. In fact, to the best of our knowledge, designing parity update schemes for the generator polynomial representation of RS codes remains an open problem, and (ii) CORE has an extra set of vertical, XOR- based parities.
+
+In this paper, we address these issues and analyze the effectiveness our solution through analytical and empirical studies.
+
+
+
+III. UPDATE HANDLING IN CORE  In the following, we first give an overview of both re- encoding and parity update approaches in CORE (III-A).
+
+Then, after presenting the formal foundations of parity update approach for horizontal (III-B) and vertical (III-C) parities, we analytically compare both approaches (III-D).
+
+A. Overview  Figure 2 highlights the differences between the two up- date approaches while handling one single update (a1) in CORE(n=9,k=6,t=3). The chain of steps taken in each case are as follows:  ? re-encoding: (i) fetch a0...a5, the k blocks of the updated object, and encode them to generate a6..a8, the new n ? k parities, (ii) fetch a1, b1, c1, the t data blocks on the updated column and XOR them to generate p1, the new vertical parity, (iii) similarly, generate p6..p8, the other n? k vertical parities.
+
+? parity update: (i) first calculate ?a1, the diff-block of the updated data block, and use it to generate ?a6...?a8, the diff-blocks of the horizontal parities, (ii) combine ?a6...?a8 and the old versions of a6..a8  to compute their new versions, (iii) use ?a1 and the old version of p1 to compute its new version, (iv) likewise, update p6...p8, the n? k vertical parities.
+
+B. Updating Horizontal Parities  Let?s assume that the updated message is represented by m  ? (x), meaning:  m ? (x) ? xn?k ? r?(x) mod g(x) (3)  without the loss of generality, let?s also assume that only the first data block of the message m(x) has been updated. More precisely:  m0 ?= m?0 ; ?i ?= 0 : mi = m ? i  now, by summing up equation (1) and equation (3), we obtain:  (m(x) + m ? (x)) ? xn?k ? (r(x) + r?(x)) mod g(x)  or in the ? form2:  k?1?  i=0  (?mi)x i+n?k ?  n?k?1?  i=0  (?ri)x i mod  n?k?  i=0  gix i  but since  ?i ?= 0 : mi = m?i =? ?i ?= 0 : ?mi = 0 then  (?m0)x n?k ?  n?k?1?  i=0  (?ri)x i mod  n?k?  i=0  gix i (4)  In other words, the parity update mechanism when only the first data block (m0) has been updated is as follows: (i) compute ?m0, (ii) encode ?m0; the outputs are {?ri}, 0 ? i ? n? k? 1, (iii) for each i, use ?ri and the old version of ri to generate its new version (?ri + ri = r?i).
+
+Note that the formula in 4 can easily be generalized:  ?  i:mi ?=m?i (?mi)x  i+n?k ? n?k?1?  i=0  (?ri)x i mod  n?k?  i=0  gix i (5)  2Notice that in the GF(2) arithmetic m0 +m?0 = m0 ?m?0 = ?m0.
+
+C. Updating Vertical Parities  Due to the simple and commutative nature of the XOR operation, updating the vertical parities of the CORE matrix is straightforward. If p is the vertical parity of a given column of t blocks:  t?1?  j=0  mj = p  then it can be immediately inferred that:  t?1?  j=0  (?mj) + p = p ?  (6)  In other words, the new version of the parity block can be obtained by XORing its old version with the diff-blocks of the updated data blocks.
+
+D. Analytical Comparison  Next, we present a set of cost functions that reflect the analytical cost of using the re-encoding and the parity update approaches. For the sake of simplicity, we limit our study to centralized update managers. Moreover, to measure the update cost, we consider the statically-computable read traffic, i.e., the amount of data read by the update manager during the process (in the centralized case, the write traffics of both approaches are identical).
+
+Re-encoding Parity Update Single Column t 2.u + 1 Single Row k 2.u + (n? k) Full Matrix* k + u.t + (n? k).t 2.u + (n? k) + u + (n? k) Full Matrix** u.k + t + (n? k).t 2.u + u.(n? k) + 1 + (n? k)  TABLE I: Amount of Data to Fetch to Perform u Updates  Table I shows the generalized cost functions of both approaches for XOR parities (Single Column), the RS codes (Single Row), and the complete CORE matrix (Full Matrix).
+
+In this table u denotes the update size. Furthermore, since in the full matrix, there are many possible distributions for u updates, we have considered only two special cases: all in one row (denoted by *) and all in one column (denoted by **).
+
+Finally, it?s worth noting that the coefficient 2 in the parity update cost functions represent the fact that to compute each diff-block, both the old and the new versions of that particular block must be read.
+
+Let?s again consider the example given in Figure 2, where in the CORE matrix of size (n=9,k=6,t=3) one data block has been updated (u=1). In this example, the overall cost (read traffic) of the re-encoding and the parity update approaches are 18 and 9 blocks respectively.
+
+One important conclusion from these cost functions is that the benefits of parity update approach are more visible in case of small updates. In fact, as shown in [4] and confirmed later in our experiments, for a given object, if the number of updated blocks is high (e.g., more than half of its blocks), the naive alternative (re-encoding from scratch) can be not only competitive but even preferred since the costs are amortized.
+
+
+
+IV. IMPLEMENTATION  The update approaches explained in Section III, have been implemented and integrated into the CORE storage primi- tive [17], which itself has been developed on top of Facebook?s HDFS-RAID [7]. HDFS-RAID embeds the Apache HDFS [18] inside an erasure code-supporting wrapper file system named Distributed Raid File System (DRFS). DRFS supports both Reed-Solomon coding as well as simple XOR parity files. One of the main components of HDFS-RAID is RaidNode which is a daemon responsible for the creation and maintenance of parity files.
+
+Since neither Apache HDFS nor HDFS-RAID support data updates, we first added a feature to the CORE implementation which replaces certain blocks of a file with some other pre-defined blocks. Our implementation of the re-encoding approach uses extended versions of the CORE functionalities to recompute the horizontal and vertical parities of the affected rows and columns. The parity update approach first deals with the horizontal parities (according to equation 5) and then with the vertical parities (according to equation 6). In both cases, all the computations are performed in a centralized fashion at RaidNode.
+
+The correctness of our implementation was verified through multiple test cases in which the MD5 hash values of the updated parity files generated by the re-encoding and the parity update approaches were compared against each other.
+
+The source codes, binary distribution, documentations, and a visualized demo based on the actual implementation functions are available at http://sands.sce.ntu.edu.sg/StorageCORE.
+
+
+
+V. EXPERIMENTS  We benchmarked the implementation with experiments run on a cluster of 20 nodes which has one powerful PC (4?3.2GHz Xeon Processors with 4GB of RAM) hosting the NameNode/RaidNode and 19 HP t5745 ThinClients acting as DataNodes (each with an Intel Atom N280 Processor 1.66 GHz with 1 GB of RAM and a solid state drive of 2 GB). The average bandwidth of this cluster is 12MB/s.
+
+We ran two sets of experiments. In the first set we com- pare the performance of the re-encoding versus parity update schemes for one block update in the context of one single object (row) as well as the full CORE matrix. In the second set we study the impact of update size parameter and identify the sweet spots of each of the update approaches. In both sets, we used two groups of CORE matrix parameters: (n=9,k=6,t=3) and (n=14,k=12,t=5), inspired by the code length and storage overheads of Google?s GFS and Microsoft Azure, respectively.
+
+Moreover, the block size used was 64MB (HDFS?s default value).
+
+Finally, although in each experiment we measured both completion time and data traffic, but due to space limitation, we only present the time results (the data results are in line with the cost functions of Section III-D).
+
+A. Efficiency of the Parity Update Approach  We first compare the efficiency of the update schemes for one block update (u=1). Figure 3 shows the completion time of a single update at the level of a row (part 3a) and the whole           1 2 3 4 5 6  Re encoding Parity Update  Ti m e (s ec on  ds )  Number of Block Updates  (a) In RS(9,6)   1 2 3 4 5 6 7 8 9 10 11 12  Re encoding Parity Update  Ti m e (s ec on  ds )  Number of Block Updates  (b) In RS(14,12)  Fig. 4: Impact of Update Size on the Performance of the Update Approaches in the Polynomial Representation of RS Codes        (n=9,k=6,t=3) (n=14,k=12,t=5)  Re encoding Parity Update  Ti m e (s ec on  ds )  (a) Within a Row        (n=9,k=6,t=3) (n=14,k=12,t=5)  Re encoding Parity Update  Ti m e (s ec on  ds )  (b) Within the Full Matrix Fig. 3: Completion Time of Handling One Block Update  CORE matrix (part 3b). In accordance with the cost functions of Table I, the results show a significant gain in the update time, specially in the CORE(14,12,5).
+
+B. Impact of Update Size  As highlighted in Section III-D, for large number of block updates, the naive data re-encoding approach can be competitive. To obtain some insights about the crossover point between the two approaches, we ran an experiment in which the update size parameter u was varied between 1 (minimum) and k (maximum, the full object size).
+
+A subset of the results (only for the RS parities) are depicted in Figure 4 and show that when around more than half of the blocks of an object are updated (u ? k/2) the naive re-encoding approach can outperform the parity update approach. These results are similar to those reported in [4], where the authors measured the impact of update size in the matrix representation of RS codes.
+
+Based on this observation, we ultimately incorporate in our CORE implementation a hybrid approach that can adaptively decide between the two schemes based on the values of u and k. Such approach can offer the best update performance under all circumstances.
+
+
+
+VI. CONCLUSIONS AND FUTURE WORK  In this paper we addressed the problem of efficient updates in the CORE storage primitive, a cross-object erasure-coded storage system. We defined and implemented a parity update scheme which outperforms the naive approach of data re- encoding. The benefits of our solution are especially pro- nounced in cases where the number of updated blocks is small.
+
+Our current implementation of the update manager has a centralized design. In future, we plan to further optimize the update process by exploiting the computational resources of the storage nodes, and in doing so, reduce the update traffic over network and further lower the update time.
+

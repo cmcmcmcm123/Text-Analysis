@@ -1,0 +1,188 @@
+A Novel Parallel Architecture with Fault-Tolerance for Joining Bi-Directional Data Streams in Cloud
+
+Abstract?Nowadays, there are more and more data sources, such as online stores, wireless sensors, and stock tickers, etc., which produce a mass of data as unbounded streams. Investigat- ing the potential information from these rich statistical data in real time generates enormous values. In most cases, it is essential to join two or more data streams in order to find sufficient information. However, as the volume of these data becomes larger, joining them in a single machine is not an effective way.
+
+One of the most practical solutions is to use a shared-nothing cluster built on a cloud to deal with these data streams. In this paper we provide a novel parallel architecture named Dual- Assembly-Pipeline(DAP) with fault-tolerance, in which we join bi-directional data streams by considering the processing nodes? failures. Especially, virtual machines in a cloud may fail so that fault-tolerance becomes more and more important when users issue a continuous query. Our experiments show that our DAP model can effectively join bi-directional data streams in parallel.
+
+What?s more, when non-adjacent virtual machines fail at the same time, all data can be recovered, while adjacent ones fail, only parts of data can be reinstated.
+
+Keywords: streams join, fault-tolerance, cloud, cluster
+
+I. INTRODUCTION  Recently, many applications in big data produce real-time, continuous, ordered and large data sequences, so-called data streams[1]. Each data stream comes as unbounded and the arrival rate is uncontrolled. It is impossible to predict the pattern of these data streams. Such applications normally provide replies to uses? requests with low latency. In traditional database systems, all the data are stored in the persistent storage before being processed. But in the models of data streams users? queries cannot be answered by all the data, usually part of the data because of the characteristics of the data streams.
+
+In data streams, the latest tuples are normally much more important than previous ones, because they reflect the trends of data streams and users pay more attention to them. Based on this assumption, it is a better choice to apply sliding windows in the processing of data streams[14][16]. These windows can be classified as count-based windows or time-based windows.
+
+If the window size is measured by the number of tuples, such as 10000 tuples, it is considered as count-based window. If  the window size is measured by time, such as 15 minutes, it is time-based window.
+
+In complex queries, one data stream can only provide partial information. In order to deal with complex queries, many applications require combining two or more streams with each other. Data stream joining has attracted more and more atten- tions in the past years. For example: (1)advertisement query and click relationship[18], (2)internet auction[3], (3)vehicle tracking.
+
+In the past decade, joining data streams on a single node has been investigated to a certain degree. Some key technologies like sliding window[4], sampling[5][8], sketching[12][15], his- tograms[9][10][13] have been proposed. In these models, all kinds of computing resources such as CPU, memory and network are shared by processing units. When a new tuple comes into one sliding window, it is not necessary to care about this window for the other stream in the memory because the two data streams share the same memory. However, when the workloads of the data stream system exceed the limitation of a single node, some of tuples have to be dropped.
+
+Therefore, it is an important new trend to process big data in a cluster which is composed of computing nodes in a shared- nothing infrastructure[18][20]. Joining data streams can also be executed in a parallel way in a cluster. This can improve the throughput of the data stream system. However, this brings us new challenges as follows: ? Parallelization. In a cluster, several nodes execute joining  simultaneously. We must guarantee that each pair of tu- ples which satisfies the join condition in sliding windows should be processed. And the results of joining appear only once eventually.
+
+? Shared-nothing memory. In the single-node processing model, all the tuples in sliding window are maintained in the shared memory. When two tuples perform joining, they are transparent for each other in the memory. It is unnecessary to consider the locations in the pro- posed algorithms. In the cluster processing model, we must guarantee the related tuples for joining which are distributed in the cluster should be collected together.
+
+Otherwise, the query results may be incomplete.
+
+DOI 10.1109/CLOUDCOM-ASIA.2013.27    DOI 10.1109/CLOUDCOM-ASIA.2013.27     ? Fault tolerance. In order to reduce the cost of computing, more and more clusters are built in a cloud. Since virtual machines may be not stable, it is essential to recover data in running time when some virtual machines fail.
+
+In this paper, we focus on bi-directional data streams joining with fault-tolerance problem where two streams flow in opposite direction. Our contributions are described as follows: ? We propose a decentralized parallel architecture called  the Dual-Assembly-Pipeline(DAP) model to process two- way data streams joining. In this model, each node in the cluster processes only part of tuples in the sliding windows. All nodes work as workers in the assembly lines.
+
+? We mainly investigate the fault-tolerance problem in such a DAP model, and propose an efficient way to recover data when some nodes fail.
+
+The rest of the paper is organized as follows. In Section II, we present the joining model and some related definitions.
+
+In section III we discuss existing stream join architectures and their advantages and disadvantages. We present our own architecture in section IV. Experiments are carried out in section V. We provide related works in section VI. Finally, we conclude this paper.
+
+
+
+II. MODEL AND DEFINITIONS  A data stream a1, a2, ..., an, ..., is a large volume of data coming in an unbounded, rapid, time-varying and unpre- dictable way. Each tuple in a stream has an implied or explicit timestamp. When a tuple is produced with a timestamp, it has an explicit timestamp; otherwise, we consider a tuple?s arrival time or an incremental number as timestamp. In addition, there are some significant features of a data stream:  1) unbounded size 2) uncontrollable arrival rate 3) unpredictable order Unlike the definition of join in the traditional database  model, the join operator for data streams only considers part of the data tuples because of the above three features. Moreover, it is impossible for a real-time processing system to store all the tuples. In order to overcome these problems, one of the key technologies is making use of sliding windows. Only the latest tuples are kept in the sliding windows and the join results are obtained by processing these tuples. As we mentioned earlier, there are two kinds of windows, i.e., count-based window and time-based window. In this paper, we select count-based window and assume that one tuple arrives for each time unit.
+
+We attach an incremental number to each new arriving tuple as its timestamp. The terms are defined in TABLE I.
+
+Joining two-way data streams is donated as A[WA] ?? B[WB ], where WA is the window size of stream A while WB is the window size of stream B. The join result a ?? b contains all a ? A[WA] and b ? B[WB ] which satisfies the condition a.attr = b.attr.
+
+In practice, the result of the join operator contains two components, A[WA] ? B[WB ] and A[WA] ? B[WB ]. Both  TABLE I MEANS OF VARIABLES  WA window size of stream A st tuple s arriving at time t T the current time NA tuples? arrival rate in stream A Tr Consumed time for adding a new virtual  machine to a cluster Tt transferring time for the backup data  in upstream node?s back window Tc computing time for joining kA local window size of stream A allocated in each node ?t time consumed by a ?? b  of the components can be executed respectively by sharing the same memory in the same node.
+
+Algorithm 1 Joining two-way data streams 1: while true do 2: if receive a tuple ai from stream A then 3: purge all the tuples that are out of date in WB 4: scan all the tuples in WB and calculate ai ?? bj ,  where bj ?WB and ai.attr = bj .attr 5: insert ai into WA 6: else if receive a tuple bm from stream B then 7: pure all the tuples that out of date in WA 8: scan all the tuples in WA and calculate bm ?? an,  where an ?WA and bm.attr = an.attr 9: insert bm into WB  10: end if 11: end while  Fig.1 shows the detailed procedures of the execution of the join operator. When a tuple ai from stream A arrives, the join operator firstly triggers a process to purge all the tuples that are out of date in WB . Then, the join operator scans all the tuples in WB to find out the ones that satisfy the join condition and execute joining. Finally ai will be inserted into WA. When a tuple bm from stream B comes, the process is similar to the case of ai. Although the steps in each procedure are very simple, we still need to coordinate how to manage the shared memory when A[WA]?B[WB ] and A[WA]?B[WB ] are executed simultaneously.
+
+(a) A ?B (b) A ?B  Fig. 1. Two-Way Data Streams Join     Especially, in this paper we focus on the equi-join in the two-way data streams in a cluster built on a cloud. In the next section, we will review some stream joining architectures for clusters and investigate their advantages and disadvantages.
+
+
+
+III. TWO-WAY DATA STREAMS JOIN ARCHITECTURES  One of the most popular architectures for joining in clusters is the master-worker model[11]. When a data stream flows into a cluster, it is firstly processed by the master node that is responsible for distributing the tuples into the worker nodes.
+
+Then the worker nodes execute the streams joining. It is important to provide scheduling strategies for the master node, which have a great impact on the performance of a cluster.
+
+These strategies should be with the following characteristics: ? The strategies should provide load balance for all the  worker nodes in the cluster.
+
+? The related tuples which satisfy the join condition should  be allocated to the same worker node as many as possible.
+
+? Since memory is precious in real-time big data pro-  cessing, it is important for the strategies to reduce the redundancy of the tuples in worker nodes.
+
+A straightforward scheduling strategy is the Hashing method. When new tuples come, they are disseminated to all the worker nodes according to the joining attributes. One of the advantages of this method is that the tuples can be distributed evenly. Moreover, the tuples with the same attribute value can be allocated in the same node when carrying out the equi- joining. This strategy makes sure that the tuples satisfying the join conditions can be distributed to the same node. Therefore, the join results are completed and correct.
+
+However, one of the significant features of data streams is the unpredictability of the tuples? arrival rate and their orders.
+
+It is impossible to know the next tuple forever. Some tuples in a data stream may appear frequently in a special period while the others in another data stream may appear frequently in another period. This can result in unbalanced system loads if we only apply a simple Hash method. Some worker nodes are under an overloaded state while others are underloaded.
+
+Furthermore, a simple hash method also leads to drop some tuples because of the processing speed. Thus the joining results may be wrong.
+
+Another tuple dissemination strategy is to allocate tuples by time slices. Firstly, the master node selects one stream as the main stream. The main stream is allocated to worker nodes by time slices and workloads of the corresponding nodes. In each time slice, the master node selects one of the worker nodes according to workloads. When a tuple from main stream comes, the master node distributes it to a node according to the tuple?s timestamp. When tuples from a non-main stream come, they are distributed according to the locations of the tuples from the main stream. For example, if a tuple mi from the main stream M is allocated to Node Nk, and a tuple oj from a non-main stream O will be allocated to Nk too, where i? WO < j ? i+WM [11], and WM and WO are the sizes of the main stream M and O?s sliding windows respectively. Because  the dissemination of the tuples is based on the workloads of these worker nodes, this strategy can guarantee load balance.
+
+However, the disadvantage of the strategy above is that this method has to maintain a complex routing table, and one tuple may be routed to multiple worker nodes. For example, the tuple mi in the main stream M belonging to SLICE[t, t+T ] is distributed to node Nk. Tuple om from the non-main stream will be allocated to the node Nk too, where m ? [t?WO, t+ T + WM ]. Similarly, assume mj ? SLICE[t + T, t + 2T ] is sent the node Nl. Tuple on will also be transferred to Nl, where n ? [t+ T ?WO, t+ 2T +WM ]. Therefore, the tuple arrives at [t + T ?WO, t + T + WM ] is routed to both Nk and Nl[11].
+
+Nowadays, more and more clusters are built on clouds because of their convenience and the ?pay-as-you-go? charging model. But virtual machines in a cloud may fail sometimes.
+
+It is important to deal with fault-tolerance problem in the running time for the clusters. Keeping tuple copies in other nodes is an efficient way for fault-tolerance guarantee on the level of nodes. In a data stream processing system, we can keep a window for tuple copies in upstream nodes, in order to recovery data after one node fails. In the master-worker model, the upstream node of all the worker nodes is the master node.
+
+Therefore, all the copies have to be kept in the master node.
+
+This is not a reliable way to keep all the tuples in one node?s memory once the master node fails.
+
+In the next section, we will present a new architecture named Dual-Assembly-Pipeline(DAP) which is suitable for bi- directional data streams joining in a cluster with fault tolerance guarantee. In our architecture, tuple copies for recovering will be retained in their nearest upstream nodes rather than the master node.
+
+
+
+IV. DUAL-ASSEMBLY-PIPELINE WITH FAULT TOLERANCE  A. Parallelization in a Cluster In manufacturing industry, there are many workers or ma-  chines in an assembly line, and only parts of the line work will be done by each worker or machine. Finally, a completed product will be created at the end of the assembly line. By this way, the efficiency of the production is improved substantially.
+
+Enlightened by the idea of assembly lines, we introduce the pipe-line into data stream joining in a cluster. All the nodes in the cluster are considered as workers, and the join window can be divided into several small windows. Each node only deals with the join operation in one small window. In order to improve the efficiency of joining, we provide two symmetrical processes, join A() and join B() at each node. When a tuple ai from stream A comes, join A() invokes sendTuple(ai) to send ai to its symmetrical cooperator join B(). Then join A() invokes insertTuple(queue A, ai) to insert ai into the queue A. After receiving the tuple ai, join B() will invoke the function scan(queue B) to find expired tuples to purge, and make the right tuples to be joined. When the tuple bj from stream B comes, the same procedure will be carried out by join B(). After the results are produced, they will be sent to a remote document server.
+
+We select ?MQ as the layer for message passing, which acts as the communication protocol for all the processes or hosts. ?MQ hides all kinds of the communication details, such as explicit connections, reconnection, error handling, etc.[19].
+
+In our assembly line architecture, we adopt a one-to-one communication model between join A() and join B(),and an N-to-one model between the nodes in a cluster and the document server.
+
+As Fig.2 (a) shows, the semi-finished products go through each worker from one side of the assembly line and all the workers are with fixed locations. The semi-finished products are assembled with each part from each worker. Finally, the finished products are generated out of the other side of the assembly line. There is only one stream in the traditional assembly line described above. However, to join two-way data streams, there are two streams injected into the assembly line at the same time.
+
+(a)  (b)  (c)  Fig. 2. Assembly Lines  Obviously, the original assembly line is not suitable for joining two-way streams. One alternative method is to inject two streams into one side, and flow out of the other side. In order to obtain a completed result, it is necessary to make sure that each pair of tuples ai and bj in windows should encounter with each other. However, when flowing towards the same direction, tuples from different streams may have different arrival rates, and some of them in the sliding window at different nodes may not meet forever, such as a4 and b9 in Fig.2 (b). It is similar for two cars running on the highway to the same direction. They will not encounter if the speed of the back one is less than or equal to the front one. Fortunately, if two cars run in the opposite direction, they will meet with each other sooner or later. Therefore, in joining double data streams, two streams are similar to bi-directional highway, and tuples are similar to the cars running on it. It is guaranteed that two tuples in the windows from different streams must meet with each other if two streams flow into our assembly  line from the opposite direction.
+
+In Fig.2 (c), the tuple ai from stream A comes into the  window WA and the tuple bj from stream B flows into the window WB . The two tuples will encounter each other at a certain node finally. Therefore, our proposed dual-assembly- pipeline architecture satisfies the demands of joining bi-way data streams in a cluster.
+
+We defined the time for joining two tuples as ?t. If the size of the slice in the sliding window of stream B at each node is k, the time for ai ?B is k?t when a new tuple ai comes. If the arrival rate for the tuple ai is N , each node is required to deal with at least N new coming tuples per second. We obtain that:  k ??t ?N ? 1 (1)  k ? 1 ?t ?N (2)  If total window size of stream B is K, we can obtain the following equation:  n ? K k ? K1  ?t?N = K ??t ?N (3)  where n is the number of needed worker nodes.
+
+In the corresponding symmetric join A ?? B, let the window  size of stream A be kA, the arrival rate is NA, and the same case is for stream B. Therefore, we can obtain the following equations:  kA ??t ?NB + kB ??t ?NA ? 1 (4) ?t(kA ?NB + kB ?NA) ? 1 (5)  In order to find an approximate value, we enlarge the values  ?t ? 2 ? (max {kA, kB} ?max {NA, NB}) ? 1 (6) Thus, the value of k is described by the following equation:  k = max {kA, kB} ? 1 ?t ? 2 ?max {NA, NB} (7)  where the window size of stream A and B are KA and KB . The value of needed number of worker nodes n can be obtained:  n = max {KA,KB}  k = max {KA,KB} ??t ? 2 ?max {NA, NB}  (8)  As Eq.(8) shows, the number of computing nodes for joining depends on the joining unit time ?t, the joining window sizes KA and KB , and the arrival rates NA and NB . The parameter ?t reflects the speed of CPU. The higher of each node?s capability is, the less nodes needed are. The number of computing nodes n is proportional to the window sizes KA and KB .
+
+If the cost of joining is very high, the join operation for each pair of tuples (a, b) requires more time. When a new tuple ai comes into WA,total join cost will be ?t ? WB . If     the size of WB is large enough, the computation capability of the assembly pipeline will not catch up with the arrival rate of the coming streams. From Eq.(8), we discover that one of the straightforward methods is to add more computing nodes to the assembly pipeline. This is because the window sizes of the streams are fixed, so that each node will be assigned with less load when increasing the number of computing nodes.
+
+B. Fault Tolerance Issue in a Cluster In the master-worker model, the upstream node of each  worker node is the master node. In order to recover the data when some nodes fail, all copies of the data should be kept in the master node. When a node failure appears, the master node recovers the data for the restarted node and the recovered data will be re-processed. If the arrival rates of the data streams are high enough, it is impossible to cache all the tuples in a disk. To keep up with the arrival rate, a better choice is to cache the backup data in the main memory. However, this is still limited by the size of memory.
+
+Unlike the master-worker model, there is no master node in our dual-assembly-pipeline architecture. Each node plays the same role in the architecture and the upstream nodes are different. This linear architecture allows us to distribute the backup copies at different nodes, instead of a single one. When a tuple is out of date, it will be pushed to its downstream node or just discarded. Assume that the failure at each node follows the same distribution (i.e. I.I.D). Once a node fails, all the tuples in the sliding window of this node will be lost.
+
+If we only reboot a new node to replace the failed one, the result of joining are not completed.
+
+In order to recover tuples at the failed node, we maintain two windows at each node. One is the local joining window and the other is the backup window. Each tuple in the local joining window is kept a copy in its upstream node?s backup window. When a tuple flows into a node, it is immediately inserted into the local joining window to participate the joining operation. As described in Algorithm 2, after a tuple slides out of the local joining window, its copy is inserted into the backup window located in the current node. At the same time, a message is sent to its upstream node to remove the copy of this tuple.
+
+Algorithm 2 Emit tuple to downstream 1: if a tuple ai from stream A is expired in Nodej then 2: produce a copy of ai and insert it into its backup  window 3: send ai to the nearest downstream Nodej+1 4: send a message to its upstream Nodej?1 to notify it to  purge ai from the backup window 5: end if  For example, in Fig.3, tuple ?4 in stream A is purged out of the local joining window in Node2 and is transferred to Node3. First of all, a copy of ?4 should be inserted into the backup window at Node2(line 2). Then the tuple ?4 is sent to Node3(line3), at the same time, a message is emitted to Node1(line4). Once receiving the signal, Node1 considers  ?4 will not be needed any more, and removes it from its local backup window.
+
+When a node fails due to various reasons in a cluster built on a cloud, a new virtual machine is added to the cluster to replace the failed one. It is a time consuming procedure of starting a new virtual machine from cloud platform. However, data streams require to be processed as quickly as possible.
+
+Thus starting new virtual machines straightforwardly from a cloud is not a good idea. In order to meet the requirement of joining, we build up a resources pool in a cloud, where there are always virtual machines available in case of node failures.
+
+We build a state server to manage all the nodes in the cluster.
+
+The state server keeps all the states of each node, and it detects whether the nodes are live periodically. If a node fails, the server fetches a new virtual machine from the resources pool, and replaces the failed one.
+
+(a) before failed  (b) failed  (c) after recover  Fig. 3. Assembly Line Recovering Procedure  In Fig.3, after Node2 fails, all the tuples on it, such as ?5, ?6, ?7 in stream A and ?6, ?7 in stream B, are lost.
+
+The state server sends messages to its upstream nodes. In the previous section, we mentioned that two streams flow into the cluster in the opposite direction. For stream A, the nearest upstream node of Node2 is Node1, while Node3 is the nearest upstream node in stream B. After Node1 and Node3 receive the messages, they transfer all the tuples in their backup windows to Node2. Node2 stores them in their own local joining windows respectively. As Fig.3 (c) shows, all the tuples in the downstream nodes? local joining windows are transferred to Node2, too. And they are kept in the Node2?s backup windows.
+
+We divide the recovery time into three parts: (1)the node     recovery time Tr, (2)the backup tuples transmission time Tt and (3)the computing time Tc. In order to recover the results of joining, new started virtual machine is required to deal with all the data produced during the procedure. In the computing time, the VM can join Tc?t pairs of tuples. During the entire recover period, stream A pushes NA ? (Tr + Tt + Tc) tuples into Node2 and there are kA tuples in the Node1?s backup window. These tuples are joined with the tuples in the local joining window of stream B at Node2, therefore, there are  {NA ? (Tr + Tt + Tc) + kA} ? kB (9) joins to be done. Also, stream B has  {NB ? (Tr + Tt + Tc) + kB} ? kA (10) joins to be done. If the objective is to recover all the data at one node, the following condition should be satisfied:  {NA ? (Tr + Tt + Tc) + kA} ? kB +{NB ? (Tr + Tt + Tc) + kB} ? kA ? Tc  ?t  (11)  and we can get from Eq. (11)  Tc ? (NAkB +NBkA)(Tr + Tt) + 2kAkB 1? (NAkB +NBkA)?t ?t (12)  From Eq. (12), when ?t is smaller, the computing time Tc is smaller too. ?t represents the computing capability of the nodes, i.e., the more smaller ?t is, the more powerful the node is. The arrival rate NA or NB is proportional to Tc. The relationship among n, WA and kA can be described as  kA = WA n  (13)  The same relationship exists among n, WB and kB . We consider that WA or WB is proportional to Tc, and reciprocal to n.
+
+In our assembly pipeline architecture, when a node fails, a new one will take charge of the job at the failed one immediately. All the data at the failed node are recovered from its nearest neighbors. In practice, we can recover all the lost data in theory, when the failed nodes are non-adjacent.
+
+However, when two or more nodes which are adjacent fail simultaneously, it is impossible to recover all the lost data.
+
+Because some parts of the backup data retained in these failed nodes are totally lost.
+
+We assume there are E work nodes n1, n2, ..., nm, nm+1, ..., nm+f?1, ..., nE in a cluster, and f neighboring nodes nm, nm+1, ..., nm+f?1 fail at the same time. The joining results from the tuples on these failed nodes can not be recovered.
+
+We consider the tuples in the local joining window at a node as one unit. For the units WAm+i and WBm+i at the node nm+i(1 ? i ? f ? 1), the number of the units produced by WAm+i ?WB finally is  2(E?m? i) + 1 (14) and the number of the units by WA ?WBm+i is  2(m+ i? 1) + 1 (15) Therefore, the number of the lost tuple units is  {2(E?m? i) + 1}+ {2(m+ i? 1) + 1} = 2E (16) If there are f nodes fail, the total number of the lost tu- ple units is 2Ef. However, we calculate the tuple unit pair (WAm+i ,WBm+j ) twice, because both WAm+i and WBm+j are at the failed nodes. Thus the repeated number of tuple units is  f+ (f? 1) + ...+ 1 = f(f+ 1)  (17)  Moreover, the lost tuple units at nm and nm+f?1 can be recovered, while units at nm+1...nm+f?2 are lost, therefore  {2(E?m) + 1? (f? 1)} +{2(m+ f? 1? 1) + 1? (f? 1)} =2E  (18)  tuple units recovered. Since WAm and WBm+f?1 calculate twice, there are 2E?1 number of tuple units can be recovered.
+
+From the above analysis, we know that there are  2Ef? f(f+ 1)  ? (2E? 1)  =  (f? 1)(4E? f? 2)  (19)  tuple units lost and the recovery rate is  R = 2E? 1  2Ef? f(f+1)2 ? 100%  = 4E? 2  4Ef? f2 ? f ? 100% (20)  From Eq.(20), when only one node or non-neighboring nodes fail, all the data can be recovered. However, when two or more nodes which are adjacent fail, we can only guarantee one of the parts of data can be retrieved.
+
+
+
+V. EXPERIMENTES AND EVALUATIONS  In this section, we describe our DAP architecture to deal with joining bi-directional data streams in a cluster. If one or more nodes fail, our recovery mechanism is started to recover the joining results immediately by adding new virtual machines.
+
+A. Experiment settings We build up our joining data streams system with fault  tolerance on the ?Han Hai Xing Yun? cloud built by University of Science and Technology of China. There are two source nodes injecting data streams into a cluster. What?s more, we set different number of worker nodes which are responsible for joining operation. Our DAP system submits the joining results to a documents server. The documents server communicates with the worker nodes through ?MQ in the REQ-REP model.
+
+Each Virtual machine is with an Intel(R) Core(TM)2 Duo 2.4GHZ CPU, 4GB memory, 40GB disk and runs CentOS6.4 32bit OS. All the nodes are connected by 100M Ethernet.
+
+The data sets used in the paper are produced by GenerateData software. There are 1000 kinds of dif- ferent tuples < Name, T imestamp, PhoneNumber > in one stream, and 1000 kinds of different tuples < Name, T imestamp,Email > in the other stream. Each pair of tuples with the same Name in the joining window will be stored as a result.
+
+B. Capability of Joining Bi-Directional Data Streams In this section, we investigate our DAP?s capability in  processing joining bi-directional data streams. We use five data sets that contain different number of tuples to test the speedup capability. There are two symmetrical modules A and B, which are responsible for joining operation at each worker node.
+
+The two modules carry out Algorithm 1, and communicate with each other through ?MQ in the PUB-SUB model. Both modules submit the results to a document server respectively.
+
+We set different number of joining worker nodes, and we test five different data sets for 10 times, and obtain the average results.
+
+We set the number of the worker nodes as 1, 3, and 5. The cluster with 1 worker model is equal to the stand-alone model, and we consider it as a baseline case. The size of the global joining window for each stream is 10000. When the number of the worker nodes is different, the local joining window size ( 10000n )distributed at each worker node is different too.
+
+The capability of DAP model is proportional to the number of worker nodes. The time consumed by the cluster with n worker nodes is 1n of the stand-alone model. In Fig.4, the consumed time is a little bigger than 1n of the stand- alone model. The reason results from network latency and the process capacity of the document server. In addition, the communication model between worker nodes and the document server is REQ-REP, which is a relatively slow but stable communication protocol.
+
+0.1 0.5 1 1.5 2  x 10             Number of Tuples  T im  e C  on su  m in  g( m  in ut  es )  The Relationship between Time Consuming and Cluster Size      1 worker node 3 worker nodes 5 worker nodes  Fig. 4. The Relationship between Time Consuming and Cluster Size  C. Recovery Ratio In this section, we investigate the recoverability of our DAP  architecture in joining bi-directional data streams. The cases  of node failures can be classified into two categories, including adjacent nodes failures and non-adjacent nodes failures at the same time. When non-adjacent nodes fail, the cases can be considered as single node failure.
+
+In order to reduce the nodes recovery time, we prepare some new virtual machines in the resources pool. The scheduler running on the state server detects whether the worker nodes exist every second. If a node failure is detected, the scheduler migrates the tasks on the failed node to a new virtual machine and the recovery procedure is started immediately. Otherwise, the scheduler does not do anything.
+
+We carry out the DAP system in a cluster, and stop one certain node manually to detect the recovery ratio of the lost data. What?s more, we carry out our experiments for different cases in terms of the number of worker nodes.
+
+1 2 3 4 5 6  0.96  0.98   1.02  1.04  1.06  Number of Failed Nodes  R ec  ov er  R at  io  Joining Two?way Streams Recover Ratio With One Failed Node     2?3 minutes Case 5?10 seconds Case  Fig. 5. Joining Two-way Streams Recover Ratio With One Failed Node  1 2 3 4 5  0.1  0.2  0.3  0.4  0.5  0.6  0.7  0.8  0.9   Number of Failed Nodes  R ec  ov er  R at  io  Joining Two?way Streams Recover Ratio With Adjacent Failed Nodes     5 worker nodes 6 worker nodes 7 worker nodes  Fig. 6. Joining Two-way Streams Recover Ratio With Adjacent Failed Nodes  The result in Fig.5 shows that when one node fails, all the data can be recovered if a new virtual machine in the resource     pool can be added into the DAP system in a few seconds. But when we set the new virtual machine added after 2-3 minutes, a little part of results are lost. Because the size of the backup window is limited, if adding new virtual machines costs a lot of time, the backup window could not keep all arriving tuples, some of them have to be dropped. The longer time of adding new virtual costs, the more results are lost.
+
+We stop some adjacent nodes at the same time, and the result are shown in Fig. 6. In this case, with increasing the number of failed nodes, the recovery ratio is decreasing dramatically. This is because the backup data stored in the upstream nodes are lost. The data that can be recovered are stored at the upstream node of the first failed one and the downstream node of the last failed one. However, we know that the probability that the adjacent nodes fail at the same time is small under the case of I.I.D.
+
+
+
+VI. RELATED WORKS Our proposed Dual-Assembly-Pipeline architecture is novel  for data streams joining in a cluster. our system is with a decentralized architecture and all the nodes are with the same functionality. In [3], Babcock reviews the models and issues in a stream system, include definitions, timestamps, sliding windows technology, and so on. In[2], Golab also presents some examples of streaming applications, and lists the requirements of stream processing, such as selections, frequent item queries, joins and windowed queries, etc.
+
+Ananthanarayanan and Basker et al build up a special data streams joining system named Photon, which provides fault- tolerance guarantees in the level of data center in [18]. In[6], Gedik proposes a method for dealing with data streams joining in the level of the cell processor. In [7], Kang presents the basic steps of a sliding window in joining between streams A and B, Moreover, he also evaluated the performance of the window joining over unbounded streams. Golab investigated the sliding window multi-join processing for continuous queries over data streams, and evaluates several algorithms on performance under the assumption that all the sliding windows fits in the memory.
+
+Gu proposes two methods for multi-way windows streams joining in [11] named Aligned Tuple Routing (ATR) and Coordinated Tuple Routing (CTR). ATR selects a stream as the main stream periodically, Some parts of the main stream, such as window [t, t+ T ], will be routed to one certain node according to the workloads of all nodes, other streams tuples related to the time window will be routed to the same node too. In CRT, each tuple is routed to a minimum set of the least- loaded hosts that can cover all the correlated tuples. However, Gu?s mechanism is based on a centralized architecture.
+
+In order to recover the data after a node failure, the backup data may be retained in upstream node. In our DAP archi- tecture, every node?s upstream node is its nearest neighboring node.
+
+
+
+VII. CONCLUSION In the paper, we propose our Dual-Assembly-Pipeline ar-  chitecture to carry out bi-directional data streams joining,  and provide a fault-tolerance mechanism based on it. The experiments show that Dual-Assembly-Pipeline architecture can improve the performance of joining two-way streams.
+
+Moreover, when non-adjacent nodes fail, all data can be recovered if the new started VMs can be recovered in a few seconds. And parts of data can be reinstated if neighboring nodes fail at the same time.
+

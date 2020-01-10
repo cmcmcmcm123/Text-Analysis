@@ -1,0 +1,228 @@
+Mining Frequent Itemsets from Secondary Memory
+
+Abstract  Mining frequent itemsets is at the core of mining associ- ation rules, and is by now quite well understood algorith- mically for main memory databases. In this paper, we in- vestigate approaches to mining frequent itemsets when the database or the data structures used in the mining are too large to fit in main memory. Experimental results show that our techniques reduce the required disk accesses by orders of magnitude, and enable truly scalable data mining.
+
+1 Introduction  Mining frequent itemsets is a fundamental problem for mining association rules [2, 3, 5]. It also plays an impor- tant role in many other data mining tasks such as sequen- tial patterns, episodes, multi-dimensional patterns and so on [4, 9, 8]. In addition, frequent itemsets are one of the key abstractions in data mining.
+
+The description of the problem is as follows. Let I = {i1, i2, . . . , in}, be a set of items. Items will sometimes also be denoted by a, b, c, . . .. An I-transaction ? is a sub- set of I . An I-transactional database D is a finite bag of I-transactions. The support of an itemset S ? I is the pro- portion of transactions in D that contain S. The task of mining frequent itemsets is to find all S such that the sup- port of S is greater than some given minimum support ?, where ? either is a fraction in [0, 1], or an absolute count.
+
+Most of the algorithms, such as Apriori [3], DepthPro- ject [1], and dEclat [12] work well when the main mem- ory is big enough to fit the whole database or/and the data structures (candidate sets, FP-trees, etc). When a database is very large or when the minimum support is very low, ei- ther the data structures used by the algorithms may not be accommodated in main memory, or the algorithms spend too much time on multiple passes over the database. In the First IEEE ICDM Workshop on Frequent Itemset Min- ing Implementations, FIMI ?03 [5], many well known al- gorithms were implemented and independently tested. The results show that ?none of the algorithms is able to grace- fully scale-up to very large datasets, with millions of trans- actions? [5].
+
+At the same time very large databases do exist in real life. In a medium sized business or in a company big as  Walmart, it?s very easy to collect a few gigabytes of data.
+
+Terabytes of raw data are ubiquitously being recorded in commerce, science and government. The question of how to handle these databases is still one of the most difficult problems in data mining.
+
+In this paper we consider the problem of mining fre- quent itemsets from very large databases. We adopt a divide-and-conquer approach. First we give three algo- rithms, the general divide-and-conquer algorithm, then an algorithm using basic projection (division), and an algo- rithm using aggressive projection. We also analyze the disk I/O?s required by these algorithms.
+
+In a detailed divide-and-conquer algorithm, called Diskmine, we use the highly efficient FPgrowth* method [6] to mine frequent itemsets from an FP-tree for the main memory part of data mining. We describe several novel techniques useful in mining frequent itemsets from disks, such as the FP-array technique, and the item-grouping technique.
+
+We also present experimental results that demonstrate the fact that our Diskmine-algorithm can outperform pre- vious algorithms by orders of magnitude, and scales up to terabytes of data.
+
+2 Mining from disk  How should one go about when mining frequent item- sets from very large databases residing in a secondary memory storage, such as disks? Here ?very large? means that the data structures constructed from the database for mining frequent itemsets can not fit in the available main memory.
+
+One approach is sampling [11]. Unfortunately, the re- sults of sampling are probabilistic, some critical frequent itemsets could be missing. Besides the sampling, there are basically two strategies for mining frequent itemsets, the datastructures approach, and the divide-and-conquer ap- proach.
+
+The datastructures approach consists of reading the database buffer by buffer, and generate datastructures (i.e.
+
+candidate sets or FP-trees). Since the datastructure do not fit into main memory, additional disk I/O?s are required.
+
+The number of passes and disk I/O?s required by the ap- proach depend on the algorithm and its datastructures. For examples, if the algorithm is Apriori [3] using a hash-tree  0-7695-2142-8/04 $ 20.00 IEEE    for candidate itemsets, disk based hash-trees have to be used. If the algorithm is FP-growth method, as suggested in [7], FP-trees have to be written to the disk. Then the number of disk I/O?s for the trees depends on the size of the trees on disk. Note that the size of the trees could be the same as or even bigger than the size of the database.
+
+The basic strategy for the divide-and-conquer approach is shown in the procedure diskmine. In the approach, |D| denotes the size of the data structures used by the mining algorithm, and M is the size of available main memory.
+
+Function mainmine is called if candidate frequent item- sets (not necessary all) can be mined without writing the data structures used by a mining algorithm to disks. In diskmine, a very large database is decomposed into a num- ber of smaller databases. If a ?small? database is still too large, i.e, the data structures are still too big to fit in main memory, the decomposition is recursively continued un- til the data structures fit in main memory. After all small databases are processed, all candidate frequent itemsets are combined in some way (obviously depending on the way the decomposition was done) to get all frequent itemsets for the original database.
+
+Procedure diskmine(D,M ) if |D| ? M then return mainmine(D) else decompose D into D1, . . .Dk.
+
+return combine diskmine(D1,M ), .... ,  diskmine(Dk,M ).
+
+The efficiency of diskmine depends on the method used for mining frequent itemsets in main memory and on the number of disk I/O?s needed in the decomposition and combination phases. Sometimes the disk I/O is the main factor. Since the decomposition step involves I/O, ide- ally the number of recursive calls should be kept small.
+
+The faster we can obtain small decomposed databases, the fewer recursive call we will need. On the other hand, if a decomposition cuts down the size of the projected databases drastically, the trade-off might be that the combi- nation step becomes more complicated and might involve heavy disk I/O.
+
+In the following we discuss two decomposition strate- gies, namely decomposition by partition, and decomposi- tion by projection.
+
+Partitioning [10] is an approach in which a large database is decomposed into cells of small non-overlapping databases. The cell-size is chosen so that all frequent item- sets in a cell can be mined without having to store any data structures in secondary memory. However, since a cell only contains partial frequency information of the origi- nal database, all frequent itemsets from the cell are local to that cell of the partition, and could only be candidate frequent itemsets for the whole database. Thus the candi- date frequent itemsets mined from a cell have to be verified later to filter out false hits. Consequently, those candidate sets have to be written to disk in order to leave space for  processing the next cell of the partition. After generating candidate frequent itemsets from all cells, another database scan is needed to filter out all infrequent itemsets. The par- tition approach therefore needs only two passes over the database, but writing and reading candidate frequent item- sets will involve a significant number of disk I/O?s, depend- ing on the size of the set of candidate frequent itemsets.
+
+We can conclude that the partition approach to decom- position keeps the recursive levels down to one, but the penalty is that the combination phase becomes expensive.
+
+To get an easier combination phase, we adopt another decomposition strategy, which we call projection. This ap- proach projects the original database on several databases, each determined by one or more frequent item(s). One ad- vantage of this approach is that any frequent itemset mined from a projected database is a frequent itemset in the orig- inal database. To get all frequent itemsets, we only need to take the union of the frequent itemsets discovered in the small projected databases. The biggest problem of the projection approach is that the total size of the projected databases could be too large, and there could be too many disk I/O?s for the projected databases. Thus, there is a tradeoff between the easier combination phase and possi- ble too many disk I/O?s.
+
+To analyze the recurrence and required disk I/O?s of the general divide-and-conquer algorithm when the decompo- sition strategy is projection, let us suppose that:  - The original database size is D bytes.
+
+- The data structure is an FP-tree.
+
+- The FP-tree constructed from original database D is T , and its size is |T | bytes.
+
+- If a conditional FP-tree T ? is constructed from an FP- tree T , then |T ?| ? c ? |T |, for some constant c < 1.
+
+- The main memory mining method is the FP-growth method [7]. Two database scans are needed for con- structing an FP-tree from a database.
+
+- The block size is B bytes.
+
+- The main memory available is M bytes.
+
+In the first line of the algorithm diskmine, if T can not fit in memory, then projected databases will be generated. We assumed that the size of the FP-tree for a projected database is c?|T |. If c?|T | ? M , function mainmine can be called for the projected database, otherwise, the decomposition goes on. At pass m, the size of the FP-tree constructed from a projected database is cm ? |T |. Thus, the number of passes needed by the divide-and-conquer projection algorithm is 1+ ?logc M/T ?. Based on our experience and the analysis in [7], we can say that for all practical purposes the number of passes will be at most two. For example, Let D = 100 gigabytes, T = 10 gigabytes, M = 1 gigabytes, and c = 10%. Then the number of passes is 1 + ?log0.1 230/(10 ? 230)? = 2. In five passes we can handle databases up to 100 Terabytes. Namely, we get 1+?log0.1 230/(10?240)? = 5.
+
+Assume that there are two passes, and that the sum of the sizes of all projected databases is D?. After the first  0-7695-2142-8/04 $ 20.00 IEEE    database scan for finding all frequent single items, the sec- ond database scan attempts to construct an FP-tree from the database. If the main memory is not big enough, the scan will be aborted. We assume on average half of D is read at this stage, which means 1/2 ?D/B disk I/O?s. The third scan is for decomposition. Totally, there are 5/2 ? D/B disk I/O?s. The projected databases have to be written to the disks first, then later each scanned twice for building the FP-tree. This step needs 3 ? D?/B disk I/O?s. Thus, the total disk number of disk I/O?s for the general divide- and-conquer projection algorithm is at least  5/2 ? D/B + 3 ? D?/B. (1) Obviously, the smaller D?, the better the performance.
+
+One of the simplest projection strategies is to project the database on each frequent item, which we call basic projection. First we need some formal definitions.
+
+Definition 1 Let I be a set of items. By I? we will de- note strings over I , such that each symbol occurs at most once in the string. If ?, ? are strings, then ?.? denotes the concatenation of the string ? with the string ?.
+
+Let D be an I-database. Then freqstring(D) is the string over I , such that each frequent item in D occurs in it exactly once, and the items are in decreasing order of frequency in D.
+
+As an example, consider the {a, b, c, d, e}-database D = {{a, c, d}, {b, c, d, e}, {a, b}, {a, c}}. If the minimum sup- port is 50%, then freqstring(D) = acbd.
+
+Definition 2 Let D be an I-database, and let freqstring(D) = i1i2 ? ? ? ik. For j ? {1, . . . , k} we define Dij = {? ? {i1, . . . , ij} : ij ? ?, ? ? D}.
+
+Let ? ? I?. We define D? inductively: D? = D, and let freqstring(D?) = i1i2 ? ? ? ik. Then, for j ? {1, . . . , k}, D?.ij = {? ? {i1, . . . , ij} : ij ? ?, ? ? D?}.
+
+Obviously, D?.ij is an {i1, . . . , ij}-database. The de- composition of D? into D?.i1 , . . . , D?.ik is called the basic projection.
+
+To illustrate the basic projection, let?s consider the above example, starting from the least frequent item in the freqstring, we obtain Dd = {{a, c, d}, {b, c, d}}, Db = {{c, b}, {a, b}}, Dc = {{a, c}, {c}, {a, c}}, and Da = {{a}, {a}, {a}}.
+
+Definition 3 Let ? ? I?, ij ? I , and let D?.ij be an I- database. Then freqsets(?,D?.ij ) denotes the subsets of I that contain ij and are frequent in D?.ij when the min- imum support is ?. Usually, we shall abstract ? away, and write just freqsets(D?.ij ).
+
+Lemma 1 Let D? be an I-database, and freqstring(D?) = i1i2 ? ? ? ik. Then  freqsets(D?) = ?  j?{1,...,k} freqsets(D?.ij )  In the previous example, for Dd, freqsets(Dd)={{d}, {c, d}}. Note though {c} is also frequent in Dd, it is not listed since it does not con- tain d. It will be listed in freqsets(Dc). Similarly, freqsets(Db)={{b}}, freqsets(Dc)={{c}, {a, c}} and freqsets(Da)={{a}}. We also can notice that Dd and Dc are not that much smaller than the original database. The upside is though that the set of all frequent itemsets in D now simply is the union of freqsets(Dd), freqsets(Db), freqsets(Dc) and freqsets(Dd). This means that the combination phase is a simple union.
+
+The following procedure basicdiskmine gives a divide- and-conquer algorithm that uses basic projection. A trans- action ? in D? will be partly inserted into D?.ij if and only if ? contains ij . The parallel projection algorithm intro- duced in [7] is an algorithm of this kind.
+
+Procedure basicdiskmine(D?,M ) if |D?| ? M then return mainmine( D?) else let freqstring(D?) = i1i2 ? ? ? in,  return basicdiskmine(D?.i1 ,M) ? . . . ?  basicdiskmine(D?.in ,M).
+
+Let?s analyze the disk I/O?s of the algorithm ba-  sicdiskmine. As before, we assume that there are two passes, that the data structure is an FP-tree, and that the main memory mining method is FP-growth. If in D?, each transaction contains on the average n frequent items, each transaction will be written to n projected databases. Thus the total length of the associated transactions in the pro- jected databases is n+(n?1)+? ? ?+1 = n(n+1)/2, the to- tal size of all projected databases is (n+1)/2?D ? n/2?D.
+
+Still there are two full database scans and a incomplete database scan for D?, as explained for formula (1). The number of total disk I/O?s is 5/2 ? D/B. The projected databases have to be written to the disks first, then later scanned twice each for building an FP-tree. This step needs at least 3 ? n/2 ? D/B. Thus, the total disk I/O?s for the divide-and-conquer algorithm with basic projection is  5/2 ? D/B + n ? 3/2 ? D/B (2) The recurrence structure of basicdiskmine is shown in  Figure 1. The reader should ignore nodes in the shaded area at this point, they represent processing in main memory.
+
+?  ? ?? ? ?? ? ?? ? ??  ? ?? ? ??? ??  ???? ???? ????  ????? ????? ?????  ??????  ????  ?????  ???? ????  ? ??  Figure 1. Recurrence of Basic Projection  0-7695-2142-8/04 $ 20.00 IEEE    In a typical application n, the average number of fre- quent items could be hundreds, or thousands. It therefore makes sense to devise a smarter projection strategy. Before we go further, we introduce some definitions and a lemma.
+
+Definition 4 Let D? be an I-database, and let freqstring(D?) = ?1.?2. ? ? ? .?k, where each ?j is a string in I?. We call ?1.?2. ? ? ? .?k a group- ing of freqstring(D?). Let ?j = ij1 . . . . .ijm , for j ? {1, . . . , k}. We now define D?.?j = {? ? {i11 , . . . , ijm}, ? ? D?, ? ? {ij1 , . . . , ijm} 	= ?}.
+
+In D?.?j , items in ?j are called master items, items in  ?1, . . . , ?j?1 are called slave items.
+
+For the previous example, freqstring(D?) = acbd, ?1 = ac, ?2 = bd gives the grouping ac.bd of acbd.
+
+Now Dbd = {{a, c, d}, {b, c, d}, {a, b}} and Dac = {{a, c}, {c}, {a}, {a, c}}.
+
+Definition 5 Let {?, ?} ? I?, and let D?.? be an I- database. Then freqsets(D?.?) denotes the subsets of I that contain at least one item in ? and are frequent in D?.? .
+
+Lemma 2 Let ? ? I?, D? be an I-database, and freqstring(D?) = ?1?2 ? ? ??k. Then  freqsets(D?) = ?  j?{1,...,k} freqsets(D?.?j )  By following the above example, we can get freqsets(Dbd)={{d}, {b}, {c, d}}, and freqsets(Dac)= {{c}, {a}, {a, c}}.
+
+Based on Lemma 2, we can obtain a more aggressive divide-and-conquer algorithm for mining from disks. The following shows the algorithm aggressivediskmine. Here, freqstring(D?) is decomposed into several substrings ?j , each of which could have more than one item. Each sub- string corresponds to a projected database. A transaction ? in D? will be partly inserted into D?.?j if and only if ? contains at least one item a in ?j . Since there will be fewer projected databases, there will be fewer disk I/O?s. Com- pared with the algorithm basicdiskmine, we can expect that a large amount of disk I/O will be saved by the algorithm aggressivediskmine.
+
+Procedure aggressivediskmine(D?,M ) if |D?| ? M then return mainmine( D?) else let freqstring(D?) = ?1?2 ? ? ??k,  return aggressivediskmine(D?.?1 ,M) ? . . . ?  aggressivediskmine(D?.?k ,M).
+
+Let?s analyze the recurrence and disk I/O?s of the ag- gressive divide-and-conquer algorithm. The number of passes needed is still 1 + ?logc M/T ? ? 2, since grouping items does not change the size of an FP-tree for a projected  database. However, for disk I/O, suppose in D?, each trans- action contains on average n frequent items, and that we can group them into k groups of equal size. Then the n items will be written to the projected databases with total length n/k +2 ?n/k + . . .+ k ?n/k = (k +1)/2 ?n. Total size of all projected databases is (k + 1)/2 ? D ? k/2 ? D.
+
+The total disk I/O?s for the aggressive divide-and-conquer algorithm is then  5/2 ? D/B + k ? 3/2 ? D/B (3) The recurrence structure of algorithm aggres-  sivediskmine is shown in Figure 2. Compared to Figure 1, we can see that the part of the tree that corresponds to decomposition (the nonshaded part) is much smaller in Figure 2. Although the example is very small, it exhibits the general structure of the two trees.
+
+?  ? ??? ? ???  ? ?? ? ?? ? ??? ??  ???? ???? ????  ????? ????? ?????  ??????  ????  ?????  ???? ????  ? ??? ? ???  Figure 2. Recurrence of Aggressive Projec- tion  If k ? n, we can expect the aggressive divide-and-con- quer algorithm will significantly outperform the basic one.
+
+3 Algorithm Diskmine  The algorithm Diskmine is shown below. In the algo- rithm, D? is the original database or a projected database, and M is the maximal size of main memory that can be used by Diskmine.
+
+Procedure Diskmine(D?,M) scan D? and compute freqstring(D?) call trialmainmine(D?,M) if trialmainmine(D?,M) aborted then  compute a grouping ?1?2 ? ? ??k of freqstring(D?) Decompose D? into D?.?1 , . . . ,D?.?k for j = 1 to k do begin  if ?j is a singleton then Diskmine(D?.?j ,M) else mainmine(D?.?j )  end else return freqsets(D?)  Diskmine uses the FP-tree [7] as data structure and FP- growth* [6] as main memory mining algorithm. Since the FP-tree encodes all frequency information of the database, we can shift into main memory mining as soon as the FP- tree fits into main memory.
+
+0-7695-2142-8/04 $ 20.00 IEEE    Since an FP-tree usually is a significant compression of the database, our Diskmine algorithm begins optimisti- cally, by calling trialmainmine, which starts scanning the database and constructing the FP-tree. If the tree can be successfully completed and stored in main memory, we have reached the bottom level of the recursion, and can ob- tain the frequent itemsets of the database by running FP- growth* on the FP-tree in main memory.
+
+Procedure trialmainmine(D?,M) start scanning D? and building the FP-tree  T? in main memory.
+
+if |T?| exceeds M then return the incomplete T? else call FPgrowth* (T?) and return freqsets(D?).
+
+If, at any time during trialmainmine we run out of main memory, we abort and return the partially constructed FP-tree, and a pointer to where we stopped scanning the database. We then resume processing Diskmine(D?,M) by computing a grouping ?1, . . . , ?k of freqstring(D?), and then decomposing D? into D?.?1 , . . . ,D?.?k . We re- cursively process each decomposed database D?.?j . Dur- ing the first level of the recursion, some groups ?j will consist of a single item only. If ?j is a singleton, we call Diskmine, otherwise we call mainmine directly, since we put several items in a group only when we estimate that the corresponding FP-tree will fit into main memory.
+
+In computing the grouping ?1, . . . , ?k we assume that transactions in a very large database are evenly distributed, i.e., if the size of the FP-tree is n for p% of the database, then the size of the FP-tree for whole database is n/p ?100.
+
+Most of the time, this gives an overestimation, since an FP- tree increases fast only at the beginning stage, when items are encountered for the first time and inserted into the tree.
+
+In the later stages, the changes to the FP-tree will be mostly counter updates.
+
+Procedure mainmine(D?.?) build a modified FP-tree T?.? for D?.? for each i in ? do begin  construct the FP-tree T?.i for D?.i from T?.? call FPgrowth* (T?.i) and return freqsets(D?.i).
+
+end  In basicdiskmine, since there is only one master item in each projected database (for D?, no master item at all), an FP-tree can be constructed without considering the mas- ter item. In procedure mainmine, since D?.? is for mul- tiple master items, the FP-tree constructed from D?.? has to contain those master items. However, the item order is a problem for the FP-tree, because we only want to mine all frequent itemsets that contain master items. To solve this problem, we simply use the item order in the partial FP-tree returned by the aborted trialmainmine(D?). This is what we mean by a ?modified FP-tree? on the first line in the algorithm mainmine.
+
+The entire recurrence structure of Diskmine can be seen in Figure 2. Compared to the basic projection in Figure 1  we see that since the aggressive projection uses main mem- ory more effective, and that the decomposition phase is shorter, resulting in fewer disk I/O?s.
+
+In Figure 2, the shaded area shows the recursive struc- ture of FP-growth*. Comparing with the shaded area in Figure 1 which shows the recursive structure of the FP- growth method, we can see that the main difference is the extra shaded level in Figure 2. This level is for the FP-trees of groups. For each group, since the total size of all FP- trees for its master items may be greater than the size of main memory, a ?modified FP-tree? is constructed. This FP-tree will fit in main memory. From the FP-tree, smaller FP-trees can be constructed one by one, as shown in both figures. As an example, in Figure 1, basicdiskmine enters the main memory phase for instance for the conditional database D?.a. Then FP-growth first constructs the FP-tree T?.a from D?.a (in Figure 2, T?.a is constructed from T?.ab).
+
+The tree rooted at T?.a shows the recursive structure of FP- growth, assuming for simplicity that the relative frequency remains the same in all conditional pattern bases.
+
+Theorem 1 Diskmine(D) returns freqsets(D) .
+
+Applying the FP-array Technique. In Diskmine, the Fre- quent Pairs Array (FP-array) technique developed for FP- growth* [6] is also applied to save one tree traversal for each recursive call. Furthermore, when projected databases are generated, the FP-array technique can save a great num- ber of disk I/O?s.
+
+Recall that in trialmainmine, if an FP-tree can not be ac- commodated in main memory, the construction stops. Sup- pose now we decided to stop scanning the database. Then later, after generating all projected databases, two database scans are required to construct an FP-tree from a projected database. To save one scan, in Diskmine we calculate an FP-array for each FP-tree. When constructing the FP-tree from D?, if it is found that the tree can not fit in main mem- ory, the construction of the FP-tree T? stops, but the scan of the database D? continues so that we finish filling the cells of the array A?. Later, only one database scan is needed to construct an FP-tree from a projected database because of the existence of the array A?.
+
+Grouping items. In Diskmine, the fourth line computes a grouping ?1?2 ? ? ??k of freqstring(D?). For each ?, a new projected database D?.? will be computed from D?, then written to disk and read from disk later. Therefore, the more groups, the more disk I/O?s. In other words, there should be as many items in each ? as possible. To group items, two questions have to be answered.
+
+1. If ? currently only has one item ij , after projection, is the main memory big enough for accommodating T?.ij constructed from D?.ij and running the FP- growth* method on T?.ij ?
+
+2. If more items are put in ?, after projection, is the main memory big enough for accommodating T?.? con- structed from D?.? and running FPgrowth* on T?.? only for items in ??
+
+0-7695-2142-8/04 $ 20.00 IEEE    To answer the questions, algorithm Diskmine col- lects statistics on the partial FP-tree T? and the rest of database D?.
+
+For the first question, for each item ij , by counting the number of nodes in the FP-tree T?.ij constructed from the partial FP-tree T?, we can use the number to estimate the size of FP-tree T?.ij constructed from D?. We write the number as ?[j](T?) for each ij , and suppose the num- ber of transactions in D? is t(D?) and the number of transactions used for constructing the partial FP-tree T? is t(T?). By the assumption that the transactions in D? are evenly distributed and that the partial T? represents the whole FP-tree for D?, the estimated size of FP-tree T?.ij is ?[j](T?) ? t(D?)/t(T?).
+
+Before answering the second question, we introduce the cut point from which the first group can be easily found.
+
+Finding the cut point. Notice that in FPgrowth*, when mining frequent itemsets for ik, all frequency information about ik+1, . . . , in is useless. Thus, though a complete FP- tree T? constructed from D? could not fit in main memory, we can find many k?s such that the trimmed FP-tree con- taining only nodes for items ik, . . . , i1 will fit into main memory. All frequent itemsets for ik, . . . , i1 can be then mined from one trimmed tree. We call the biggest of such k?s the cut point. At this point, main memory is big enough for storing the FP-tree containing only ik, . . . , i1, and there is also enough main memory for running FPgrowth* on the tree. Obviously, if the cut point k can be found, items ik, . . . , i1 can be grouped together. Only one projected database is needed for ik, . . . , i1.
+
+There are two ways to estimate the cut point. One way is to get cut point from the value of t(D?) and t(T?). Figure 3 illustrates the intuition behind the cut point. In the figure, l = t(T?), and m = t(D?). Since the partial FP-tree for t(T?) of t(D?) transactions can be accommodate in main memory, we can expect that the FP-tree containing ik, . . . , i1, where k = n ? t(T?)/t(D?)?, also will fit in main memory.
+
+?  ?  i  i  i k  i n  ? l  ? m  Figure 3. Cut Point  The above method works well for many databases, es- pecially for those databases whose corresponding FP-trees have plenty of sharing of prefixes for items from i1 to the cut point. However, if the FP-tree constructed from a database does not share prefixes that much, the estima- tion could fail, since now the FP-tree for items from i1 to the cut point could be too big. Thus, we have to consider  another method. Let ?[j](T?) be the size of the FP-tree after the partial FP-tree T? is trimmed and only contains items i1, . . . , ij . Based on ?[j](T?) the number of nodes in the complete FP-tree for item ij can be estimated as ?[j](T?) ? t(D?)/t(T?). Now, suppose ?(T?) is the num- ber of nodes in T?, finding the cut point becomes finding the biggest k such that ?[k](T?) ? t(D?)/t(T?) ? ?(T?), and ?[k + 1](T?) ? t(D?)/t(T?) > ?(T?).
+
+Sometimes the above estimation only guarantees that the main memory is big enough for the FP-tree which con- tains all items between i1 and the cut point, while it does not guarantee that the descendant trees from that FP-tree can fit in main memory. This is because the estimation does not consider the size of descendant trees correctly.
+
+Actually, from ?[j](T?) we can get a more accurate es- timation of the size of the biggest descendant tree. To find the cut point, we need to find the biggest k, such that (?[k](T?) + ?[j](T?)) ? t(D?)/t(T?) ? ?(T?), and (?[k + 1](T?) + ?[m](T?)) > ?(T?), where j ? k, ?[j](T?) = maxj?{1,...,k}?[j](T?), and m ? k + 1, ?[m](T?) = maxm?{1,...,k+1}?[m](T?).
+
+Grouping the rest of the items. Now we answer the sec- ond question, how to put more items into a group? Here we still need ?[j](T?). Starting with ?[cutpoint + 1](T?), we test if ?[cutpoint + 1](T?) ? t(D?)/t(T?) > ?(T?).
+
+If not, we put next item cutpoint+2 into the group, and test if (?[cutpoint + 1](T?) + ?[cutpoint + 2](T?)) ?t(D?)/t(T?) > ?(T?). We repeatedly put next item in freqstring(D) into the group until we reach an item ij , such that  j?  m=cutpoint+1  ?[m](T?) ? t(D?)/t(T?) > ?(T?).
+
+Then starting from ij , we put items into next group, until all items find its group.
+
+Why can we put items ij , . . . , ik together into group ?? This is because even if we construct T?.ij , . . . , T?.ik from the projected databases D?.ij , . . . ,D?.ik and put all of them into main memory, the main memory is big enough according to the grouping condition. At this stage, T?.ij , . . . , T?.ik all can be constructed by scanning D? once. Then we mine frequent itemsets from the FP-trees.
+
+However, we can do better. Obviously T?.ij , . . . , T?.ik overlap a lot, and the total size of the trees is definitely greater than the size of T?.? . It also means that we can put more items into each ?, only if the size of T?.? is estimated to fit in main memory. To estimate the size of T?.? , part of T? has to be traversed by following the links for the master items in T?.
+
+The disk I/O?s. Let?s re-count the disk I/O?s used in Diskmine. The first scan is still for obtaining all fre- quent items in D?, and it needs D/B disk I/O?s. In the second scan we construct a partial FP-tree T?, then con- tinue scanning the rest database for statistics. The second scan is a full scan, which needs another D/B disk I/O?s.
+
+0-7695-2142-8/04 $ 20.00 IEEE    Suppose then that k projected databases have to be com- puted. According to Section 2, the total size of the pro- jected databases is approximately k/2 ? D. For computing the projected databases, the frequency information in T? is reused, so only part of D? is read. We assume on average half of D? is read at this stage, which means 1/2 ? D/B disk I/O?s. By using of the FP-array technique [6], writ- ing and later reading k projected databases now only take 2 ? k/2 ? D/B = k ? D/B disk I/O?s. Suppose all frequent itemsets can be mined from the projected databases without going to the third level. Then the total disk I/O?s is  5/2 ? D/B + k ? D/B (4)  Compared with formula 3, Diskmine saves at least k/2 ? D/B disk I/O?s, thanks to the various techniques used in the algorithm.
+
+4 Performance Study  In this section, we present the results from a perfor- mance comparison of Diskmine with the Parallel Projec- tion algorithm in [7] and the Partitioning algorithm in [10].
+
+The scalability of Diskmine is also analyzed, and the accu- rateness of our memory size estimations are validated.
+
+As mentioned in Section 2, the Parallel Projection al- gorithm is a basic divide-and-conquer algorithm, since for each item a projected database is created. For perfor- mance comparison, we implemented Parallel Projection algorithm, by using FP-growth as main memory method, as introduced in [7]. The Partitioning algorithm is also a divide-and-conquer algorithm. We implemented the parti- tioning algorithm by using the Apriori implementation 1.
+
+We chose this implementation, since it was well written and easy to adapt for our purposes.
+
+We ran the three algorithms on both synthetic datasets and real datasets. Some synthetic datasets have millions of transactions, and the size of the datasets ranges from several megabytes to several hundreds gigabytes. Due to lack of space, only the results for some synthetic datasets and a real dataset are shown here.
+
+All experiments were performed on a 2.0Ghz Pentium 4 with 256 MB of memory under Windows XP. For Diskmine and the Parallel Projection algorithm, the size of the main memory is given as an input. For the Partitioning algo- rithm, since it only has two database scans and each main- memory-sized partition and all data structures for Apriori are stored into main memory, the size of main memory is not controlled, and only the running time is recorded.
+
+We first compared the performance of three algorithms on synthetic dataset. Dataset T100I20D100K was gener- ated from the benchmark application of IBM research cen- ter 2. The dataset has 100,000 transactions and 1000 items, and occupies about 40 megabytes of memory. The average transaction length is 100, and the average pattern length is  1www.cs.helsinki.fi/u/goethals/software 2www.almaden.ibm.com/software/quest/Resources  20. The dataset is very sparse and FP-tree constructed from the dataset is bushy. For Apriori, a large number of candi- date frequent itemsets will be generated from the dataset.
+
+T100I20D100K      1 2 3 4 5 6 7 8 9  Minimum Support (%)  T im  e (s  )      Basic Disk I/O  Aggr. Disk I/O  (a) Time for Disk I/O?s  T100I20D100K     10 9 8 7 6 5 4 3 2  Minimum Support (%)  T im  e (s  )     Aggr. CPU  Basic CPU  (b) CPU time  Figure 4. Experiments on synthetic dataset  When running the algorithms, the main memory size was given as 128 megabytes. Figure 4 shows the experi- mental results. In the figure, ?Basic? represents the Par- allel Projection algorithm, and ?Aggressive? represents the Diskmine algorithm. Since the Partitioning algorithm is the slowest in the group, its total running time is always an or- der of magnitude greater than the Basic algorithm and the Aggressive algorithm, we didn?t separate its CPU time and the time for disk I/O?s. Consequently the lines for Parti- tioning algorithm are not shown in the figures. From Fig- ure 4 (a), as expected, we can see that the disk I/O time of the Aggressive algorithm is orders of magnitude smaller than that of the Basic algorithm. On the other hand, in Fig- ure 4 (b) we can see that the Basic algorithm, however, is not slower than the Aggressive algorithm if we only com- pare their CPU time. In [6], where we were concerned with main memory mining, we found that if a dataset is sparse the boosted FPgrowth* method has a much better performance than the original FP-growth. The reason here the CPU time of the Aggressive algorithm is not always less than that of Basic algorithm is that the Aggressive al- gorithm has to spend CPU time on calculating statistics.
+
+However, from Figure 4, we also can see that the CPU overhead used by the Aggressive algorithm now become insignificant compared to the savings in disk I/O.
+
+We then ran the algorithms on a real dataset Kosarak, which is used as a test dataset in [5]. The dataset is about 40 megabytes. Since it is a dense dataset and its FP-tree is fairly small, we set the main memory size as 16 megabytes for the experiments. Results are shown in Figure 5.
+
+Kosarak     1 2 3 4 5 6 7 8 9  Minimum Support (%)  T im  e (s  )     Basic Disk I/O  Aggr. Disk I/O  (a) Time for Disk I/O?s  Kosarak     0.5 0.45 0.4 0.35 0.3 0.25 0.2 0.15 0.1  Minimum Support (%)  T im  e (s  )     Aggr. CPU  Basic CPU  (b) CPU time  Figure 5. Experiments on real dataset  0-7695-2142-8/04 $ 20.00 IEEE    In Figure 5, for the same reason as above, results for the Partitioning algorithm is not shown. It is still the slowest comparing the total running time. This is because it gener- ates too many candidate frequent itemsets from the dense dataset. Together with the data structures, the candidate sets use up main memory and virtual memory was used.
+
+In Figure 5 (a), the time used for disk I/O?s of the Aggres- sive algorithm is still remarkably less than the time used for disk I/O?s of the Basic Algorithm. We can again notice that the CPU time of the Basic Algorithm is less than that of the Aggressive algorithm. This is because Kosarak is a dense dataset so the FP-array technique does not help a lot. In addition, calculating the statistics takes an amount of time.
+
+To test the effectiveness of the techniques for grouping items, we run Diskmine on T100I20D100K and see how close the estimation of the FP-tree size for each group is to its real size. We still set the main memory size as 128 megabytes, the minimum support is 2%. When generating the projected databases, items were grouped into 7 groups (the total number of frequent items is 826). As we can see from Figure 6 (a), in all groups, the estimated size is always slightly larger than the real size. Compared with the Basic Algorithm, which constructs an FP-tree for each item from its projected database, the Aggressive algorithm almost fully uses the main memory for each group to con- struct an FP-tree.
+
+Estimation size vs. Real size           1 2 3 4 5 6 7  Group  M em  o ry  ( M  eg ab  yt es  )  Estimated size  Real size  (a)  Scalability          200 400 600 800 1000 1200 1400 1600 1800 2000  NO. of Transactions (k)  T im  e (s  )  CPU  Disk I/O  (b)  Figure 6. Estimation Accuracy and Scalabil- ity of Diskmine  As a divide-and-conquer algorithm, one of the most im- portant properties of Diskmine is its good scalability. We ran Diskmine on a set of synthetic datasets. In all datasets, the item number was set as 10000 items, the average trans- action length as 100, and the average pattern length as 20. The number of the transactions in the datasets var- ied from 200,000 to 2,000,000. Datasets size ranges from 100 megabytes to 1 gigabyte. Minimum support was set as 1.5%, and the available main memory was 128 megabytes.
+
+Figure 6 (b) shows the results. In the figure, the CPU and the disk I/O time is always kept in a small range of ac- ceptable values. Even for the datasets with 2 million trans- actions, the total running time is less than 1000 seconds.
+
+Extrapolating from these figures using formula (4), we can conclude that a dataset the size of the Library of Congress collection (25 Terabytes) could be mined in around 18 hours with current technology.
+
+5 Conclusions  We have investigated several divide-and-conquer algo- rithms for mining frequent itemset from secondary mem- ory. We also analyzed the recurrences and disk I/O?s of all algorithms. We then gave a detailed divide-and-conquer al- gorithm which almost fully uses the limited main memory and saves a numerous number of disk I/O?s. We introduced many novel techniques used in our algorithm.
+
+Our experimental results show that our algorithm suc- cessfully reduces the number of disk access, sometimes by orders of magnitude, and that our algorithm scales up to terabytes of data. The experiments also validate that the estimation techniques used in our algorithm are accurate.
+
+Future extensions of this work will include mining max- imal and closed frequent itemsets, as well as exploring disk layout for various datastructures, for instance for candidate sets, since there are some situations where Apriori indeed outperforms the FP-tree based methods.
+

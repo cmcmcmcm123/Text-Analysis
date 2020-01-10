@@ -1,0 +1,106 @@
+DISG: A DIStributed Graph Repository for Web Infrastructure
+
+Abstract  Storage and utilization of web data has become a big challenge to data management community. Though many commercial and academic tools emerge, the structure, con- tent, and user behavior of Chinese Web is not fully studied.
+
+We are working on building a Chinese Web Infrastructure (CWI) for support of such research. In this paper, a graph data model used in CWI is introduced, after which the de- sign of a distributed system for management of data con- forming the model is presented.
+
+1. Introduction  World-Wide Web (WWW, or the Web) contains huge volume of data published by different organizations or peo- ple, which can be treat as the largest distributed database in the world. However, utilization of data on the Web is diffi- cult since the data is unstructured, heterogeneous, and fast changing. We propose to develop a Chinese Web Infrastruc- cture (CWI), for serving the requirements of analysis to the data from the Chinese Web [11]. The architecture of CWI is shown in Figure 1.
+
+Two major challenges to development of CWI are 1) the massive dataset to be coped with, and 2) the lack of com- mon schema. We propose a tagged and labeled graph model (TLGM) for representing the data on the Web, and to use a large-scaled distributed repository for storage and manage- ment of data conforming the model, so that high efficiency and availability can be achieved.
+
+This paper introduces the design of DisG, a repository for management of data conforming the TLGM. There are  two characteristics distinguished it from other systems with similar goal:  ? DisG supports queries on both content (via keywords) and structure of the data. Thus it is suitable for Web data management, in which data are unstructured or semi-structured, while information retrieval is impor- tant.
+
+? DisG is a distributed repository. Both storage and data retrieval are conducted parrellelly. Therefore, it is scal- able in terms of volume of data and number of users.
+
+The rest part of this paper is organized as follows. In Section 2, the preliminaries of the TLGM data model and its query language is breifly introduced. Section 3 intro- duces the environment upon which DisG is developed. In Section 4, two major components of the system, i.e. the storage scheme of graph data, and graph reconstruction, are introduced. Finally, Section 5 is devoted to discussion on our future work on DisG.
+
+2. A graph data model for Web infrastructure  2.1 The TLGM data model  The tagged and labeled graph model (TLGM) is used in CWI [11]. Each data object in TLGM is a quadruple: < K,L, P, T >. Here, K is an ordered set of terms < ki >, L is a set of tags {ti}, P is the set of pointers to other data objects < li, pi > (li is the label and pi is the reference to a data object), and T is the timestamp. A term may be a keyword or a URL link.
+
+This data model is essentially a directed graph. Each vertex is a data object, while edges are pointers in P . Each  2008 Second International Symposium on Universal Communication  DOI 10.1109/ISUC.2008.83     Figure 1. The architecture of CWI.
+
+ID: 00300 Content (K): ?I don?t agree with your opinion.? Tags (L): BLOG, COMMENT, Negative Opinion Pointers (P ): <reply-to, 00001>, <replied-by, 03071> Timestamp (T ): 2008-05-30 12:00:03  Figure 2. Representation of a comment to a blog post.
+
+edge is associated with a label. The major difference be- tween TLGM to previous models, such as BigTable [3], is that each data object may be associated with several tags (at- tribute names). Thus, one object can be described by sev- eral tags. For example, a comment to a blog post may be represented by TLGM as it is shown in Figure 2. The com- ment is opposite to the original post. Therefore, it is tagged with ?Negative Opinion?. Advanced applications may ex- tend tags with more semantic labels. These tags along with structure tags, such as ?BLOG?, ?COMMENT?, automat- ically labeled by the system when collecting the data, can all be used by users to query the data object. Users can also use the pointers to traverse in the graph and locate on other data objects.
+
+2.2 Query language  The query language over TLGM, named as TLGM-QL, is a SQL-alike language [11]. User may provide query con- ditions on tags, pointers, content, or timestamps. The al- lowed query conditions are listed in Table 1.
+
+TLGM-QL provides a set of aggregation or statistical functions over keywords. These functions include tradi- tional aggregation functions such as count and functions like co-occurrence. TLGM-QL is extensible. More func- tions can be added to meet the requirements of more appli- cations.
+
+Figure 3 shows a sample query for analyzing the key-  SELECT B1.keyword, association(B1.keyword, ?product?) FROM BLOG[now-1w, now] as B1, BLOG[now-2w, now-1w] as B2 WHERE appearance(B1.keyword) > 2?appearance(B2.keyword) AND B1.keyword = B2.keyword ORDER BY association(B1.keyword, ?product?) TOP 10  Figure 3. A sample query for keyword analy- sis.
+
+SELECT B2.content FROM BLOG&ORIGIN[now-1w, now] as B1, BLOG&COMMENT&Negative Opinion[now-1w, now] as B2 WHERE B1:[replied-by]=B2 AND B1.keyword contains ?Something?  Figure 4. A sample query for keyword analy- sis.
+
+words related to a specific product. It ranks the emergent keywords with high relationships with a given product in the last week, and returns the top 10 keywords to user. This may be useful in on-line advertisement for helping users to bid keywords.
+
+Figure 4 shows another sample query that finds all nega- tive comments to blog posts talking about ?Something?. It may be useful for public opinion analysis.
+
+3. System setting  DisG is developed over Hadoop 1, an open source Google File System (GFS) [6] and MapReduce [5] clone.
+
+In this section, the characteristics of Hadoop used by DisG are introduced briefly.
+
+1http://hadoop.apache.org/core/     Table 1. Symbols for presenting conditions in queries.
+
+Conditions Symbols Meaning Example tags & both tags appear BLOG&COMMENT defines data objects from comments of some blog time range [from, to] the time range BLOG[now ? 1w, now] defines time window of the last week pointer :[label] the link with the label FORUM : [replied? by] defines the reply of a forum post content .keyword terms or hyperlinks BLOG.keyword defines the content of a blog post  or .url in content  3.1 GFS-style storage  DisG relies on a distributed storage with one-master- multiple-data-server architecture. The master node is only responsible for ID to (data) nodes mapping and lookup (via hashing). Data are organized in chunks with fixed size.
+
+Each chunk is stored in multiple nodes, so that single-point failure would not affect the availability of the system. Fail- ure of master node can be recovered from data nodes? infor- mation.
+
+Data are stored and accessed in chunks. GFS and Hadoop only support appending of a chunk. Update on data is not supported. Data nodes may be accessed in parallel.
+
+3.2 Map-reduce  Map-reduce is a programming paradigm that splits a pro- gram task into two phases. It accepts input data items in < key, value > form. The map phase maps input data items into new < keynew, valuenew > pairs. Then, these pairs are grouped on keynew?s automatically. The reduce phase may conduct further process on valuenew?s with the same keynew.
+
+The map-reduce model greatly simplifies many data in- tensive computational tasks. It is suitable for large-scale distributed systems like GFS or Hadoop, since interaction between data on different nodes happens only in the auto- matic grouping, which is scheduled, and optimized.
+
+4. Storage and reconstruction of the graph  4.1 Overview  In DisG, data items are distributed to different data nodes based on their IDs. Apparently, data items are not clus- tered in this setting, since neighboring data items have large chance to be mapped to different data nodes. We take this approach due to two reasons:  1. Neighboring data items may not be collected together, thus they are not clustered in the beginning. Consider web pages collected by a Web crawler. A web crawler may schedule to download two linked web pages sep- arately to avoid overload a specific web server, while  unrelated web pages may be downloaded together to speed up the crawling.
+
+2. Distribute related data items to multiple nodes may in- crease the degree of parallelization of computation.
+
+Terms, tags, and labels are all indexed separately in forms of < ki, ID >, < ti, ID >, and < li, ID >. Note that, here, ki, ti and li become keys, while ID of data items are values. Furthermore, contents are indexed using an in- verted index. The implementation of inverted index using map-reduce is introduced in [5]. Thus, data items can be accessed via providing terms, tags, labels, or keywords (in contents).
+
+Even individual data items can be accessed via its prop- erties, it is not trivial to build up a graph repository for CWI.
+
+TLGM-QL queries may ask to retrieve a set of related data items, or some data items by providing a set of restrictions on properties. Thus, DisG implements an index to link data items distributed in the system. And it supports re-construct subgraphs efficiently.
+
+4.2 Index construction  A stored data object only contains IDs of other data ob- jects it is related (via pointers). To fulfill the information of where those related data objects are, DisG uses two map- reduce procedure to construcct the index. The first proce- dure construct the reverse link graph, similar to it is used to construct the reverse Web-link graph introduced in [5]:  Map Map < ID, (label, pi) > to < pi, (label, ID) >, in which pi is the new key.
+
+Reduce Collect the result to obtain < pi, {(labelj , IDj} >  Then, the second procedure redistribute the information to construct the index:  Map Map < pi, {(labelj , IDj} > to < IDj , (pi, Addri) >, in which Addri is the node ID of pi.
+
+Reduce Collect the result to obtain < ID, label, pi, Addri >.
+
+4.3 Subgraph re-construction  To re-construct a subgraph, a query with QID is sent to all data nodes with related data objects, which means the data object matches the query in any query constraint in tag, label, term, or content. Then, a map-reduce procedure is conducted to form the subgraph as follows:  Map Map all matched data objects oi to < QID, oi >, in which QID is the key.
+
+Reduce All ois are collected, so that a subgraph can be re- constructed by join the target of pointers with data ob- ject IDs.
+
+4.4 Enhancement  The basic storage, index, and reconstruction procedure introduced above may encounter serious performance issue.
+
+First, some data objects are hot ones that point to or are pointed by a large number of other data objects. Thus, data nodes storing these hot objects may be overloaded. Second, for some complex tasks that need to re-construct a large sub- graph, the node that conduct the reduce phase for the query QID may be overloaded, or it may take long time to fin- ish the job. DisG uses several techniques to distribute the storage or computation burden to different data nodes.
+
+1. For hot data objects with large amount of out-pointers, each of them are mapped to a set of virtual data objects, all of which are connected to each other. Pointers are distributed evenly to those virtual objects. The pointers between virtual objects are not resolved in subgraph re-construction until last.
+
+2. For hot data objects with large amount of in-pointers, they are identified in index construction, after the grouping following the first mapping phase. Again, the long list of {(labelj , IDj} is splitted and distributed to several data nodes, so that the second procedure can be conducted more efficiently. Furthermore, data node containing pi are informed to construct virtual data ob- jects for pi.
+
+3. While re-construct subgraphs, data objects are not ex- changed until last. Only ID of data objects, and a list of IDs in broken pointers, which means pointers whose target data objects are not stored locally, are ex- changed between data nodes in the grouping of map- reduce. Thus, the sketch of the result subgraph is first built. The real subgraph is constructed at last. This may greatly reduce the network consumption.
+
+4. The mapping phase of subgraph reconsutrution does not map all data objects to the same QID. It partitions  all data objects into several partitions. For each parti- tion, DisG generates a QIDi. All data objects whose ID belongs to that partition, or their broken pointers point to data objects in that partition are mapped to the QIDi. Thus, the computational burden of subgraph reconstruction is distributed.
+
+5. Resulting subgraphs are cached in DisG. Queries that generate these subgraphs are hashed and used as keys of subgraphs.
+
+5. Related work  TLGM is similar to WebSQL[2] and WebOQL[1]. Web- SQL and WebOQL are two query languages for access of Web data. WebSQL are designed to represent hyperlinks of web pages. Web pages can be accessed via SQL-like queries by providing query conditions on hyperlinks [2].
+
+WebOQL further extends WebSQL so that web pages them- selves are represented as a hypertrees. Hypertrees are fur- ther linked via hyperlinks link WebSQL. OQL-like query language is used for retrieval and reconstruction of Web data [1]. Similar to WebSQL and WebOQL, TLGM accepts high-level descriptive queries as description on required ser- vices. The difference is that in TLGM, tags, timestamps, and content are used as query conditions.
+
+Traditional centralized storage is not scalable enough for storing web data with huge volume. Large-scale distributed storage systems are often chosen as a solution for this kind of tasks. Cooperative File System [4], PAST [14], and OceanStore [8] are designed for storing files in distributed systems without coordinators. They rely on Distributed Hash Table (DHT) protocols, namely, Google File System (GFS) [6] is a system that uses centralized file lookup yet decentralized data access. GFS is designed for applications with huge amount of parallel access to large files, such as search engines. And it is reported to be very efficient and scalable [6]. DisG focuses on the problem of how to take advantage of such kind of distributed storage to manage complex data.
+
+Map-reduce [5] is a programming model for data inten- sive computing in large-scale distributed environments. It splits a computing task into two phases: the map phase and the reduce phase. In each phase, data are only processed lo- cally within each node, so that the cost of data transmitting can be saved. Dryad [7] is similar to GFS/MapReduce ex- cept that it is developed based on Microsoft Windows. Web data analysis and mining tools, such as Sawzall [10], Pig- Latin [9], and Web Studio [16], are developed using map- reduce or Dryad.
+
+6. Future work  DisG is still in its early development stage. There are several research problems remain, which are discussed as follows:  Structure index of graphs Though current implementa- tion supports data object lookup and subgraph recon- struction, to retrieve a subgraph given a path or graph pattern is still inefficient. The problem become even more severe while the patterns are regular patterns, in which wild-cards on content, tag, or even paths (struc- tures) are allowed. We are working on more sophisti- cated structure index for support such complex queries over graphs.
+
+Traverse in graphs Currently, DisG is designed for sub- graph reconstruction. However, DisG cannot support graph traverse, which means walk along with some pointers to visit a series of data objects, efficiently.
+
+Therefore, DisG is only a repository other than a full functional graph database.
+
+Hadoop modification for DisG Hadoop is a general plat- form for distributed storage and computing tasks.
+
+However, the storage and mapping scheme used by Hadoop is not convenient for DisG from certain per- spective. For example, the hashing function used in Hadoop is not designed for numerical attributes, or structure index. Therefore, we are working on mod- ification of Hadoop to better support DisG.
+
+Utilization of BigTable and Hbase for DisG Current im- plentation of DisG is directly upon Hadoop. BigTable (and its correspondance in Hadoop, Hbase), provides more complicated and useful functions for structured data management. We are working on the problem of DisG implementation over BigTable.
+

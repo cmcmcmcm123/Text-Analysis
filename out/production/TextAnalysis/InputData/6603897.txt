@@ -1,0 +1,188 @@
+Split File Model for Big Data in Low Throughput Storage
+
+Abstract?The demand for low-cost, large-scale storage is increasing. Recently, several low-throughput storage services such as the Pogoplug Cloud have been developed.
+
+These services are based on Amazon Glacier. They have low throughput, but low cost and large capacity. Therefore, these services are suitable for backups or archiving big data and can be used instead of offline storage tiers. To utilize such low throughput storage efficiently, we need tools for effective deduplication and resumable transfers, amongst others. We propose a split file model that can represent big data efficiently in low throughput storage. In the split file model, a large file is divided into many small parts, which are stored in a directory. We have developed tool commands to support the use of split files in a transparent way. Using these commands, replicated data is naturally excluded and effective shallow copying is supported. In this paper, we describe the split file model in detail and evaluate an implementation thereof.
+
+Keywords?low throughput storage; big data; split file model
+
+I. INTRODUCTION Currently, cloud computing is very popular and several  vendors have begun providing a variety of services.
+
+Amazon Web Services (AWS) is the pioneer amongst the cloud vendors. In particular, AWS has provided the Elastic Compute Cloud, which is the de facto standard of Infrastructure as a Service. Many vendors have developed novel services based on AWS. Recently, Glacier[1], which is new low-cost storage service with low throughput, has been included in AWS. Prior to Glacier, AWS provided other storage services such as the Simple Storage Service (S3) and Elastic Block Store (EBS). The cost of Glacier is much lower than these conventional storage services. EBS provides a small virtual peripheral disk with a maximum size of 1 TB and its performance is the highest of the AWS storage services. S3 provides a large virtual storage with a cost of 0.1 USD/GB per month. On the other hand, the cost of Glacier is 0.01 USD/GB per month, which is a tenth of the cost of S3. The reason why Glacier is so cheap is  because it is aimed at backups and archives. As such, Glacier is not suitable for general remote drives.
+
+Recently, however, several vendors have developed new online storage services that overcome this disadvantage of Glacier. Pogoplug Cloud[2] is one such online storage service. It realizes the use of storage as a network drive by embedding Windows Explorer.
+
+Furthermore, the cost performance of Pogoplug Cloud is higher than that of Glacier. Pogoplug implements a service called the personal cloud through which access to files stored on a user?s device is enabled. With such a service, if a user has sufficient devices, capacity is theoretically unlimited. Pogoplug Cloud is a service that uses Glacier as a device. The cost of Pogoplug Cloud is 5 USD/month with unlimited capacity. Therefore, for storage of more than 500 GB data, the cost of Pogoplug Cloud is less than that of Glacier. In addition, it can be available as a network drive from a PC or smart phone.
+
+As such, Pogoplug Cloud is both reasonably priced and provides convenient manipulation.
+
+However, Pogoplug Cloud has several issues, which are due to the use of Glacier. The purpose of Glacier is to provide backup or archive storage and thus, it may take a few hours to access the data. The reliability of Glacier is 99.999999999% on average over a year, but the throughput is very low. In our experience, the throughput of copying files to Pogoplug Cloud using Windows Explorer is 100 KB/s on average. So, it takes 3 hours to upload 1 GB and 100 days to upload 1TB.
+
+There are several options for improving the throughput of Pogoplug Cloud. For example, the throughput of special tools such as Pogoplug Backup and Web Access is better than that of Windows Explorer. Furthermore, a method for parallel access by more than one PC will improve the throughput. However, the maximum throughput is essentially bounded by that of Glacier.
+
+We also need an efficient method for resuming transfers of low throughput storage because transferring big data to such storage is often interrupted. In this paper, we propose the split file model, which uses low throughput storage such as Pogoplug Cloud effectively. In   DOI 10.1109/CISIS.2013.48     this model, we are able to suspend/resume the transfer of data. In this paper, we employ Pogoplug Cloud as low throughput storage. The essential difference between Glacier and Pogoplug Cloud is the cost. The fee for Pogoplug Cloud is not dependent on data size. Therefore, we need to reduce only the transfer time and not the data size.
+
+This paper is organized as follows: We describe several storage systems as related works in Section II. In Section III, we propose the split file model for big data. In Section IV, we describe an implementation of the split file model, which is evaluated in Section V. Finally we give our conclusions.
+
+
+
+II. STORAGE MODEL Here we compare low throughput storage and  conventional storage and discuss an effective combination thereof. As is well known, there are several layers of storage. The closer to the CPU the storage is, the faster and smaller it is, whereas the further the storage is, the slower and larger it is. In a sense, low throughput storage is the most distant from the CPU. Conventionally, tape is used as backup media. However, the Pogoplug Cloud could be used for backups instead of tapes.
+
+Recently, server memory has increased because in- memory processing is important. However, it is difficult to process big data using only memory. Therefore, large scale storage is required.
+
+Solid state devices (SDDs), which are faster than hard disk drives (HDDs), have also become popular. There are also some hybrid devices that combine high performance SSDs with large HDDs, the capacity of which is greater than 1 TB. In addition, other hybrid storage has been realized using only software such as Apple Fusion Drive.
+
+In small and middle business local area networks (LANs), network attached storage (NAS) and storage area networks (SANs) are used as shared storage. Generally, a SAN has higher performance and is more expensive than NAS, but it is limited in its usage. In addition, NAS can be used in an intranet/LAN, but not in an Internet/wide area network (WAN). The capacity of NAS is usually between 1 TB and 1 PB.
+
+In large scale distributed systems such as a data center, the scale-out method is more suitable than the scale-up method. In the scale-up method, many disk drives are connected to a server to enhance capacity. In the scale-out method, many servers, each with a few disks, are used to organize cooperative large storage. The performance of a scale-out system is greater than that of a scale-up system because the processing power is greater. However, in a scale-out system, several dependable technologies such as P2P and Hadoop are used to increase reliability. In fact, Glacier may be realized using such technology because it is managed in the Amazon data center. However, only a few IT companies have data centers. Many user companies use them as a cloud.
+
+Online storage is classified, according to its features, into the following three tiers: online, near-line and offline storage. Online storage stores frequently accessed data. It typically has a minimum required capacity with maximum performance, i.e., throughput. Offline storage is used for backups, typically to keep data for a long time.
+
+Thus, slow access of data is tolerated. Integrity and security are more important than performance.
+
+Conventionally, tapes and DVDs are used as backup media. Glacier is an alternative solution that is becoming very popular because it makes online backup possible.
+
+However, because Glacier has low throughput, it may be slower than sneaker-net, where a user physically brings a DVD on which to store the data. Near-line storage includes features between those of online and offline storage. Although it is not that frequently accessed, it should be possible to be accessed anytime. In addition, although latency is not required to be excessively short, it should not be too long. Therefore, online storage that is connected by a WAN is suitable for near-line storage. For example, a file server appliance, NAS, and Glacier can be used as online storage, near-line storage, and offline storage, respectively. Recently in our laboratory, a 10 TB file server was constructed using FreeBSD (RAID1, ZFS), while a 15 TB NAS was realized using Drobo FS (RAID6). Here we consider Pogoplug Cloud as offline storage. In this case, we need to discuss an efficient backup method. The file server deals with a working set of files, while NAS transfers files from/to Pogoplug Cloud on demand.
+
+
+
+III. THE SPLIT FILE MODEL To use low throughput storage efficiently, compression,  deduplication, and a resumable transfer method are required. Both Glacier and Pogoplug Cloud do not have compression or a deduplication mechanism. Such technology is used internally, but is not available to users.
+
+Thus, we employ near-line based compression and deduplication. For example, in almost all desktop operating systems (OSs), including Windows, Mac, and Linux, a zip file that archives many small files in a compressed state is used as a virtual directory with a file manager such as Explorer. .However, it is hard to dedup files in an archive. So, in near-line storage, an archived file is expanded to its original files, which are then deduped.
+
+There are several ways of ordering files, e.g., by type or by time. A time order is suitable for backups because old data can be fixed. However, type order can easily be used by humans. In online dedup method such as Apple Time Capsule, files ordered by type are automatically sorted into timed snapshots.
+
+Here we propose the split file model to realize resumable data transfer. Typically, when the transfer of a big data file is suspended, it takes a long time for it to     start again from the head of the file. Particularly, if the transfer is frequently suspended, it will be never finish.
+
+To avoid such a situation, we require a resumable transfer method that can resume the transfer from the point at which it was suspended.
+
+Fig. 1. Storage tiers.
+
+Before resuming the transfer of a big file, verification of those parts of the file already transferred is required.
+
+Generally, this takes a long time, as it is proportional to the transferred time. Thus, the transfer time could be doubled. If a big file is split into smaller parts and each part is verified once it has been transferred, verification time can be reduced. So, we propose the split file model, in which a big file is split into multiple parts of a uniform size.
+
+In such a split file model, each file has two states: a split state and a monolithic state. We employ the extension ?.div? to denote the split state. This is similar to a short cut with the extension ?.lnk? in Windows. In the split state, a file is split into blocks of a fixed size. In this paper, we employ 1 MB as the block size. The split files are stored in a directory with a name ending in ?.dir?. For example, a 10 MB file called ?a.pdf? is represented as the directory ?a.pdf.dir?, which contains ten 1 MB files named M00, .., M09, respectively.
+
+Fig. 2. Structure of files.
+
+Linking is useful to dedup split files. However, in online storage, OS dependent links such as hard and symbolic links are not available. Thus, we employ an  application level virtual link. A split file has at most one link source, to which this file links, and zero or more link destinations, from which this file is linked. The attribute ?link? shows the link source, while ?linked? shows the link destinations. File linked contains the link destinations in each link per line. The reference count of a split file is equivalent to the number of lines in linked + 1, where the +1 denotes a self link. The semantics of the virtual link is basically equivalent to a symbolic link. The attributes of a linked file are shared by the linking files. If an attribute of a link destination is changed, it is reflected in the link source, since the link source is only one instance.
+
+Fig. 3. Linking files.
+
+Since the relationship between the link source and destinations must be retained, attribute ?linked? of the link source is updated if a link destination is moved or removed. The ?link? attributes of the link destinations are also updated if a link source is moved or removed. A file can be removed if and only if its reference count is one.
+
+In the split file model, each block in a file can be compressed internally. In the case of compression, the size of each block is not constant and becomes variable.
+
+Internal compression is effective in reducing transfer time.
+
+However, since the compression ratio of block based compression is not greater than that of file based compression, it is optional.
+
+In the split file model, we introduce partial verification to support resumable transfer. We verify a file not only by its time stamp and size, but also by identification. Here, the hash value is used to identify the file. Generally, the possibility that the hash of a file equals the hash of a different file is very small. For example, if a suitable hash such as SHA1 is used, we can identify the file in practice.
+
+In our implementation, the hashes of split files M00, .., M09 are generated by sha1sum.
+
+The split file model is suitable for big data. Using the split file model, a big file can be stored by splitting it into smaller parts. Moreover, since it takes a long time to copy big data and as we cannot use the data for any other purpose during copying, we introduce a fast copying mechanism. As shown in Fig. 4, an ordinary copy is a deep copy. In a deep copy, the entire contents are copied at one time. However, in the split file model, a shallow copy is available, which means that only the references of     all the blocks are copied. Here the reference in a shallow copy is different from the link mentioned previously. In a shallow copy, when reading a block, if the block is an instance, the contents of the block are read from the instance. If the block is a reference, the contents of the block are read from the referred instance. When writing a block in a shallow copy, if a block is a reference, it is removed and then saved as an instance. In this way, when parts of a file are modified, modified blocks are created as instances. In addition, when copying a link file, the copied file is not a link file. The reference count of the copy is set to one.
+
+Fig. 4. Copying a split file.
+
+If an original file is modified during reading a shallow copy, the modified data will be copied. This follows the Unix semantics, but is not natural. Therefore, to avoid any confusion, it is often forbidden to manipulate big data during copying. The split file model can solve this issue.
+
+In the split file model, before copying, an original file is replaced with a copy and then the original file is frozen as read-only data. We call this finalization. The finalized split file is managed as shared data by the system. The reference count is embedded in each split file. Thus, we can remove unused files correctly according to the reference count method. However, in this paper, our target is large backup storage. In such storage, finalized files can be stored persistently and forever. Therefore, garbage collection of finalized resources is optional.
+
+It takes only a short time to finalize a split file. This process is carried out as follows. First, we create a directory that ends with ?.dir? and then all attributes are copied to the directory. Next, attribute ?referred? is added to the directory. Finally, each block is moved to the directory and then a reference is created instead of each block. Here the file size of a reference is zero. For example, the reference of M0 is called M0.ref. The relationship between the referrer and referee is managed by both the refer and referred attributes. If replacing a  block with a reference is atomic, we can safely use a file even while finalizing it. In this way, in the split file model, the time that a file is unavailable is kept to a minimum.
+
+Furthermore, in parallel processing, both an instance and a reference can be created simultaneously. However, even in such a case, the unneeded reference is removed when it is next accessed.
+
+The instances of finalized split files are stored in a common shared directory, such as Finalized Files, $HOME/.shared, and so on. The file name of such a finalized file is followed by its time stamp to avoid conflicting file names.
+
+Fig. 5. Finalized files.
+
+When big data is split into smaller blocks, the number of blocks could be too large to store in a file system. For example, most popular file systems such as ext4 and NTFS support enough entries in a directory for the purpose of normal use. However, if the number of entries is greater than a given threshold, performance is degraded.
+
+In low throughput storage, the transfer time for 1 MB data is about 10 s. This is the upper bound of user friendly responsibility. So, the number of blocks in a directory must be reduced. Since there are 1,000,000 blocks in a 1 TB file split into 1 MB blocks, the blocks are grouped into units such as G, T, P, and so on. Then the directory name begins with the unit name and the number of entries in each directory is limited to 1000. For example, directory G000 contains M000 to M999, and G001 contains M000 to M999. Here M000 in G001 means the 001000-th block. The structure of a split file is automatically updated by its size. If M999 already exists in a directory, the files are grouped into G000, a new G001 is created, and additional data is stored as G001/M000. If the block index is represented by the following 18 decimal digits eee,zzz,ppp,ttt,ggg,mmm, the path is represented as Eeee/Zzzz/Pppp/Tttt/Gggg/Mmmm.
+
+In this way, we can store any split big data in a native file system with the available resources.
+
+We often need to access multiple online storages. Using the split file model, fast linking and copying between storage systems are possible. However, if an online storage fails, the other dependent storage systems will     also be unavailable. Therefore, this practice is essentially risky.
+
+
+
+IV. IMPLEMENTATION Here we describe an implementation of the proposed  split file model. To deal with both split and monolithic states of a file in a transparent manner, an application programming interface (API) or command tools must be supported. Of course, an API is more desirable because it wraps OS system calls and provides the split file model to all applications. However, it is more difficult to implement from a technological viewpoint. So, we decided to implement command tools. In a Unix compatible OS such as Mac OS or Linux, files are manipulated using a set of file utilities. Therefore, users can manipulate split files in the same way using special command tools. In principal, a command level implementation cannot hide the difference between states completely. However, it can realize minimum interoperability. In this paper, we introduce the following commands for a Unix compatible OS.
+
+div [-z] monolithic_files  The command ?div? converts a monolithic file into a split file. The contents of the monolithic file are divided into multiple blocks in the directory. The attributes of the original file are also recorded. The recorded attributes are mode, ownership, and modified time. If the ?z option is specified, each block is internally compressed using gzip.
+
+undiv split_files  The command ?undiv? converts a split file into a monolithic file. The recorded attributes are also recovered.
+
+div-cat files  The command ?div-cat? is the same as the original ?cat?. It can be used like the redirect input ?<file? by ?cat file|?.
+
+div-out [?a] file  The command ?div-out? is equivalent to the redirect output ?>file?. It can be used like the redirect output ?>file? by ?| div-out file?. If the specified file does not exist, div-out creates it as a split file. If the ?a option is specified, it can be used like the redirect append ?>>file? by ?| div-out a file?.
+
+div-ls-l [files]  The command ?div-ls-l? is the same as the original ?ls - l?. It shows all recorded attributes of the split files. As a result, a user can regard the split file as a monolithic file.
+
+div-chmod mode files  The command ?div-chmod? is the same as the original ?chmod?. It changes the access rights of the specified split files.
+
+div-chown owner files  The command ?div-chown? is the same as the original ?chown?. It changes ownership of the specified split file.
+
+div-chgrp group files  The command ?div-chgrp? is the same as the original ?chgrp?. It changes the group of the specified split file.
+
+div-touch files  The command ?div-touch? is the same as the original ?touch?. It changes the last update time of the specified split file.
+
+div-ln-s src dst  The command ?div-ln-s? is the same as the original ?ln -s?. In the split file model, only symbolic links are supported.
+
+div-mv src dst  The command ?div-mv? is the same as the original ?mv?.
+
+div-rm files  The command ?div-rm? is the same as the original ?rm?. It deletes the specified split files.
+
+div-test-f/div-test-d file  Commands ?div-test-f? and ?div-test-d? are the same as the original ?test -f? and ?test -d?, respectively. Command div-test-f checks if the specified path is either a monolithic file or a split file, while div-test-d checks if the specified path is a directory even in the case of split files.
+
+Both these are used as test commands in if-statements.
+
+div-finalize split_file  The command ?div-finalize? finalizes the specified split file. It divides a split file into a readable/writable shallow copy part and a read-only shared frozen part.
+
+After finalization, only the shallow copy part can be modified. If a part has not been modified, it will be read from the shared part. The shallow copy parts are copied via a shallow copy.
+
+div-cp src dst  The command ?div-cp? is the same as the original ?cp?.
+
+If SHA1 is generated in a split file, transferring split blocks can be resumed safely. The finalized files are quickly copied via a shallow copy.
+
+
+
+V. EVALUATION Here we evaluate the tool commands we have  implemented. The evaluations below were carried out on a PC with the following specifications: Ubuntu 11.04 OS, Intel Core i3 CPU, 2 GB memory, and a 500 GB HDD.
+
+Furthermore, we used the Ubuntu Server 12.04LTS CD image (704950272 B, i.e., 705 MB) as the sample file.
+
+It took 24 s to convert the CD image into a split file using the div command, resulting in the image being divided into 705 blocks. It took 25 s to append the image to an empty split file. Furthermore, it took 20 s to rejoin the split files into an image. Incidentally, it took 15 s to copy the image using cp. Therefore, the overhead of div is 60% and the overhead of undiv is 33%. The overhead is relatively high because all commands are implemented by shell scripts.
+
+TABLE I. PERFORMANCE COMPARISON OF DIV COMMANDS process time [s] ratio [%]  div 24 160 div-out 25 167 undiv 20 133 cp 15 100  Disk usage in the monolithic state was 688432 K, while that in the split state was 690904 K. The disk usage increased by 0.4% when converting to a split file. Thus, the disk usage overhead is negligible. In addition, the disk usage for the link file was 12 K. This is smaller than an instance but larger than the OS level links. Linking can be used to reduce the required disk space. In this implementation, even by chaining links, only the original file is referred to. Therefore, even if a link file in a middle node is removed, the other link files do not need to be updated.
+
+Next, we evaluated the performance of copying. To copy a split file using a deep copy took 26 s. Because the time taken for cp was 15 s, the overhead is 73%.
+
+Even if deep copying is suspended, the split file model can eliminate unnecessary coping by verifying blocks. For example, let the source and destination be a.div and b.div, respectively. Assume that half of a.div has already been transferred to b.div, with the transfer having taken 11.8 s.
+
+A further 3.9 s was needed to calculate the SHA1 of b.div.
+
+Finally, copying the remaining part of a.div to b.div took 10.3 s. The total time is clearly less than 26 s owing to only copying half the file. Thus, the proposed approach can be used as a differential copy to write-once storage.
+
+TABLE II. PERFORMANCE COMPARISON OF DIV-CP Process time [s]  div-cp 26 div-cp w/ SHA1 37 2 x div-cp w/ SHA1 26  Copying first half of a 11.8 Calculating SHA1 of b.pdf 3.9 Copying second half of a 10.3  TABLE III. PERFORMANCE COMPARISON OF COPYING Process time [s]  Cp 15 deep copy >26  div-cp 26 div-cp w/ SHA1 37  shallow copy 8.5 div-finalize 3.5 div-cp finalized file 5.0  Here, the overhead of generating SHA1 cannot be ignored. For example, although it takes 24 s to split the CD image, it takes 37 s to convert the CD image together with generating SHA1. Thus, the overhead increases by  54%. This is because the shell script must read each block twice. This issue can be solved by writing the command tools in C or another programming language.
+
+In the case of transferring to low throughput online storage, only a deep copy is available and thus, the verification method mentioned above is viable. If the transfer is suspended, it takes double the time in the case of monolithic files, but the same time in the case of split files. However, in the case of a split file, it takes the same time again to split it. Therefore, transfer time is not always reduced.
+
+TABLE IV. DISK USAGE COMPARISON File disk usage  [KB] ratio [%]  Monolithic file 688432 100.0 Split file 690904 100.4 Link 12 0.002 Shallow copy 68 0.01  A shallow copy is suitable for copying a file in the same storage. The disk usage for shallow copy is 68 K, which is 0.01% of the original 690904 K. This is larger than the link file but smaller than a file instance. However, additional data is added to the shallow copy and thus the size of the shallow copy may increase to the size of an instance.
+
+Before shallow copying a split file, the split file must be finalized. The time for finalization is 3.5 s and for the shallow copy 5.0 s. In this way, even if the finalization time is added, the shallow copy is faster than a deep copy.
+
+Therefore, the split file model is suitable for low throughput storage, especially backup storage where the files are not basically modified.
+
+
+
+VI. CONCLUSIONS In this paper, we proposed the split file model, which is  an application level file model suited to transferring big data in low throughput storage. We also developed several tool commands to deal with split files transparently. Moreover, we evaluated the performance and resource utilization of the split file model to prove its effectiveness. According to the results, the split file model is suited to and effective for low throughput storage. The shallow copy has better performance and requires less resources than the conventional deep copy.
+
+In this paper we presented an implementation of a prototype, which has not yet been optimized. As such, there are many future works. If server-side applications can be deployed, it is possible for a client to transfer split files to a server and for the server to recover the monolithic file. However, in the Pogoplug Cloud, which is our target, this is not possible. Web DAV is suitable for implementing such a function.
+
+The split file model is regarded as an object-oriented file model. We can embed several attributes and methods into the split file. The attributes mentioned in this paper, namely, link, linked, refer, and referred, are examples of such user-defined attributes. Furthermore, we can realize user defined methods as executable scripts. For example, file.dir has four methods: file.dir/{size, get, put, append}, where size returns the file size, get realizes redirected input, put realizes redirected output, and append realizes a redirected append.
+
+Furthermore, the extension of ?.dir? shows the class of the split files. This class includes the above four methods.
+
+If a user defines a new class, new attributes and methods can be added to the class. For example, in an OS other than the Unix compatible Mac OS/Linux, i.e., Windows, a user can define suitable methods as a Windows executable file. Implementing such a mechanism is one of our future works.
+

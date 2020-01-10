@@ -1,0 +1,224 @@
+Communication Efficient Algorithms for Fundamental Big Data Problems
+
+Abstract?Big Data applications often store or obtain their data distributed over many computers connected by a network.
+
+Since the network is usually slower than the local memory of the machines, it is crucial to process the data in such a way that not too much communication takes place. Indeed, only communication volume sublinear in the input size may be affordable. We believe that this direction of research deserves more intensive study. We give examples for several fundamental algorithmic problems where nontrivial algorithms with sublinear communication volume are possible. Our main technical contribution are several related results on distributed Bloom filter replacements, duplicate detection, and data base join. As an example of a very different family of techniques, we discuss linear programming in low dimensions.
+
+Keywords-algorithm; communication volume; duplicate de- tection; data base; join; linear programming;
+
+I. INTRODUCTION  The development of high performance computing hard- ware has a continuing tendency to make computation almost free while communication increasingly becomes the bottle- neck for most nontrivial computations. This is particularly true for the highest level of the memory/communication hierarchy where distances and corresponding energy con- sumption are highest. For example, Borkar [1] argues that an exascale computer could only be cost effective if the communication capabilities (bisection width) scale highly sublinearly with the amount of computation done in the con- nected subsystems. For Big Data applications with nontrivial interactions between the input data elements, this means that the required communication volume at the highest level of the communication hierarchy is decisive for the overall performance. We therefore propose this issue as one focus for the study of algorithms for Big Data. In this paper we exemplify this by a number of related algorithms for fundamental algorithmic problems involving n elements each of size u bits distributed over p machines (processing elements ? PEs) of a network or cluster computer.
+
+We begin with basic definitions and results in Section II.
+
+Our first main contributions are distributed (dSBF) and replicated (rSBF) compressed single shot Bloom Filters introduced in Section III. dSBFs allow approximate member- ship queries with a false positive probability f+ requiring  roughly log(p/f+) bits of communication per element or query distributed over all PEs. rSBFs are good when a large number of queries are to be made to a moderately sized set. In this case about n log(1/f+) bits of communication volume are needed.
+
+In Section IV we use dSBFs for distributed duplicate detection. Using multiple passes, the dependence of com- munication volume on the object size can be made double- logarithmic. Section V generalizes these techniques to pro- cessing data base joins, carefully optimizing parameters and choices of data structures depending on the relative size of the joined relations. Our solutions use roughly a factor p less communication than previous methods.
+
+To give an example for an entirely different set of tools for communication efficient algorithms, in Section VI we turn to optimization problems whose solution are witnessed by a small subset of the input. We show specifically that linear programs with a constant number of variables can be solved using logarithmic communication volume. We expect that the techniques discussed there generalize to other problems like LP-type problems or support vector machines. As a side result, we give a communication efficient distributed algorithm for sampling without replacement.
+
+Related Work  The fact that the amount of communication is important for parallel computing is a widely studied issue, e.g., [2], [3].
+
+However, there are few attempts to make communication volume sublinear in the input size. Some models like the CGM model [4] even explicitly assume that all data is com- municated in every round and are most interested in counting rounds. Recently, communication avoiding algorithms have become an important research direction for computations in high performance linear algebra and related problems, e.g.
+
+[5]. However, these results only apply to nested loops with array accesses following a data independent affine pattern.
+
+Here we complement this with fundamental results for highly data dependent problems. Furthermore, the bounds in [5] become most interesting when the work done by the algorithm is superlinear in the input size and saving communication is done by replicating the input. In contrast,      in many big data applications, only near linear time work is reasonable and one cannot afford replication.
+
+Bloom filters are an established way to save communica- tion volume by providing a space efficient data structure for approximate membership queries. However, there is surprisingly little work on distributed Bloom filters. For example, a recent survey on Bloom filters in distributed systems [6] mentions no less than 23 variants but none that truly distributes the data structure over multiple PEs and thus scales to the largest data sets. Perhaps the reason is that classical Bloom filters are unattractive for remote queries since they require multiple accesses to random bit positions in a large bit-array. The only reference we found [7] does not discuss communication volume or compression but even using our compression techniques their approach would require a factor ?(log(1/f+)) higher communication volume. In [8] Bloom filters for each PE are replicated over all PEs. This implies that the local query complexity is a factor p larger than that of our approach for replicated Bloom filter replacements and that there is a factor up to ?(log p) higher communication volume because each of the p Bloom filters must have a factor ?(p) smaller false positive probability than our single Bloom filter.
+
+Joins are frequently processed using Bloom filters. The most distributed approach we found, sends Bloom filters along a pipeline of all PEs ending up on a master PE receiv- ing the full Bloom filter [9]. This results in a communication volume a factor ? p2 larger than what we need using a distributed data structure and a factor ? p larger than what we need to get a description of the whole set to all PEs.
+
+The motivation for communication efficient algorithms is similar as for the widely studied subject of streaming algorithms where one considers sequential computations on a data stream that is too big to be stored in memory (e.g.
+
+[10]). However, Moore?s law continues to increase available memory capacities while communication bandwidths grow much more slowly. Thus we expect the aspect of communi- cation volume to become more important in the future.
+
+Another closely related area are algorithms for mem- ory hierarchies, including parallel memory hierarchies [11].
+
+However, in these models it is impossible to obtain sublin- ear communication/IO volume for nontrivial computations because all the data has to be communicated vertically from the slow memory to the processors at least once. In contrast, our model with its horizontal communication can achieve sublinear communication volume.
+
+
+
+II. PRELIMINARIES  Consider a network connecting p identical PEs numbered 0..p?1. A multiset M of |M | = n objects, each of size u bits is distributed over the PEs.1 Our primary goal is to minimize  1Objects of variable size could be accommodated by most of our methods albeit leading to more complicated bounds.
+
+the maximum data volume V , to be sent or received by a PE. We are particularly interested in algorithms where this is possible with V = o(un/p), i.e., sublinear in the amount of data per PE. There are some further issues we have to take into account in order to arrive at practically relevant results: If possible, we would like to use only O(un/p) space per PE. Similarly, the total execution time should be of the same order as the best known parallel algorithm for the problem, at least for sufficiently big inputs. Of course, this depends on the concrete model of (parallel) computing we are using. The algorithms here could for example be formulated in the BSP model [3] where a communication round with maximum amount of data per PE h (maximized over sent and received data) takes time ? + hg for some machine parameters ? (latency) and g (gap). For the BSP model, our communication volume would be V =  ? i hi  where hi denotes the value of h for the i-th communication phase. Note that we are ignoring latencies here since the data volumes are supposed to be so big that they are irrelevant.2  Sometimes we assume that the input data is distributed uniformly and randomly over the PEs ? a technique that is frequently used anyway for load balancing reasons. This assumption can usually be removed at the price of a more complicated analysis that takes bottlenecks due to nonuni- form data distribution into account.
+
+Approximate Dictionaries: Bloom Filters are a popular data structure for space efficient dictionaries allowing an approximate membership query with a one sided error ? false positive answers can happen with some probability f+. We will build on a more space efficient replacement for Bloom filters which can be viewed as (compressed) single shot Bloom filters (SBF) [12]: Logically, we will deal with a large sparsely populated bit array b[0..m?1]. An element e ?M is represented by setting b[h(e)] to 1 for a hash function h.
+
+In this paper, for simplicity, we assume hash functions to be truly random functions. It is likely, that similar results can be shown for more realistic hash functions. Note that for such a system, f+ ? n/m. On the first glance, it appears that SBFs are much worse than traditional Bloom filters because they need (exponentially) more space. However by compressing b, this comparison reverses ? we can achieve lower space consumption than ordinary Bloom filters. In- deed, using an information-theoretically optimal encoding, we get an information-theoretically optimal approximate dictionary, i.e., one that minimizes f+ for a given amount of space. This saves 30% space over Bloom filters which are inherently inefficient by this amount even using an optimal number of hash functions. Of course, the actual space consumption will depend on the concrete approach to compression. We therefore encapsulate this implementation detail in a function bits (m,n) which gives the number of  2Of course there might be algorithms that chop communication into so many tiny phases that latencies become dominating again. But for the big data applications we have in mind, this is rather untypical.
+
+bits needed to encode n out of m one-bits. Information theory gives us3 bits (m,n) =  ? log  ( m n  )? ? n log men , which is also achieved up to lower order terms in practical implementations, even when certain basic operations have to be performed on them (e.g. [13]). For communication purposes only and possibly exploiting that we deal with random bit sets, there are very simple and fast implemen- tations achieving bits (m,n) = n(log mn +O(1)) involving small constants. In [12] we use Golomb coding [14] which is widely used in information retrieval and gives us the value 1.5 for the O(1) above.
+
+
+
+III. DISTRIBUTED SINGLE SHOT BLOOM-FILTERS  A. Distributed Single Shot Bloom-Filters (dSBF)  The basic idea is very simple. We distribute the bit array of an SBF over all processors ? b[im/p..(i + 1)m/p ? 1] is mapped to PE i (assuming that p divides m). Inserting or querying an element e then amounts to sending position h(e) mod (m/p) to PE ?h(e)p/m?.
+
+We now consider a batch of n dSBF accesses with at most ni operations on PE i. Insertions can be performed by constructing the compressed bit array corresponding to the involved hash positions on each PE. A BSP communication round will deliver these bit arrays to their respective targets where their encoded bit positions are inserted into the data structure. Note that this can be implemented using local space O(ni) machine words and linear time: The (random) positions of the bits are initially represented as integers and can be sorted in linear expected time, e.g., using bucket sort with ni buckets. This sorted array is then converted to a compressed bit array.
+
+Batched queries can be implemented similarly but we have to specify how the results are communicated back to their initiating PEs. Suppose PE A sends a message specifying n? one-bit positions to PE B. Then B replies with an array of just n? bits ? setting those with a positive reply to one. If there are few positive replies, compression can be used again. PE A can decode these replies by keeping track which of the one-bits it sent correspond to which query. A can precompute the required data structure while sorting the positions for compression ? it not only sorts plain positions, but position-query pairs. Decoding the reply array then amounts to scanning the sorted array of position-query pairs together with the reply array.
+
+Theorem 1: Batched insertions/queries to a dSBF b of size m with n operations can be done using expected communication volume  V = nmax  ( log  mp  n +O(1)  ) bits if n = ?(p2 logm)  where nmax is the maximal number of operations done on any PE.
+
+3Throughout this paper log x denotes the base 2 logarithm.
+
+Proof: (Outline) We first work with averages only. On the sending side, PE i sends p messages of average size bits (m/p, ni/p), i.e., overall  p ? ni p  ( log  m/p  ni/p +O(1)  ) = ni  ( log  m  ni +O(1)  ) ? nmax  ( log  mp  n +O(1)  ) .
+
+On the receiving side, each PE receives messages of total average size? i  bits  ( m  p , ni p  ) =  ? i  ni p  ( log  m/p  ni/p +O(1)  )  =  p  ? i  ni log m  ni +O  ( n  p  )  =  p  ( n logm?  ? i  ni log ni  ) +O  ( n  p  )  ? 1 p  ( n logm? n log n  p  ) +O  ( n  p  ) =  n  p  ( log  mp  n +O(1)  ) .
+
+The ??? stems from the convexity of the x log x. We see that the bottleneck will be on the sending side with the maximum volume being V = maxi ni(log mni +O(1)) bits.
+
+There will be fluctuations in the numbers of bits per mes- sage leading to corresponding fluctuations in the message sizes. Using the method of bounded differences [15] one can show however that for n = ?(p2 logm), the message sizes will be sharply concentrated around their mean, leading to the desired bound.
+
+Sending replies to queries involves at most one bit per query even if replies are sent uncompressed and thus con- tribute just a +1 hidden in the O(1) of the claimed bound.
+
+B. Replicating Single Shot Bloom Filters  When the number of queries is much larger than the number of elements of a SBF b, it makes sense to replicate b over all PEs. However, if the data contributing to b is initially distributed over all PEs, we nevertheless get a nontrivial situation. In particular, even concentrating b in some central place would seem to require at least (p? 1)bits  ( m, np  ) ?  n log mpn bits of communication. Here, we want to show that carefully adapting gossiping (all-to-all broadcast) algorithms to compressed representation of their payload, we can get rid of the ?p? in that term ? reducing communication volume by a factor log p. To keep things simple, we assume that the elements are distributed equally over the PEs and that p = 2d is a power of two. We expect that more general situations can be handled with more sophisticated algorithms and a more elaborate analysis. In our simple case, we can adapt the well known hypercube algorithm for gossiping     (e.g., [16]): We view the PEs as logically connected by a d-dimensional hypercube. Each PE initially builds a SBF for its local data. In iteration i of the algorithm, the local SBF is transmitted along dimension i of the hypercube.
+
+Subsequently, the local SBF is or-ed with the received SBF.
+
+This loop fulfills the invariant that after i iterations, all PEs in an i-dimensional subcube have an SBF describing the elements in that subcube. In particular, after d iterations, all PEs have an SBF describing all the elements.
+
+Theorem 2: For p = 2d and uniformly distributed ele- ments, a SBF of a set can be replicated using communication volume  V = n(log m  n +O(1)) bits.
+
+Proof: (Outline) In iteration i ? 0..d ? 1, each PE sends and receives a sparse m-bit vector with np 2  i one-bits.
+
+This requires np (2  i(log mpn2i +O(1)) bits of communication.
+
+Summing over all i yields  V = n  p  p?1? ?? ?? i<d  2i (log mn +log p?i? ?? ? log  mp  n2i +O(1)  )  ? n ( log  m  n + log p+O(1)  ) ?  n log p?2n+ 2np? ?? ? n  p  (p log p?2p+2? ?? ?? i<d  i2i )  = n(log m  n +O(1))  The break even-point between a dSBF and a replicated SBF (rSBF) is approximately at pn/ log1/f+ p accesses.
+
+The difference in communication volume is significant when both p and the accepted false positive rate (n/m) is large.
+
+
+
+IV. DUPLICATE DETECTION  We study duplicate detection in detail since it is a sim- ple, fundamental, well studied problem with a number of applications. For example, consider a distributed data base that computes an intermediate relation R as a result of local selections, projections, and aggregations. To process R further, one often has to detect/remove duplicate elements first. The algorithms described here are useful if there are only few duplicates or if a few false duplicates are acceptable (see Section IV-D for the latter case).
+
+Here, we are looking at algorithms that are able to mark all duplicates.4 Let d+max denote the maximum number of duplicate elements on any PE. We assume that the input consists of evenly distributed elements but we analyze the algorithms in a more general setting with ni elements on PE i since this is the way they are needed in subroutines. Let nmax:= maxi<p ni.
+
+We begin in Section IV-A with a simple algorithm which communicates all object keys based on a hash function deter- mining the PE responsible for an element key. Section IV-B  4Slight modifications of the algorithm could also eliminate duplicates.
+
+applies dSBFs from Section III to improve on this ? we still have a single, random PE responsible for each key but only a few bits of information are communicated for each key. This results in false duplicates which are repaired in a later phase employing the algorithm from Section IV-A. Section IV-C explains how communication volume can be further reduced by applying several passes of filtering using dSBFs. Finally, Section IV-D discusses problem variants where we only want approximated answers in the end or where we only want to decide whether there are duplicates at all. A more detailed description and additional experiments can be found in [17].
+
+A. Simple Algorithms  A naive algorithm would collect all the data on a single PE and perform duplicate elimination there, leading to a communication volume of V = un(1 ? 1p ) bits. Using a hash based repartitioning algorithm (RePart), this can be reduced to a value close to un/p: Each object e is sent to PE h(e) where h is a hash function. Each PE then performs duplicate elimination for the objects it receives. We will use this algorithm as the final stage of a filter cascade which tries to identify unique elements early.
+
+Lemma 3: Using hashing, duplicate elimination is possi- ble using expected communication volume  V = unmax + o (un  p  ) bits if n = ?(p2 log p) .
+
+Proof: (Outline) Every PE sends out its local data to random PEs. On the sending side, this amounts to com- munication volume unmax bits. The situation is somewhat more complicated for the receiving side since elements are assigned randomly and since they can occur multiple times. Let M ? denote the set of elements in the input multiset M . Let n? = |M ?| and let ce denote the number of occurrences of key e. Since we assume input elements to be unique locally, ce ? p. Define the indicator random variable Xej = 1 iff elements with key e are sent to PE j.
+
+Note that P [Xej = 1] = 1/p. The volume of data received by PE j is Vj :=  ? e?M ? ceXej . Since  ? e?M ? ce = un, we  get E[Vj ] = un/p for the expected communication volume on the receiving side of PE j. Using the arguments from [18] it can be shown that Vj is least sharply concentrated around its mean for the extreme case that n? = n/p and ce = p, i.e., when all keys are duplicates everywhere. The resulting system can then be analyzed in a standard way using Chernoff bounds leading to the claimed result.
+
+B. Using a Single Filter Pass  We now use a dSBF b to filter out most unique elements.
+
+The elements are inserted into b. On the receiving side, each PE checks which hash values occur only once. For the values occurring multiple times, it is signalled back that the corresponding elements may be duplicates. This can be done in the same way as reporting results in a dSBF query (see Section III-A). Only for those elements,     the hashing algorithm from Lemma 3 is run which has to actually communicate the elements.
+
+Theorem 4: Duplicate detection using the single pass filtering algorithm (1dSBF) can be done using expected communication volume  V = nmax(log p+ log u+O(1)) + ud+max(1 + o(1)) bits if n = ?(up2 log p).
+
+Proof: (Outline) By Theorem 1 we get communication volume nmax(log mpn +O(1)) for the filtering step and the false positive probability is f+ = n/m. We now choose5  m = un, i.e., f+ = 1/u. Hence, the expected number of unique elements per PE that have to be communicated by PE i due to a false positive reply is ni/u = ?(p2 log p).
+
+Moreover, this value is also sharply concentrated around its mean. Applying Lemma 3, we get communication volume u(nmax/u+ d  + max) + o(n/p+ ud  + max) = nmax(1 + o(1)) +  ud+max(1+o(1)) bits for running the hashing algorithm. The terms nmax(1+ o(1)) get absorbed by the O(1) term in the claimed overall bound.
+
+C. Multi-pass Filtering  When using a single filter pass, we have to achieve a small false positive rate in order to compensate for the high cost of the simple algorithm from Lemma 3. We can improve on that by performing two passes of filtering. The first phase accepts a much larger false positive rate than the second one, which only has to work on the elements not proven unique by the first pass.
+
+Theorem 5: Duplicate detection using the two-pass filter- ing algorithm (2dSBF) can be done using expected commu- nication volume  V = nmax(log p+log log up+O(1))+d+max(u+log up+o(u)) bits if n = ?(up2 log p).
+
+Proof: (Outline) For the first filtering pass, we choose m = n log up for the size of the dSBF.6 By Theorem 1, this implies communication volume nmax(log p log up+O(1)) = nmax(log p+ log log up+O(1)) bits for this pass.
+
+Now we apply the single pass algorithm 1dSBF to the remaining elements. In expectation, the remaining number of elements is bounded by n/ log up+pd+max and the maximal number of elements is reduced to nmax/ log up + d+max.
+
+Theorem 4 suggests a communication volume bounded by ( nmaxlog up + d  + max)(log p+ log u+O(1)) + ud+max(1+ o(1)) =  O(nmax) + d+max(u + log up + o(u)) for these elements.
+
+Theorem 4 may not be directly applicable since less then ?(up2 log p) elements might remain. This condition ensures that fluctuations in the number of duplicate elements hashed  5We can also work with general m and then choose an optimal value for m later. This leads to m = un ln 2. However, the difference to our choice disappears in the O(1) term.
+
+6A more detailed analytical treatment suggests m = n(ln 2 lnup + 0.746) but the cost difference is once more hidden in the O(1) term.
+
+to a PE in the final pass do not dominate the expected communication volume of the one-pass algorithm. However, here it suffices that the fluctuations do not dominate the communication of the overall two-pass algorithm. Hence, n = ?(up2 log p) is again a sufficient condition.
+
+Summing the communication volume of the first pass and of 1dSBF yields the claimed result.
+
+Additional passes can further reduce the communication volume in case of small d+max. However, the payoff for such additional complications is small. In particular, a cost of log p bits per element is inherent in dSBFs for any meaningful false positive rate.
+
+D. Problem Variants  The communication volume for duplicate detection changes significantly if we change the problem definition. If we are satisfied with marking likely duplicates, accepting a false positive rate of f+, we do not need to actually send the elements. The single pass algorithm (called 1dSBFf ) will choose m = n/f+ for the size of the dSBF, achieving com- munication volume nmax(log p/f+ + O(1)). For the two- pass algorithm (called 2dSBFf ) we want to choose sizes of the dSBF that optimize communication volume. A near optimal choice is m1 = n log pf+ and m2 =  n f+?log2(p/f+) .
+
+This leads to communication volume  V = nmax(log p+ log log p  f+ +O(1)) + d+max log  p  f+ bits.
+
+If we just want to check whether there are any duplicates, the problem becomes easier with growing number of dupli- cates. We only outline how this works. We partition the input elements into k groups using a hash function hs : M ? 1..k.
+
+Note that this can be done by local computation. Now we run duplicate detection on one group after the other until we have found a duplicate. In expectation we have to look at only O(?k/d	) groups if d is the total number of duplicates.
+
+In practice there is a trade-off between too small groups that incur overheads for load imbalance, setup costs etc. and too large groups that do not give optimal performance if d > k. We can counter this by starting with a small group size and double the group size in each iteration until a size is reached where setup costs and load imbalance is negligible.
+
+This happens at group size ?(p2 log p).
+
+E. Efficient Implementation  As already pointed out in Section III-A, sorting the local hash values can be done in linear expected time using bucket sort. Local duplicate elimination can be done using the result of this sorting step. On the receiving side there is no need to explicitly store a local SBF. The p received messages can be decompressed and merged on the fly ? discarding the results except for actual collisions and their positions in the input messages. To avoid the log p factor work overhead we would get from a traditional comparison based p-way merging algorithm, we once more exploit the randomness     of the input. We split the range of m/p hash values a PE is responsible for into windows of size ? (pm/n). Merging works on one window at a time. The window can be represented as a hash table of size as little as O(p) or as an array with pm/n explicit entries. Processing a window entails looking at each sequence in turn, consuming the keys falling within the current window. The data structure for the window is likely to fit into cache, allowing faster practical running times than either comparison based merging or using a single window for the entire range of values.
+
+In the likely case that multicore processors are available at each local node, all the local processing can be parallelized relatively easily. For example, the merging process can assign one window of values to each core.
+
+F. Experimental Evaluation  In order to substantiate the theoretical benefits of using dSBF-based filtering over simple hash-based repartitioning for duplicate detection, we implement both algorithms and compare their performance in terms of execution time.
+
+Experimental Setup: Our test platform is a distributed memory cluster system. Each node consists of two Octa- Core Intel Xeon E5-2670 CPUs clocked at 2, 6 GHz and 64 GB of main memory and is running Suse Linux Enterprise (SLES) 11 SP2 with kernel version 3.0.42. The nodes are connected by an Infiniband 4x QDR interconnect with a theoretical point-to-point bandwidth of 4 GB/s.
+
+For communication, we use OpenMPI 1.6.4 compiled with --enable-mpi-thread-multiple. All implementations are compiled using GCC 4.7.2 with -O3 -mtune=native -march=native -std=c++11 -fopenmp. We use OpenMP [19] as well as the Intel R?  Threading Building Blocks library version 4.1 [20] to exploit shared-memory parallelism within each node.
+
+Checkpoints that include MPI operations are measured using wall-clock time, while pure intra-node operations are measured using CPU time. For each experiment, we average all timing values over all PEs and over 25 successive iterations.
+
+Our input dataset consists of 227 records per node. The records have a fixed size of 104 byte (u = 832). A duplication factor ? controls the number of duplicates ? for n elements there are ?n/2 keys appearing twice on randomly chosen but different PEs and (1 ? ?)n unique elements. Every PE gets the same number of elements.
+
+Implementation Details: The hash-based repartitioning algorithm from Section IV-A (RePart) starts by hash- partitioning the input data into p messages. This operation is performed in parallel. After distribution, we use the traditional sort+scan approach to detect duplicates in the received messages. The sorting phase is parallelized by using the parallel version of std::sort provided by the GNU C++ Library [21]. We chose the traditional sort+scan  approach as it outperformed our sequential hash-based im- plementation.
+
+The 1dSBF algorithm from Section IV-B begins with a local preprocessing phase: Each node hashes its input tuples and sorts the resulting hash values. Both operations are performed in parallel. We implemented a parallel radix sort based on the concepts of [22] in order to exploit the fact that we deal with (random) integer keys.
+
+The batched insertion is performed by sending the hash values to the respective PEs that are in charge of the corresponding part of the distributed single shot Bloom filter. The sorted sequence of hash values is therefore com- pressed, distributed and decompressed in a pipelined fashion.
+
+We adopt the Golomb coding implementation of [12] to perform encoding and decoding of a message in parallel.
+
+MPI libraries provide efficient black-box implementations for collective communication operations. However in order to be able to pipeline compression and communication, we use our own implementation of the 1-Factor algorithm [23] for all-to-all communication. The algorithm uses p pairwise message exchanges to distribute the p messages of each PE to their corresponding destinations. We overlap compression and communication by interleaving parallel Golomb com- pression with these message exchanges. Microbenchmarks showed that our non-compressing 1-Factor implementation achieves a throughput of at least 1.6 Gb/s for more than 32 PEs, while the variant using pipelined compression achieves a constant throughput of around 3 GB/s for the same number of nodes.
+
+To identify the global hash collisions in the received messages, our current version of the 1dSBF algorithm uses a parallel p-way merging algorithm based on the loser tree implementation provided by the GNU C++ Library [21]. We plan to further improve this step by implementing the window-based merging approach as described in Sec- tion IV-E.
+
+Once the hash collisions are signalled back to their originating PEs, the algorithm proceeds analogously to the repartitioning algorithm: The remaining elements, which could not be identified as distinct by the filtering pass, are distributed and the final duplicate detection phase identifies the real duplicates using the previously described sort+scan approach.
+
+In both algorithms, we use our implementation of the 1- Factor algorithm to distribute the input tuples. Experiments showed that the default all-to-all implementation of the OpenMPI library does not scale with increasing message sizes and an increasing number of PEs. We attribute this to the fact that communication happens in a synchronized fashion, i.e., the algorithm waits for each message transfer to complete before issuing the next communication operation.
+
+As our 1-Factor implementation does not synchronize on each pairwise message exchange, it outperformed the library counterpart.
+
+Experimental Results: The results of our experiments are shown in Figure 1. Figure 1a compares the overall running time of the RePart algorithm from Section IV-A to our 1dSBF implementation for an increasing number of nodes and a duplication factor of ? = 0, i.e., an input dataset that does not contain any duplicates.
+
+The 1dSBF algorithm clearly outperforms the simple hash-based repartitioning algorithm as its total execution time is less than one third of the time it takes the RePart algorithm to communicate the input dataset. Note that this performance advantage is independent of any potential op- timizations applied to the computation phases of the repar- titioning algorithm.
+
+Figure 1b details the cost of the different algorithm steps per input element for p = 64 nodes and an increasing duplication factor ?. Again, the 1dSBF algorithm outper- forms the repartitioning algorithm. Only for an input dataset consisting of 50% duplicates, it is slightly slower than the simple approach. The benefits of filtering distinct elements using dSBF-based preprocessing decrease as the total num- ber of duplicates increases, because 1dSBF falls back to the repartitioning algorithm on all elements that could not be identified as distinct. In our current implementation, the tipping point is at slightly less than 50% duplicates. After that, the postprocessing phase (albeit being always faster than the corresponding phase of RePart) starts to dominate the overall running time. We believe that by optimizing our implementation further, we can change the tipping point in favor of 1dSBF, since the partitioning phase on the ? 50% remaining records currently takes longer than on the entire input in RePart.
+
+
+
+V. JOIN  An (equi)join J = R ?? S of two data base relations R and S looks for all elements of R?S where certain specified key-columns of R and S have the same value. W.l.o.g. we assume |R| ? |S|. Joins are one of the most important operations on relational data bases. We are interested in the case where R is big and possibly S is big, too, with both relations distributed over all nodes. To simplify the exposition, we concentrate on the most difficult part of the operations ? finding the matching key columns of R and S (a semijoin). The standard join implementation for big data sets is to build a hash table on S and to search this hash table for each row of R.7 In our setting, this means a distributed hash table for S. We then have to communicate all keys of |S| (while building the table) and the keys of R (while searching).
+
+We can improve on this, in particular for the case that J is small. The approach is quite analogous to duplicate detection. We outline the version with a single filter pass  7There are also implementations based on sorting but with respect to communication volume this makes little difference.
+
+16 24 32 46 64          1d SB  F  1d SB  F  1d SB  F  1d SB  F  1d SB  F  Number of nodes  R un  tim e  [s ]  dSBF preprocessing pipelined compression & distribution identify hash collisions distribute collision indicators mark collided hashes partitioning distribute input tuples final duplicate detection distribute duplicate identifiers mark duplicate input tuples  R eP  ar t  R eP  ar t  R eP  ar t  R eP  ar t  R eP  ar t  partitioning distribute input tuples final duplicate detection  (a) Overall running time for an increasing number of PEs and a fixed duplication factor of ? = 0, i.e., a dataset the does not contain any duplicates.
+
+0.0 0.001 0.01 0.1 0.25 0.5         1d SB  F  1d SB  F  1d SB  F  1d SB  F  1d SB  F  Duplication factor ?  R un  ni ng  tim e  pe r  el em  en t  of no  de [n  s]  R eP  ar t  R eP  ar t  R eP  ar t  R eP  ar t  R eP  ar t  (b) Running time per element of a node for p = 64 nodes and an increasing duplication factor ?.
+
+Figure 1. Running time comparison of the simple repartitioning algorithm (RePart) and our single-pass filtering algorithm (1dSBF) for detecting duplicates in a dataset consisting of 227 104 byte integer tuples per node.
+
+in more detail. We generalize dSBFs to perform approxi- mate set intersection: Elements x ? R whose hash value h(key(x)) ? 1..m do not collide with any hash value h(key(y)) with y ? S certainly do not contribute to the result J and vice versa. Filtering thus amounts to exchanging sparse bit arrays approximating R and S, intersecting the pieces locally, and reporting those hash values that show up in both arrays. On these elements, we then perform the standard hash join described above. To simplify the involved notation, we assume here that R and S are randomly distributed over the nodes. Otherwise, we have to introduce separate notations for the maximum number of elements from R, S located on any PE and also for the maximum number of elements involved in the join result. This can all be handled and may be important for a robust general purpose implementation but it would obfuscate the insights into the basic algorithm.
+
+Theorem 6: Consider relations R and S whose keys can be represented by u bits and which are randomly distributed over the PEs. If |R| = ?(up2 log p) then the rows con- tributing to J = R ?? S can be computed using expected communication volume  V = |R| p  ( log  up  1 + |R|/|S| +O(1) ) + |S| p  log up+ u j  p  bits where j is total number of elements in R and S contributing to J .
+
+Proof: (Outline) Once more we only work with the averages and leave out the analysis of random fluctuations.
+
+By Theorem 1, the expected communication volume for the filtering phase will be |R|p (log  mp |R| +O(1)) for the elements  of R and |S|p (log mp |S| +O(1)) for the elements of S. Since  |R| ? |S|, we can drop the O(1) in the second term.
+
+The probability that a particular element of R collides with some element of S is bounded by |S|/m and, vice versa, the probability that a particular element of S collides with an element of R is bounded by |R|/m. Hence, the expected communication volume for the final hash join is u p (j+ |R| |S|m + |S| |R|m ) = ujp + 2u|R|?|S|mp . Summing the terms for the communication volume and optimizing for m leads to m = 2 ln 2?u|R|?|S||R|+|S| . With this choice of m, the communica- tion volume associated with hash collision disappears in the O(|R|) term. For the same reason we can drop the factor 2 ln 2 in the value for m. The argument of the logarithm mp |R| then becomes  u|S|?|R|p |R|(|R|+|S|) =  u|S|p |R|+|S| =  up 1+|R|/|S| .
+
+The argument of the logarithm mp|S| can be estimated as u|S|?|R|p |S|(|R|+|S|) =  u|R|p |R|+|S| ? up. Putting all of this together  leads to the claimed bound.
+
+
+
+VI. OPTIMIZATION PROBLEMS There are a number of very interesting results on optimiza-  tion problems where we have a small number of variables but possibly a huge number of constraints. Often optimal solutions are witnessed by a small number of constraints,  i.e., the optimal solutions for this small number of con- straints is also the global optimal solution ? it fulfills all the constraints. These problems often have solution algorithm running in time linear in the number of constraints. For example, the smallest enclosing disk for a set of points in the plane is defined by two or three of these points ? regardless of the input size. This small witness set property means that we can at least test a solution for optimality in a very communication efficient way ? just broadcast it to all PEs and test locally whether it fulfills all the constraints. We still need to address all other components of the actual solution finding algorithms but it seems that for these problems, communication efficient algorithms could be possible. To give a concrete example algorithm, we look at one concrete problem that is already fairly general ? linear programming with a small number of variables:  Theorem 7: Consider a linear programming problem with n constraints involving a constant (and small) number of variables d where the constraints are distributed uniformly over the PEs. This problem can be solved using expected communication volume V = O(log n log p) and expected local work O(n/p+?n log n).
+
+Proof: (Outline) The claim is a consequence of the bound for the mixed recursive/iterative algorithm x?m from [24]. This sequential algorithm runs in time O ( d2n+ (d log n)O(d)d/2+O(1) + d4?n log n  ) . The algo-  rithm performs O(d) outer iterations. In each outer iteration, it chooses a random sample of d  ? n constraints, calls another  iterative algorithm to find a solution x? for this subproblem, and uses x? to throw away uninteresting constraints. This in- volves finding the set of constraints violating x?, which is the most work intensive operation. The algorithm is done when no constraints violate x?. The inner iterative algorithm itself performs O(d log n) expected iterations and works similarly: In each iteration it chooses a sample of size O(d2), which is solved using an exponential time exact method. The algorithm uses reweighting of the sampling probabilities of the constraints ? doubling weights of constraints violating the current solution.
+
+To slightly simplify the exposition, we now hide the d-dependent terms behind asymptotic notation.8 The key observation is that finding violating constraints and their potential reweighting, both in the inner and outer loop, is a completely local operation except that it requires a broadcast of the (constant size) solution. Since the input is uniformly distributed, this is also perfectly load balanced in the outer loop. Sampling, even in the weighted case, can also be done mostly locally using the following algorithm: We arrange the PEs as the leaves of a balanced binary tree. First, in an upward pass, we compute the sum of the weights for each  8The more detailed bound would be commu- nication volume O(d logn log p) and local work O ( d2n/p+ (d logn)O(d)d/2+O(1) + d4?n logn  )     subtree in parallel. Then, in a downward pass, the root of a subtree gets a contingent of k samples to be generated from above and generates a B(k, a/(a+b)) binomially distributed random variate x where a and b are the total weight of the left and right subtree respectively. A contingent of x random samples is then given to the left subtree and a contingent of k ? x samples to the right subtree. The bottleneck in the communication volume lies in solving the constant size small subproblems of the inner loop at some designated processor, which involves gathering the relevant constraints.
+
+
+
+VII. CONCLUSION  We introduce (distributed) single shot Bloom filters as a useful tool for reducing communication volume in dis- tributed settings ? often allowing sublinear communica- tion volume. We demonstrate this for duplicate detection and joins. We expect that further problems can be solved with similar techniques. Many more problems should be considered for achieving sublinear communication volume.
+
+A natural synthesis with streaming algorithms could be distributed streaming algorithms where data arrives at many nodes and we neither have the memory to store all of it nor the communication bandwidth to communicate it. It will be interesting to see to what extent the techniques developed for classical streaming algorithms transfer to a distributed setting with focus on communication volume.
+

@@ -1,0 +1,334 @@
+SMAC: Subgraph Matching and Centrality in Huge
+
+Abstract?Classical centrality measures like betweenness, closeness, eigenvector, and degree centrality are application and user independent. They are also independent of graph semantics.
+
+However, in many applications, users have a clear idea of who they consider important in graphs where vertices and edges have properties, and the goal of this paper is to enable them to bring their knowledge to the table in defining centrality in graphs.
+
+We propose a novel combination of subgraph matching queries which have been studied extensively in the context of both RDF and social networks, and scoring functions. The resulting SMAC framework allows a user to define what he thinks are central vertices in a network via user-defined subgraph patterns and certain mathematical measures he specifies. We formally define SMAC queries and develop algorithms to compute answers to such queries. We test our algorithms on real-world data sets from CiteSeerX, Flickr, YouTube, and IMDb containing over 6M vertices and 15M edges and show that our algorithms work well in practice.
+
+
+
+I. INTRODUCTION  Classic network centrality measures are defined on graphs without semantical attributes. Only the structural position of a vertex determines its centrality. Unfortunately, this means that much information present in real-world social networks is neglected when deciding which vertices are ?central?. In real-world social networks, vertices have properties, and so do edges. For instance, in Facebook, vertices may represent males or females, as well as country of origin, and more.
+
+Likewise, edges in Facebook may reflect ?friend? relationships or co-membership in a group. On LinkedIn, vertices may have properties such as job title, number of years with an employer, identity of an employer, etc., while edges may reflect direct links between people, membership in groups, co-worker, co-author, or other similar relationships that can be easily inferred from LinkedIn data. In addition to ?self- declared? data provided by users of social networks, there is also much ongoing work on the problem of inferring such vertex properties from social media information.
+
+In many applications, the combination of semantic prop- erties of vertices and the semantical relationships between vertices is very important. For example, a LinkedIn marketing application being used by an auto parts company P might consider a user ?u to be important if ?u is a purchasing executive at an auto manufacturer ?a and he has been there for at least z years and there exist 2 employees in company P who are connected to him in LinkedIn. The auto parts company P might in this case, ascribe a score to ?u?s importance  which is a function of ?z (and possibly a function of various attributes of ?u including his salary, position in the company, etc.). However, they may also look for other patterns, e.g.
+
+user ?u is considered important if he is a VP of Production or higher at an auto-manufacturer and he has been there at least z years and he is connected (via a path of length 2) to at least 3 employees in the company via LinkedIn. Here again, a score might be ascribed to ?u?s importance that is dependent on the value of z. And of course, if the same person pops up in both patterns (in general, if the same person is important in many different patterns, this might mean she is important for many different reasons), they may want to ?bump up? her importance score. Existing centrality measures like betweenness centrality, closeness centrality, degree centrality, and eigenvector centrality are incapable of directly supporting such user or application needs.
+
+In this paper, we propose SMAC (short for Subgraph Matching and Centrality), a framework where users can ex- press their own notion of what nodes are important using a mix of structural properties of the graph as well as semantic properties. This is done by three devices: (i) users can specify a set of subgraph queries, thus achieving certain structural requirements, (ii) users can specify constraints on node proper- ties (e.g. number of years a person has been at a company), and (iii) users can specify how to score the importance of a node based on their needs. Moreover, in SMAC, if an application so desires, it can incorporate classical centrality measures of nodes or Klout scores (in Twitter) as node properties and then users of that application can ask queries and specify constraints on those properties (e.g. ?u?s betweenness centrality should exceed a threshold). In short, SMAC provides power to end users and app developers to ask queries that they could not ask before which are useful and relevant to the users or applications.
+
+With SMAC we allow user defined importance scores for vertices as opposed to classical centrality measures which do not allow users to define their own notion of centrality.
+
+This provides a new and different way to look at centrality measures. We note that with a certain amount of ingenuity, SMAC queries can be built on top of the SPARQL query language and solved by RDF database engines. We briefly describe how to do this in Section IV. However, our optimized algorithms showed to be up to 16 times faster than a famous RDF database query engine so called JENA triple store in experiments on real-world data. Our algorithms extend exist-  SocialCom/PASSAT/BigData/EconCom/BioMedCom 2013  DOI 10.1109/SocialCom.2013.27     ing subgraph matching algorithms. For our experiments, we modified the algorithm of [1] because it is a disk-based graph database which is suitable for large graph data. However, with a few modifications other subgraph matching algorithms could be used as well.
+
+In summary, the principal contributions of this paper are as follows.
+
+1) We present a mechanism by which an end-user can specify an important measure for his specific social network application and mission. This mechanism can be completely independent of classical central- ity measures or leverage them as the user desires.
+
+Moreover, we allow the user to leverage both the semantic properties of vertices as well as the seman- tical nature of edge relationships in specify his notion of importance. A SMAC centrality measure looks for the embedding of vertices in specific network substructures (Section II).
+
+2) We show how SMAC centrality queries can be an- swered - we present a basic algorithm (Base) and slightly advanced variant (ABase), both quite simple.
+
+Building on that, we present the SMAC-Answer algorithm that utilizes sophisticated pruning methods to answer SMAC queries efficiently (Section III).
+
+3) We presents the results of experiments on 4 real- world datasets CiteSeerX, IMDb, Flickr, YouTube.
+
+Our experiments show that we can find the top?k vertices in response to a SMAC query quite efficiently even on networks with over 6M nodes and over 15M edges (Section IV).
+
+???? ??? ? ??  ??  ?	?  ? ?? ?????  ?? ????  ? ???  ????  ?	??? ?????	?????  ????  ???? ?????  ????  ?????  ???????!?" #? ??		!?" $?	???!%???!	#? & ????????  ?????  ' ( ')  '  *'  '  +  ',  * ' '  '  ' '  '  '  ??-  ?  ?  ????	%  +  .
+
+!/???  12???&  12???&  31!1???  31!1???  31!1???  12???&  Fig. 1: Example graph database of a social network with multiple entity and relationship types.
+
+
+
+II. SMAC QUERIES  Throughout this paper, we assume the existence of arbitrary but fixed mutually disjoint sets VP of vertex predicate symbols, set EP of edge labels, and set VAR of variable symbols. All variable symbols start with a ???, e.g. ?x. Each p ? VP has an associated domain, dom(p) which is some set disjoint from each of VP,EP,VAR. However, it is possible that p, q ? VP and dom(p) ? dom(q) ?= ?.
+
+Definition 2.1 (Graph Database): A graph database (GDB for short) is a triple G = (V,E, ?) where V is a finite set whose elements are called vertices, E ? V ? EP ? V  ?? ??  ? ??  ??? ??  ? ??  ??		?	?? ?  ??????? ?? ?	??	????	???  (a)  ??  ??  ??  ??? ? ?????????  ?? ? ?????  ??? ?  ?????? ?  ????? ?  ?? ??? ?  ?? ??? ?  ?? ??? ?  ?? ??? ?  ?? ??? ?  ?  (b)  Fig. 2: Graphic representation of two pattern queries. The gray ovals represent constraints and the smaller white rectangles represent numeric scoring terms of vertices.
+
+is a finite set whose members are called labeled edges and ? : V ? VP ?  ? p?VP dom(p) is a property function  that satisfies the requirement that for all v ? V, p ? VP, ?(v, p) ? dom(p).
+
+Here, ?(v, p) is the value of property p that vertex v has. Given a GDB G, we use VG , EG , ?G to denote the set of vertices, edges, and property functions associated with G. Figure 1 shows a sample LinkedIn-style GDB with nodes having type properties (e.g. person, company), as well as title (e.g.
+
+VP Production, Purchasing, etc.), and years. For instance, ?(Anna, years) = 4, while ?(Celin, title) =?VP Prod?.
+
+Throughout this paper, we assume that G = (V,E, ?) is an arbitrary but fixed graph. We use R to denote the set of all non-negative real numbers.
+
+Definition 2.2 (Term;Numeric Term): (i) Every member of? p?VP dom(p) is a term. If nt ?  ? p?VP dom(p) ? R, then nt  is a numeric term.
+
+(ii) If ?x ? VAR and p ? VP, then ?x.p is a term. If dom(p) ? R, then ?x.p is a numeric term.
+
+(iii) If nt1, nt2 are numeric terms, then nt1+nt2 and nt1?nt2 are numeric terms.
+
+A term is ground if no variables occur in it. We say a term t is solely about variable ?x if ?x is the only variable occurring in t.
+
+With reference to the example pattern query (to be formally defined later) shown in Figure 2(b), ?d.years+?e.years+?f.years is a numeric term. We assume that all ground numeric terms are evaluated in the obvious way, e.g. the numeric term 2 + 3 is evaluated to 5.
+
+Definition 2.3 (Constraint): (i) If t1, t2 are terms, then t1 = t2 and t1 ?= t2 are constraints.
+
+(ii) If nt1, nt2 are numeric terms, then nt1 < nt2, nt1 ? nt2, nt1 > nt2, nt1 ? nt2 are constraints.
+
+(iii) If c1, c2 are constraints, then c1 ? c2 is a constraint.
+
+We say constraint C is solely about variable ?x if ?x is the only variable occurring in C.
+
+Again, w.r.t. the example pattern query shown in Figure 2(b), we might require that ?d.years ? 2? ?e.years ? 2.
+
+Definition 2.4 (Pattern Query): A pattern query is a 4- tuple PQ = (SQ,?, ?, lagg) where:  1) SQ is a pair SQ = (QV,QE) where QV ? V ?VAR, QE ? (V ? VAR)? EP? (V ? VAR). SQ is called a subgraph query.
+
+2) ? associates a constraint that is solely about ?x with each variable ?x ? QV ? VAR.1  3) ? is a partial function from QV ? VAR to numeric terms s.t. there is at least one ?x ? QV ? VAR which is mapped to a numeric term with ?x occurring in it.
+
+4) lagg is one of four ?local? aggregation function (either MIN, MAX, SUM, AVG).2  Suppose SQ = (QV,QE) is a subgraph query. A substi- tution is a mapping ? : QV ? VAR? V . Thus, substitutions assign vertices in a GDB G to variables in QV . The application of a substitution ? to a term t, denoted t?, is the result of replacing all variables ?x in t by ?(?x). When t contains no variables, then t? = t.
+
+Definition 2.5 (Answer; Answer Value): Suppose G is a GDB, PQ = (SQ,?, ?, agg) is a pattern query, and ? is a substitution w.r.t. SQ. ? is an answer of PQ w.r.t. G if: (i) for every edge (v1, ep, v2) ? QE, it is the case that (v1?, ep, v2?) ? E and (ii) for each vertex ?x ? QV ? VAR, the constraint ?((?x)?) is true.
+
+The answer value of vertex v ? V w.r.t. ?, denoted Aval(v, PQ,G) = lagg({(?(?x))? | there exists an answer ? and a ?x ? QV ? VAR s.t. v = (?x)?}. When the set on the right hand side is empty, Aval(v, PQ,G) = 0.
+
+We use ANS(PQ,G) to denote the set of all answers of pattern query PQ w.r.t. GDB G.
+
+For example, for P = Delphi in the query in Figure 2(a) the score of Hank is Ford.revenue, because there is exactly one valid substitution with ?u = Hank: ? ? ?x = Gil, ?y = Bob, ?u = Hank, ?a = Ford. In general, for a given application, a user may define many different pattern queries.
+
+The next definition specifies the importance of v w.r.t. a set of user-specified patterns.
+
+Definition 2.6 (Vertex Importance Query): A vertex im- portance query is a pair V IQ = (PQS, gagg) where PQS is a finite set of pattern queries and gagg is an aggregation function (one of SUM, MIN, MAX, AVG).
+
+The score of a vertex v w.r.t. V IQ is score(v, PQS, gagg) = gagg({Aval(v, PQ,G) | PQ ? PQS ? Aval(v, PQ,G) > 0}).
+
+When we evaluate the score of a user (vertex v in the above definition) w.r.t. a set PQS of user specified patterns, two steps are needed. First, we must compute the importance of that vertex w.r.t. each query in the set PQS of pattern queries.
+
+Second, we must aggregate the results of the first step using the aggregation function gagg specified in VIQ.
+
+1If we do not wish to associate a constraint with a particular variable ?x, then ?(?x) can simply be set to a tautologous constraint like 2 = 2.
+
+2These functions map multisets of reals to the reals and are defined in the usual way.
+
+?? ??  ???? ??  ???????????  Fig. 3: Example of a query that has a partial substitution  Definition 2.7 (SMAC query): A SMAC query is a triple S = (PQS, gagg, k) where (PQS, gagg) is a vertex impor- tance query and k > 0 is an integer. The answer to S w.r.t.
+
+GDB G is the set of vertices in G with the k highest scores.
+
+If several vertices share the k-th highest score, we include all of them in the results.
+
+
+
+III. ANSWERING SMAC QUERIES  In this section, we present the SMAC-Answer algorithm - but before doing so, we briefly sketch two simple algorithms, Base and ABase.
+
+Base Algorithm. The Base algorithm to answer a SMAC query S = (PQS, gagg, k) follows four steps.
+
+1) It invokes a classical branch-and-bound subgraph matching algorithm similar to VF2 [2] to identify subgraphs of G that match any pattern in PQS.
+
+2) It applies the constraints in each pattern query in PQS to eliminate subgraphs that don?t satisfy the constraints.
+
+3) It then computes Aval(v, PQ,G) for each vertex v in any of the remaining subgraphs associated with a pattern query PQ.
+
+4) For each such vertex v, it then computes score(v, PQS, gagg) and returns the vertices with the k highest scores.
+
+ABase Algorithm. This algorithm makes a simple change to the step 1 of the Base algorithm. When a classical subgraph matching algorithm [1] tries to bind a variable ?x in a pattern query to a vertex v in G, it prevents that binding from occurring if v does not satisfy the vertex constraint ?(?x) associated with ?x.
+
+Our SMAC algorithm (Algorithm 1) leverages the fact that not all variables in a pattern query are equally important when looking for the top-k answers. Figure 3 shows an example query whose lagg = MAX. We see that for all substitutions for ?z, ?(?x)? is the same. To compute the score of ?x, we only need to know that for each possible binding of (?x, ?y) at least one valid substitution for ?z exists. So there is no need to look for all substitutions for ?z.
+
+Based on this intuition, we can define candidate, scoring, and essential variables in a query.
+
+Definition 3.1: Suppose PQ = (SQ,?, ?, lagg) is a pat- tern query and ?x is a variable in SQ. ?x is (i) a candidate variable iff ?(?x) is defined, (ii) a scoring variable if there exists a variable ?y in PQ such that ?x occurs in ?(?y), (iii) an essential (resp. non-essential) variable iff ?x is (resp. is not) either a candidate or a scoring variable. We use CVPQ (resp.
+
+SVPQ, EVPQ) to denote the set of candidate (resp. scoring, essential) variables in a pattern query PQ.
+
+Algorithm 1: SMAC-Answer  FUNCTION answerQuery1 Input: Data Graph G, Centrality Query (CQS, aggP ),  result size k Output: S S: List of (c, score(c, PQS, gagg)) tuples sorted by2 score(c, PQS, gagg), Only the top-k elements are maintained.
+
+POSS: Dictionary of (Lc, {Scrc}, {UScrc}, {Nc})3 tuples for each top-k candidate c foreach pattern query PQ ? PQS do4  path? PartialSubstPath(PQ)5 if path maps all variables then6  ANS ? Map(PQ)7 foreach ? ? ANS do8  foreach ?v ? CVPQ do9 c??v?10 (Lc, {Scrc}, {UScrc}, {Nc})? POSS[c]11 Scrc,PQ ? Scrc,PQ ? {(?(?v))?}12 Nc,PQ ? Nc,PQ + 113 POSS[c]? (Lc, {Scrc}, {UScrc}, {Nc})14  else15 P ? PartialSubst(PQ, path)16 foreach ?? ? P do17  foreach ?v ? CVPQ do18 c??v??19 (Lc, {Scrc}, {UScrc}, {Nc})? POSS[c]20 val? (?(?v))??21 if laggPQ = SUM then22  us? UB(??)23 UScrc,PQ ? UScrc,PQ ? {val ? us}24  else25 UScrc,PQ ? UScrc,PQ ? {val}26  Lc ? Lc ? {(PQ, ? ?, val, us)}27  POSS[c]? (Lc, {Scrc}, {UScrc}, {Nc})28  For example, in Fig. 3 ?x is a candidate variable and ?x and ?y are scoring variables. ?z is non-essential. We use ?? to denote partial substitutions for a subgraph query in which all variables ?v ? EVPQ are mapped but other variables are not necessarily mapped. The SMAC-Answer algorithm (Algorithm 1) has three major steps briefly outlined below ? the details, however, are much more intricate and described in further detail shortly.
+
+Phase I: For each pattern query, identify all partial substitu- tions that bind essential variables. This is done via lines 4-28 of Algorithm 1. By looking at bindings of essential variables, we now know all vertices in G that could possibly be in the top k. We create for these vertices entries in the dictionary structure POSS.
+
+Phase II: For each vertex v in POSS, compute an upper bound on its score, ubscore(v). ubscore(v) can be used for pruning.
+
+Phase III: We then pick the vertex with the highest upper bound and compute its score exactly. Once this has been done  Algorithm 1: SMAC-Answer (continued)  foreach (Lc, {Scrc}, {UScrc}) ? POSS in decreasing29 order of ubscore(c) do  minScore? min(c,score)?S(score)30 if |S| = k ? ubscore(c) < minScore then31  continue32  foreach (PQ, ??, val, us) ? Lc do33 answ count? Map2(??)34 foreach vertex r ? {?v??|?v ? CVPQ} do35  (Lr, {Scrr}, {UScrr}, {Nr})? POSS[r]36 if laggPQ = SUM then37  uscr ? val ? us38 scr ? val ? answ count39  else if laggPQ = AV G then40 uscr ? val41 scr ? val ? answ count42  else if laggPQ = MAX or MIN then43 uscr ? val44 scr ? val45  UScrr,PQ ? UScrr,PQ \ {uscr}46 if answ count > 0 then47  Nr,PQ ? Nr,PQ + answ count48 Scrr,PQ ? Scrr,PQ ? {scr}49  Lr ? Lr \ {(PQ, ? ?, val, us)}50  POSS[r]? (Lr, {Scrr}, {UScrr}, {Nr})51  S ? S ? {(c, score(c))}52 if |S| > k then53  S ? S \ {element with lowest score}54  return S55  for k vertices, we can eliminate vertices in POSS. If a vertex in POSS has an upper bound on its score that is below the actual score of the k?th best vertex found so far, we can eliminate it. Thus, every time a vertex?s score is computed, we have the prospect of eliminating vertices from POSS. This is done repeatedly till we get the top k.
+
+We now give more details on each of the three phases.
+
+Phase I Details: Phase I starts by invoking a PartialSubstPath function in Line 5 which finds shortest paths from some constants, i.e. non-variable vertices, to all essential variables. If the calculated paths are believed to map all variables3, we simply execute a standard subgraph matching function Map (e.g. [1]) to get a set of substitutions instantiating all variables, not just the essential ones. As ABase does, we can extract and score candidates, i.e. vertices mapped for candidate variables, from each substitution and update the dictionary structure POSS (lines 7-14). 4  3We can investigate this by checking if the path includes all variables.
+
+4For each possible candidate vertex c, the dictionary maintains a set Lc of  partial substitutions in which any candidate variable in a pattern query in PQS is assigned c, a multiset Scrc,PQ of scores c gets from complete substitutions of the pattern query PQ, a multiset UScrc,PQ of upper bounds of scores estimated from each partial substitution in Lc, and the number Nc,PQ of complete substitutions of PQ in which c is substituted for any candidate variable.
+
+Phase II Details: Otherwise (lines 16-28), certain vari- ables in the query are uninstantiated. We use a function, PartialSubst which is just like Map except that i) the substitution path is decided by the input path and ii) it should stop at the end of path and return partial substitutions.
+
+We search for ?v??, where ?v is a candidate variable, in the dictionary. if doesn?t exist, we create a tuple for it. We compute an upper bound for the vertex score and insert the calculated upper bound into UScrc,PQ (lines 21?26). Line 23 uses a function UB which computes an upper bound of the number of complete substitutions that a partial substitution can be extended to. This can be computed using a sophisticated distance-based index, in which for every vertex v in the GDB G we pre-compute T (v, t, d) the maximal number of neighbors of v having a vertex property t that are at distance d? 1 from v.
+
+For a pattern query PQ, a partial substitution ?? for PQ, let UM = {?v ? V ARPQ|?v not substituted by ?  ?} and M = {?v ? V ARPQ|?v substituted by ?  ?}.
+
+Let d(?x, ?y) be the shortest-path distance between two variables in a subgraph query. Then: H(?x) = min?v?M(??) T (?v?  ?, ?x.type, d(?x, ?v)) gives an upper bound for the number of vertices in the graph database that ?x can be substituted by and UB(??) =  ? ?x?UM(??) H(?x)  gives an upper bound for the number of complete substitutions the partial substitution ?? can be completed to. As we see in lines 21?26, the treatment is slightly different for different aggregates.
+
+The above steps are iterated for all pattern queries. {Scrc}, {UScrc}, and {Nc} are used to compute ubscore(c), an upper bound on the score of candidate c.
+
+Let UAvalPQ(c) =???? ???  sum(Scrc,PQ ? UScrc,PQ) , lagg = SUM  max(sum(Scrc,PQ)/Nc,PQ,max(UScrc,PQ)) , lagg = AV G  max(Scrc,PQ ? UScrc,PQ) , lagg = MAX  max(min(Scrc,PQ),max(UScrc,PQ)) , lagg = MIN  denotes the upper bound on the score of a vertex c for pattern query PQ. Then, ubscore(c) is the application of gagg on the upper bounds of c?s answer values, i.e. ubscore(c) = gagg({UAvalPQ(c)|PQ ? PQS}).
+
+Phase III Details: Lines 29?54 process the top-k candidates from POSS in decreasing order of the upper bound on their score. If ubscore(c) is too low for c to be among the top-k vertices, we prune the candidate c immediately (line 31). Otherwise, each partial substitution of the candidate is completed to full substitutions by Map2. The method returns the number of substitutions found by completing a partial substitution ?? instead of returning substitutions. Furthermore, if lagg is MIN or MAX, Map2 stops after finding the first complete substitution as the exact number of answers is irrelevant. Knowing the answer count, we can replace upper bounds in scores UScr by exact scores in Scr. After all partial substitutions for c have been processed, the score of c can be calculated from {Scrc} and {Nc}.
+
+
+
+IV. EXPERIMENTAL EVALUATION  For our experiments we use the 4 real-world datasets - CiteSeerX, Flickr, YouTube and IMDb. Basic properties of  Name #Vertices #Edges #V.Prop. #E.Labels  YouTube 4.6m 14.9m 8 3  CiteSeerX 0.93m 2.9m 5 4  Flickr 6.2m 15.2m 4 3  IMDb 2.1m 7.7m 4 6  TABLE I: Evaluation datasets  SMAC-query SPARQL 1.1  Top-k GROUP BY and LIMIT  Constraint FILTER  Scoring function ORDER BY  Aggregation Built-in Aggregation  Multiple Candidate Variables UNION over subqueries  Multiple Pattern Queries UNION over subqueries  TABLE II: SMAC-query to SPARQL 1.1 translation  these datasets are summarized in Table I.
+
+To analyze the performance of the query answering al- gorithms, we created random SMAC-queries consisting of 3 random pattern queries which were created by extracting 3 random, overlapping subgraphs with s vertices and t edges from G. From the random subgraph, we generate query pat- terns by keeping r vertices as constants and making the rest into variables. A vertex property is transformed to a vertex constraint with a probability of 30% so that the subgraph meets this constraint. This approach guarantees at least one answer.
+
+Two queries have the same query type if they have the same r, s, t values. All other query parts such as aggregations and scoring functions are also randomly created. To get data points, we average over 1000 random subgraphs for each r, s, t setting.
+
+We analyzed the performance of Base, ABase and SMAC-Answer and we additionally ran the queries on Apache Jena TDB 2.10.0 [3], a popular open-source RDF triplestore and one of few open source SPARQL 1.1 implementations.
+
+New language features (aggregates, subqueries) introduced in SPARQL 1.1 [4] are necessary to encode SMAC-queries in SPARQL. So we were limited in the choice of SPARQL implementation and triplestore that could be used.
+
+We transformed all SMAC-queries into SPARQL 1.1 style queries. Constraints, scoring functions, and top-k can be easily translated (see Table II). However, if there are multiple candi- date variables in a pattern query, we have to declare separated sub-queries for each candidate variable and use a UNION to aggregate the individual results to the final solution. Likewise, multiple pattern queries need to be represented by a UNION over each sub-query that represents one pattern query. Usually SPARQL 1.1 representations are much longer than SMAC- query representations. For all proposed algorithms and Jena TDB, we assigned 4GB JAVA heap space on a Xeon E5530 2.4GHz machine.
+
+All bar charts in this section show the mean runtime (bars) as well as the median runtime (lines).
+
+a) Results by Selectivity (Answer Size): First we ana- lyzed the performance with respect to the selectivity of a query (see Figure 4). Here, we define selectivity as the number of answers to the unconstrained pattern query, i.e. without eval- uating the constraints. SMAC-Answer outperforms all other algorithms for all datasets, all query types and regardless of the selectivity of the query. Jena is usually significantly slower than SMAC-Answer and the performance gap increase with     0 50000 150000 25000        #Answers  E la  ps ed  T im  e (m  s) 10,9,4  Prob:  30 % , Top?K:  1  Base ABase SMAC Jena  (a) CiteSeerX  0 20000 40000 60000 80000      #Answers  E la  ps ed  T im  e (m  s)  10,9,3  Prob:  30 % , Top?K:  1  Base ABase SMAC Jena  (b) YouTube  0e+00 2e+05 4e+05 6e+0       #Answers  E la  ps ed  T im  e (m  s)  5,4,1  Prob:  30 % , Top?K:  1  Base ABase SMAC Jena  (c) Flickr  0 10000 30000 50000      #Answers  E la  ps ed  T im  e (m  s)  5,4,2  Prob:  30 % , Top?K:  1  Base ABase SMAC Jena  (d) IMDb  Fig. 4: Results by the number of answers  decreasing selectivity (i.e. with a higher number of answers).
+
+The simpler algorithms Base and ABase show reasonable performance in most cases, but on the IMDb dataset they show significantly worse results than SMAC-Answer.
+
+b) Results by Query Size: Second we analyzed the performance with respect to the size of the pattern queries (Fig- ure 5). SMAC-Answer needs less than 5 seconds to answer the most complex queries and performs significantly better than Base and ABase for all query sizes. Jena was significantly slower than the other algorithms. The performance gap is especially high for complex queries where SMAC-Answer is 16 times faster than Jena.
+
+c) Results by the Number of Non-Essential Variables: In Figure 6 we see that the number of non-essential variables in a query has a major runtime impact. Only the processing of non-essential variables can be pruned early. This also means that when there is no non-essential variable in a pattern query, using SMAC makes no sense. In those cases, ABase is more efficient. However, if a query has several non-essential variables, the speed-up is significant.
+
+d) Substitution # by Query Size: In Figure 7 we show the average number of complete substitutions that have to be generated to answer the top-k query. We excluded Jena because it has to create the same number of substitutions as ABase. As we expected, SMAC-Answer needs to create the lowest number of substitutions. This leads to a faster answer time. SMAC-Answer comes with additional overheads because it has to maintain some additional data structures such as the dictionary POSS (see Algorithm 1). However, the costs for the overheads are compensated by the low number of substitutions.
+
+5,4,1 5,8,1 10,9,4 10,15,4  E la  ps ed  T im  e (m  s)      1.
+
+0.
+
+0.
+
+1.
+
+1.
+
+0.
+
+0.
+
+1.
+
+42 1  .0  0.
+
+0.
+
+3.
+
+1.
+
+0.
+
+0.
+
+5.
+
+Base ABase  SMAC Jena  (a) CiteSeerX  6,5,1 6,10,1 10,9,3 10,15,3  E la  ps ed  T im  e (m  s)      1.
+
+0.
+
+0.
+
+1.
+
+1.
+
+0.
+
+0.
+
+1.
+
+1.
+
+0.
+
+0.
+
+3.
+
+1.
+
+0.
+
+0.
+
+4.
+
+Base ABase  SMAC Jena  (b) YouTube  5,4,1 5,6,1 10,9,4 10,11,4  E la  ps ed  T im  e (m  s)        1.
+
+0.
+
+0.
+
+3.
+
+1.
+
+0.
+
+0.
+
+51 2  .5  1.
+
+0.
+
+0.
+
+6.
+
+1.
+
+0.
+
+0.
+
+5.
+
+Base ABase  SMAC Jena  (c) Flickr  5,4,2 9,8,4  E la  ps ed  T im  e (m  s)      1.
+
+0.
+
+0.
+
+63 0  .7  1.
+
+0.
+
+0.
+
+1.
+
+Base ABase  SMAC Jena  (d) IMDb  Fig. 5: Results by the query size (Top 1). The X-axis shows the query size. For example, 5,8,1 means 5 vertices, 8 edges, and 1 constant vertex, i.e 4 variable vertices.
+
+[ 0 , 1 ) [ 1 , 2 ) [ 2 , Inf )  To ta  l T im  e (m  s)      Base ABase  SMAC  (a) CiteSeerX  [ 0 , 1 ) [ 2 , 3 ) [ 4 , Inf )  To ta  l T im  e (m  s)      Base ABase  SMAC  (b) YouTube  [ 0 , 1 ) [ 1 , 2 ) [ 2 , Inf )  To ta  l T im  e (m  s)     Base ABase  SMAC  (c) Flickr  [ 0 , 1 ) [ 1 , 2 ) [ 2 , 3 ) [ 3 , Inf )  To ta  l T im  e (m  s)     Base ABase  SMAC  (d) IMDb  Fig. 6: Results by the average number of non-essential vari- ables among all patterns in a query (top-1). Averaged over all query sizes     5,4,1 5,8,1 10,9,4 10,15,4  A ve  ra ge  # S  ub st  itu tio  n      Base ABase  SMAC  (a) CiteSeerX  6,5,1 6,10,1 10,9,3 10,15,3  A ve  ra ge  # S  ub st  itu tio  n       Base ABase  SMAC  (b) YouTube  5,4,1 5,6,1 10,9,4 10,11,4  A ve  ra ge  # S  ub st  itu tio  n       Base ABase  SMAC  (c) Flickr  5,4,2 9,8,4  A ve  ra ge  # S  ub st  itu tio  n       Base ABase  SMAC  (d) IMDb  Fig. 7: # of substitutions generated by query size (top-1).
+
+
+
+V. RELATED WORK  The origins of network centrality measures come from sociology and are now primarily discussed in its subfield of social network analysis. In sociology, centrality is used to explain observations like power in organizations [5] or advan- tages in exchange networks [6] (see [7]). In the last decade, centrality also gained popularity among computer scientist for information retrieval. Centrality measures have been used e.g. to infer personality traits [8] and to predict re-tweets in micro-blogging [9]. While in sociology (and related computer science fields like computer-human interaction) centrality is mainly an explanatory tool, in information retrieval it is a discovery/prediction tool. A thorough discussion of centrality measures is out of the scope of this paper. For an compre- hensive introduction to classical sociological perspective on centrality measures see [10].
+
+There has been extensive work on centrality measures like degree, closeness, betweenness, and eigenvector centrality.
+
+Though various other measures have been discussed based on network flows [11], random walks [12, 13] and other purely structural properties [14] none is capable of expressing the types of centrality we propose in this paper that take both semantics and structure into account. On the other hand, classical centrality values such as those listed above can be viewed as properties of nodes that can be queried within the SMAC framework and hence SMAC builds on and enriches classical work.
+
+Only very few publications deal with algorithms to rank vertices in attributed graphs. The challenges in searching social content graphs have been discussed by Yahia et al. [15] but they do not provide any technical solutions. Schenkel et al.
+
+worked on user-centric searches in social tagging networks [16]. But their work is very specific to tag networks and not  broadly applicable as ours.
+
+SMAC leverages subgraph matching which has been stud- ied for several decades in many fields. In the semantic web, it has been studied as a paradigm to answer RDF queries [1, 17, 18, 19, 20, 21]. Here, excellent work [1, 17, 18, 19] had focused on massive triplestores that we can leverage in selected parts of our SMAC-Answer algorithm, particularly in implementing the PartialSubst method that requires accessing a subgraph matching algorithm. But triplestores are known to have a much lower performance than graph databases for answering subgraph matching queries [1, 22]. Triplestores are based on the traditional table-based database technology.
+
+Subgraph matching requires self-joins on the table representing the link structure of the graph. Even with B+-tree indexes these self-join operations are slow when the edge tables contain millions of entries.
+
+Other related work [20, 21] tries to find top-k substitutions based on their own definition of score. However, these also cannot be applied to SMAC since we need a method to score vertices in SMAC.
+
+Much work has also been done on subgraph matching in biological applications where there is interest in identifying genetic structures (query graphs) that match known genetic structures (database) [23]. Gallagher [24] provides a good introduction to problem variants and query algorithms. Solnon [25] provides an overview of pruning techniques from the perspective of constraint programming.
+
+While we based our definition of pattern-based centrality on a very basic definition of subgraph matching, many other definitions and variants exist [26] [27]. A larger sub-area of subgraph matching is probabilistic subgraph matching [28] [29]. Here, patterns are matched to graphs whose edges are absent but their existence is assumed with some probability.
+
+Thus, substitutions have assigned probability scores as well.
+
+Using data from social network sites we can be pretty sure that connected people know each other in some way. However, if we have to infer the relation between people from other observations (e.g. attendance of events), we could explicitly en- code the uncertainty and use this information when computing centrality scores. Probabilistic subgraph matching would be a good basis for such a kind of extended pattern-based centrality.
+
+
+
+VI. CONCLUSION  In most real world applications, users understand their needs and their data better than anyone else. They want a system that helps them identify nodes in a social network that are important according to the criteria that they articulate explicitly as opposed to theoreticians who neither know their application data or their specific mission needs. The SMAC framework proposed here helps users to do precisely this.
+
+Users or application developers can express subgraph queries with constraints and scoring functions ? these express what is important to end-users or users of an application. We propose a query language in which such users can express their needs. We then propose three algorithms to solve the resulting problem of identifying the k-most important nodes in a network according to the stated SMAC queries. The first two algorithms, Base and ABase are simple algorithms. However, we propose an algorithm SMAC-Answer that elegantly and     efficiently identifies the top k-nodes in the network according to the specifications stated by the user. We have run detailed experiments with 4 real-world data sets: CiteSeerX, YouTube, Flickr, and IMDb showing that the SMAC-Answer algorithm works well on graphs with over 6M vertices and 15M edges, outperforming the simpler algorithms and providing acceptable performance for such large-scale applications. Our experi- ments furthermore show that existing graph querying systems based on RDF/SPARQL are much slower at answering SMAC queries. Apache Jena was up to 16 times slower than SMAC- Answer. Jena achieves especially poor results for complex queries and queries with a low selectivity while SMAC- Answer shows a good scaling behavior.
+
+ACKNOWLEDGEMENTS  Parts of this work have been funded by the US Army Research Office under grant W911NF0910206.
+

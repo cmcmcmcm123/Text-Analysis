@@ -1,0 +1,158 @@
+Memoization of Materialization Points Mareike Ho?ger
+
+Abstract?Data streaming frameworks, constructed to work on large numbers of processing nodes in order to analyze big data, are fault-prone. Not only the large amount of nodes and network components that could fail are a source of errors.
+
+Development of data analyzing jobs has the disadvantage that errors or wrong assumptions about the input data may only be detected in productive processing. This usually leads to a re- execution of the entire job and re-computing all input data. This can be a tremendous profuseness of computing time if most of the job?s tasks are not affected by these changes and therefore process and produce the same exact data again.
+
+This paper describes an approach to use materialized interme- diate data from previous job executions to reduce the number of tasks that have to be re-executed in case of an updated job. Saving intermediate data to disk is a common technique to achieve fault tolerance in data streaming systems. These intermediate results can be used for memoization to avoid needless re-execution of tasks. We show that memoization can decrease the runtime of an updated job distinctly.
+
+
+
+I. INTRODUCTION  The ?Big Data? notion dominates currently reporting on novel systems and developments, as it gives a hope, that the analysis and the exploration of huge data sets gathered by companies and public organizations will allow to recog- nize patterns and thus will enable data-driven decisions in the future. The driving forces for this development are the availability of sensors collecting data in nearly all areas of the everyday life on the one hand and the scalability of modern cloud infrastructures able to process the data within tight time limits. However, a number of supporting components ? from distributed file systems such as GFS via massive-parallel data analysis engines such as Asterix[1], Hyracks[2] or Nephele[3] to programming languages such as JAQL[4] or PIG [5] ? must be developed to create a balanced system capable of processing the Big Data.
+
+Our Stratosphere system is together with Hadoop one of the first stacks in this area, as it combines an execution engine Nephele for massively-parallel cloud infrastructures, PACT programming model [6] for parallel description and execution of generalized map / reduce operators including primitives that allow the easy specification, automatic optimization, and efficient execution of joins as well as a declarative and query language. Extensive experimental evaluations with different use-case scenario placed Stratosphere among the most promi- nent data analytics stack that enables the extraction, analysis, and integration of heterogeneous data sets, ranging from  strictly structured relational data, to unstructured text data, and semi-structured data. Stratosphere is an open-source project available at www.stratosphere.eu under the Apache license.
+
+While the scalability of Stratosphere was proven using real- world use cases, the fault tolerance remains the weak point when operating in environments with 1000+ nodes. Node failures occur often and affect the processing and the correct- ness of the results. In worst case, failures of single machines can require to start the processing all over if the application is not designed in a fault tolerant way. So, application of check-points and other well-known fault tolerant mechanism is mandatory for the deployment of Stratosphere. On the other hand, these measures are connected to significant CPU and network load affecting the scalability of the execution leading to loss of valuable compute time. Therefore, we aim to find the balance between creating check-points and the necessary memorization, so we are able to provide the desired fault- tolerance with acceptable cost.
+
+In order to design and implement this solution, we dive deeply into the Stratosphere execution engine Nephele [3], which was developed in the group. The parallel data pro- cessing framework Nephele is based on Job description as directed acyclic graphs (DAGs), where every vertex of the DAG describes a task of the overall job. The tasks are executed as a black-box user code, so one need to learn from the outside, which execution steps are best suitable for a check-point.
+
+The result of this learning process are so called ephemeral materialization points [7] that save intermediate data for re- covery. Depending on the further progress of the execution, the ephemeral points are saved on the solid memory and used to restart the processing in case of failure. Once an outage is monitored, all tasks following these materialization points and the failed task instance are restarted. The materialization points are used as input for the restarted tasks, while all other tasks will ignore any already processed input. This approach prevents a job from a full restart in case of a non-durable failure, like network flaws. However, a durable failure like a programming mistake in the user code still causes the job to fail completely. The user would have to adjust the code and submit a new job, although the changes may only affect one particular task in the overall job.
+
+A further improvement of the scalability properties and thus speed-up of the processing can be reached, if the system is   DOI 10.1109/CSE.2013.186    DOI 10.1109/CSE.2013.186     able to recognize identical checkpoints and re-use the already saved data instead of creating a new copy. This leads to a significant reduction of a management overhead caused by introduction of fault tolerance actions. Therefore, we present in this paper a technique called memoization of materialization points in order to reuse materialization points of previous jobs with equal components. This approach is not only valuable in case of a failure, but may also be useful for optimization.
+
+Memoization is well known from programming language design [8]. It is used to cache return values of function eval- uation to speed up calculation. The cached values are usually ordered by the frequency they are used during calculation. To make use of the memoization, it is necessary that the functions are free from side effects, e.g. every evaluation with the same input parameters produces the same output. Analogue to the programming language model, a task processing an input value can be considered as a function evaluation. Therefore the Materialization points can be regarded as saved function evaluations values for the task. However, it would also be possible to use classic memoization in Stratosphere. Since the tasks are black-box code and the data is a non-interpreted sequence of bytes for the Nephele layer, this could only be done in upper layers and is therefore not part of this work.
+
+The rest of the paper is organized as follows: Section II describes the underlying model and the assumptions for the memoization approach. Section III comprises a brief intro- duction to creation and characteristics of the materialization points mentioned above. The possibility of job comparison is discussed in Section IV. Section V introduces the reuse of materialization points for memoization. In Section VI the described approach is evaluated, and Section VII gives an overview of related work before the paper is concluded in Section VIII.
+
+
+
+II. MODEL AND ASSUMPTIONS  The model and assumptions of this work are based on the parallel processing framework Nephele. Nevertheless the model is very similar to the model of other frameworks [9] [10]. The data processing jobs are described as directed acyclic graphs (DAG), with the vertices being tasks of the overall job and edges describing the data flow between these tasks.
+
+This DAG is call JobGraph in Nephele. During runtime the JobGraph is compiled into a so called ExecutionGraph. The ExecutionGraph has multiple parallel vertices for each vertex of the JobGraph, representing the parallel instances of the task. The edges of the JobGraph are subdivided into Channels between task instances. In particular each Channel is a link between an output channel at the data producing tasks instance and a input channel at the data consuming tasks instance. Each job, each vertex and each channel in the ExecutionGraph can be identified by an unique ID.
+
+One ore more parallel instances are deployed to servers, where each instance processes a part of the input data of the task. This input data is either read from a distributed file system or received from parallel instances of the predecessor task.
+
+JobGraph ExecutionGraph  Fig. 1: Graphs in Nephele  The data processing engine executes black box user code, given to the system as compiled Java classes. The user code is assumed to be side effect free, every run of a parallel instance with the same data input will produce exactly the same output. The output of a task instance is an uninterpreted sequence of bytes to the processing engine. Each parallel instance can possibly materialize its output to disk, into so called materialization points.
+
+In contrast to MapReduce[11] execution engines like Hadoop, the Nephele Framework does not by default mate- rialize data between two tasks. Instead the framework offers three different types of data distribution between tasks: The user or upper layer can choose between FILE, NETWORK and IN-MEMORY channels. FILE channels are similar to the MapReduce data propagation, all data is written to a file on disk. Not until all data is written to disk, the consuming task can read its input. Using NETWORK channels no data is written to disk. All produced output is immediately send to the consuming task over network and can be processed on arrival. NETWORK channels allow data to be pipelined between tasks. IN-MEMORY channels are a special case of NETWORK channels were the producing and the consuming task are running on the same machine. Instead of sending the data over the network, it is pipelined using the shared memory.
+
+A. Example Nephele Job  The listing 1 shows a simple Nephele JobGraph construc- tion. Nephele offers generally three types of vertices for a job: InputVertex, OutputVertex and TaskVertex. In the given exam- ple the Input is read from a File and the JobFileInputVertex is used. When creating a vertex the user has to specify the class that contains the code to be executed. Depending on the type of vertex the class has to implement corresponding interfaces. In this case the reading of the input data is done by the FileReader.class. Additionally the path to the input File has to be set for the input vertex, this applies to the output likewise.
+
+The example job has one input, one working task and one output. To run a task in parallel instances the number of subtasks can be set. For the workerTask the number of subtasks is set to three in the example code.
+
+To create the JobGraph, the data flow has to be described.
+
+Therefore the vertices have to be connected, using the con- nectTo method. In the example the reading task is connected to the working task, this indicates a data flow from the reader to the worker. At this point the connection type must be set as well, in this example the tasks are interconnected using network channels.
+
+
+
+III. MATERIALIZATION POINTS  Ass mentioned above, in Nephele data is not written to disk unless the FILE channel is used for data transfer between tasks. In order to achieve fault tolerance it is necessary to write some intermediate data to disk nevertheless. Therefore we introduced ephemeral materialization points [7] as a trans- parent fault tolerance technique.
+
+Materialization points are the written output data from a task instance of the overall job. The decision, whether a materialization point is written or not, is made dynamically, after monitoring the task?s behavior during the processing of the first part of the input. In detail, the tasks process their input and hold the output in main memory until there is no more space available. During this time the ration of input and output data and the cpu-usage of the task is monitored. Based on these values a decision is made whether to write the data and upcoming output to disk before sending it to the consumer task.
+
+There are four different states for a materialization point: UNDECIDED, NONE, PARTIAL and COMPLETE. In the states UNDECIDED and NONE there is no file written, either because the decision was not yet made or the decision was reached not to write a materialization point. If a task materializes its output data, the materialization can either be COMPLETE (i.e. all output data was produced and written to the materialization files) or PARTIAL (i.e. data is still written to the files). After the decision making progress, no data is held in memory any more. If a materialization point is written all data is written to disk before it is send over the network, as depict in figure 2.
+
+Materialization points are written dynamically during run- time. Therefore the user usually does not have knowledge of the positions of written materialization points. Furthermore, materialization points are created during the runtime and discarded after the job has successfully finished or finally failed. In order to make use of materialization points from previous jobs, it is necessary to keep the files of COMPLETE materialization points after a job run.
+
+As described above, in Stratosphere each job can be identi- fied by a statistically unique ID. In the same manner each Task (Vertex in the job graph) can be identified by a VertexID. As a materialization point belongs distinctly to a producing vertex the corresponding files are named using the VertexID.
+
+Materializationpoint  ...
+
+Fig. 2: Materialization  In detail materialization points are sets of serialized Trans- ferEnvelopes. TransferEnevlopes are a wrapper for the actual data, containing the source of the data, identified by an unique ChannelID for an output channel. The actual reuse of the materialization points is analougus to the recovery in case of a task failure. When replaying a materialization point, the corresponding broker for this ChannelID receives the TransferEnevlopes, determines the corresponding output channel and sends them to the connected input channel.
+
+
+
+IV. EQUALITY OF JOBS  In order to make use of materialization points of previous job runs it is crucial to compare jobs. As a job is a tuple of tasks, connections and input data. Jobs are equal if all tasks, all connections and the input data are equal.
+
+Since a Task is user defined content, the equality of two tasks is given by the equality of the user code. Connections are simply equal if the they connect the same tasks in the same direction. Finally the Input data must be equal too. As the Nephele system does not have any information about the character of the input data, this might lead to a binary diff.
+
+This is not a problem in this case, because it is not important where or how the data might have changed just whether it changed.
+
+The reuse of materialization points for a job is possible, if only tasks of the job have changed and changes of connections are limited to successors of the changed tasks. However it is only possible to use materialization points written by predecessors of the first changed tasks in the processing order.
+
+As the changed Task will most probably produce different data, any following tasks receives different input data and will therefore produce different output. Previously written data from the changed task itself or its followers is not reusable. On the other hand any changes of the job succeeding the changed task dose not influence the memoization.
+
+The main issue is to identify equality of tasks. As a task is defined by a user defined function (UDF) this means the equality of the user code. It is possible to execute a simple diff off the two java class files, but this method leads to two problems:  ? First this does not cover dependencies of classes. As the task is associated with a UDF (i.e. a invokable class) changes of a class the UDF depends on would not mark     Listing 1: Example Nephele Job  JobGraph jobGraph = new JobGraph ( ? Example Job ? ) ; J o b F i l e I n p u t V e r t e x f i l e R e a d e r = new J o b F i l e I n p u t V e r t e x ( ? F i l e Reader ? , jobGraph ) ; f i l e R e a d e r . s e t F i l e I n p u t C l a s s ( F i l e R e a d e r . c l a s s ) ; f i l e R e a d e r . s e t F i l e P a t h ( ? ? / i n p u t ? ) ;  JobTaskVer t ex workerTask = new JobTaskVer t ex ( ? Worker Task ? , jobGraph ) ; workerTask . s e t F i l e T a s k C l a s s ( workerTask . c l a s s ) ; workerTask . se tNumberOfSub tasks ( 3 ) ;  J o b F i l e O u t p u t V e r t e x f i l e W r i t e r = new J o b F i l e O u t p u t V e r t e x ( ? F i l e W r i t e r ? , jobGraph ) ; f i l e W r i t e r . s e t F i l e O u t p u t C l a s s ( F i l e W r i t e r . c l a s s ) ; f i l e W r i t e r . s e t F i l e P a t h ( ? ? / o u t p u t ? ) ;  / / c o n n e c t i n g Tasks f i l e R e a d e r . connec tTo ( workerTask , ChannelType .NETWORK, n u l l ) ; workerTask . connec tTo ( f i l e W r i t e r , ChannelType .NETWORK, n u l l ) ;  the task to be changed. The dependency analysis of java classes is a researched field. Tools as classcycle 1, Class Dependency Analyzer 2 or Dependency Finder 3 work on this field. However, dependency analysis is out of scope of this paper and remains future work.
+
+? Second the possibility to write inner classes in Java causes changed class files for all declared inner classes in a class if one inner class changed. This would lead to false- positives when searching for changed classes. Note that this issue does not change the correctness of the approach but may reduce the benefit noticeably.
+
+Therefore in this stage of work the responsibility to identify changes is handed to the user: We introduced an annotation called updatedClass which has to mark the UDF if the class or any class it is depending on has changed. This annotation could be set by using the tools described above.
+
+A vertex is expected to be equal if it executes the same class (identified by the name) and is not marked to be changed. Additionally, for the sake of convenience at this point, the input is expected to be unchanged if the updated job functionality is used. The Information of the connections, e.g.
+
+number of connections and the connected vertices are saved to disk by the framework to be used for comparison.
+
+
+
+V. REUSE MATERIALIZATION POINTS  In order to reuse materialization points of a job two steps are required: First the data of the job that might be reused has to be saved. The user has to set a flag submitting the job, indicating that the materialization files and the job information  1http://classycle.sourceforge.net/index.html 2http://www.dependency-analyzer.org/ 3http://depfind.sourceforge.net/  Fig. 3: Given Job  Materialization  Fig. 4: Reconstructed  should be stored. Second, when submitting an updated job the user has to specify the JobID to compare the updated Job with.
+
+The updated Job is then compared to the saved data for the given JobID, e.g. the updated vertices are identified and all followers are marked as updated too. During the construction of the ExecutionGraph all non updated vertices are compared, checking whether they execute the same class and whether they have the same number of subtasks and connections.
+
+If two jobs have been considered to be equal up to a partic- ular point, all materialization points of predecessor tasks can be reused. The memoization execution of the new incoming job is equal to a recovery of the job, with the first changed task considered as failed. I.e. all inputs for the changed task will either be read directly from a materialization point or produced by successors of materialization points.
+
+In order to use the recovery logic and materialization points it is necessary to use the identical IDs for vertices and connections. This is because materialization points are sets of     TransferEnvelopes, which store the source of the data using the ChannelID. Materialization points themselves are files for each vertex named after the VertexID. To do so, the IDs of the vertices and connections are saved and reused for the non updated vertices when an updated job is submitted.
+
+As mentioned above, the updated tasks and their successors are marked as updated. From the updated tasks a breadth- first search against the processing order for a completed materialization point is done. If COMPLETE materialization points exist, all predecessors of the corresponding vertices are switched to the state FINISHED. Figure 3 and figure 4 show a given updated Job example and the reconstructed Job after comparison.
+
+The task that has written the materialization point will be marked as FINISHED after it replayed the materialization point. For any submitted task of a newly submitted job, the framework searches for materialization points in case the task is re-submitted during recovery. Therefore the materialization points for a updated job are found automatically.
+
+
+
+VI. EVALUATION  In order to evaluate the memoization of materialization points, it is interesting to compare the runtime of a job using memoization vs. the runtime for a complete restart of the job. As the submission of a job, using memoization includes reading and applying the job information of a previous run, the setuptime is an important value to monitor. It is expectable, that the runtime decreases with the use of memoization. The decrease is expected to be smaller the earlier the changes are in the JobGraph. However the approach itself has an overhead, caused by the rewriting of the ExecutionGraph an the reading of the materialization points. The runtime measurement can show whether and when the memoization is profitable.
+
+A. Optical Character Recognition  An Optical Character Recognition job served as test job for the evaluation. It is analog to the archiving job Derek Gottfrid wrote for the New York Times archiving 4. Articles from 1851?1922 given in a TIFF format should be generated to searchable PDFs. Therefore he wrote a Hadoop job which reads the 11 million articles data from storage and generates the PDFs. The job was deployed to Amazons EC2 Cluster.
+
+We decided to use this job, because of the real world issue it solves. The archiving of data that is not available in digital is a common task these days.
+
+Additionally to the PDF generation, the test job creates an inverted index for the recognized texts. Figure 5 shows the JobGraph of the OCR task. Reading the files from the underlying distributed filesystem, the data is handed to the OCR task. After recognition the texts are send to the PDFCre- ator and the task creating the inverted index. Then the PDF- Files and the index are written to the filesystem. The OCR task is parallelized to 24 instances and the PDF generator is parallelized to 6 instances.
+
+4http://open.blogs.nytimes.com/2007/11/01/ self-service-prorated-super-computing-fun/  Fig. 5: OCR Job  ??  ????  ????  ????  ????  ????  ?	??   ????????? ??????  ?? ?  ?? ???  ?? ??  ?? ???  ?? ??  ?? ??  ????  ??????????  Fig. 6: Setuptimes  The job shows the advantage of memoization very well, because it has the characteristic to begin with the most time and resources consuming task, the OCR. All following tasks are comparable lightweight, especially the index creating task. Therefore, it would be expected that changes of the PDFCreator or the index creating task would be considerably faster to recompute using the memoization approach. For the job?s input we used pictures of the sides of a PDF Version of the King James Bible 5.
+
+For the test runs we marked one task as updated, but left the code unchanged, to make the runtimes comparable. We used the OCR, the PDFCreator and the Index task for the update. We measured both the runtime and the setuptime. The runtime is measured after the job has scheduled until all tasks are finished. The setuptime is the time between the submission of the JobGraph and the scheduling of the job, including the reconstruction of the graph.
+
+The setuptimes are an average from all runs, with updated tasks and the same number of runs without updates. As shown in figure 6 the setuptime using the updated mode is slightly longer, than in regular mode. The mean extension for the setup amounts to 47 milliseconds. This increase is of no  5http://www.davince.com/content/blogcategory/14/33/     ??  ??????  ???????  ???????  ???????  ???? ?? ?? ???????  ?? ?? ??  ?? ??  ?? ??? ?? ??  ?? ??  ?????????? ?  ???!?????  Fig. 7: Runtimes for OCR with updated tasks and regular restart  consequence compared to the gain of runtime.
+
+Figure 7 shows the average runtimes for the test runs  with the updated tasks, and the regular restarts runtime. The measurements are from 10 runs for each updated task and 30 regular restarts. As one can see, depending on the updated task, the gain of runtime can be huge. Memoization for the updated Index task leads to a runtime of only 15% of the restarted task. Updates in the PDFCreator task reduce the runtime to 81% and updates in the OCR task still lead to 95% of the restart runtime.
+
+This is because the main time consuming work is done by the OCR and the PDFCreator task. The Index task is fast, as long as all data is available. Updates in the OCR task lead almost to a complete restart and thus do not benefit much of the memoization approach.
+
+B. Triangle Enumeration  We also tested a triangle enumeration job written in PACT.
+
+As mentioned in the introduction Nephele is part of the Stratsophere system. In Stratosphere Jobs are written in PACT not directly as Nephele Jobs. PACT is extending the known MapReduce programming model, it provides the additional second-order functions Match, CoGroup and Cross. In contrast to MapReduce the data model of PACT uses schema-free tuples.
+
+The PACT triangle enumeration job is similar to other triangle enumeration jobs, which are used in social networks.
+
+It is based on the two step approach of first finding all pairs of edges with one identical node, and secondly finding edges for the other two nodes in the pair [12]. The JobGraph is shown in figure 8.
+
+Briefly described, for each tuple of edges [x,y][y,z] the job will process a tuple [x,z] as a possible existing edge to close a triangle. In the last match step these edge-candidates are matched with the existing edges of the graph to find the existing triangles. It is explained in detail in [7]. We process this algorithm on sample data from the 2009 Billion-Triple- Challenge 6 converted to integers.
+
+6http://km.aifb.kit.edu/projects/btc-2009/  Fig. 8: Triangle Enumeration Job        Select Close Build Regular  Ru nt  im e  in m  ill is  ec on  ds  UpdatedTasks  Run-Times  Fig. 9: Runtimes for triangle enumeration with updated tasks and regular restart  We have chosen this job, to observe the runtime behavior in a worst case scenario. The triangle enumeration job is a worst case job, because the main time consuming work is done by the last tasks in the pipeline. Updates in the job will therefore only skip the less time consuming tasks in the pipeline. In this case it may be possible, that the overhead is higher then the decrease of runtime.
+
+As expected, the test runs for the triangle enumeration job, did not show the significant runtime decreases as for the OCR job. However the updated runtimes where in average still between 85% and 97% of the restart runtime as shown in figure 9.
+
+Nevertheless the gains of memoization can be huge, and as the runtime decrease overweight the setuptime increase it is a useful technique especially in a job?s development phase.
+
+
+
+VII. RELATED WORK  As briefly mentioned, memoization or functional caching is a well known technique to avoid re-execution of functions or incremental computation, by caching results. [8] [13] In contrast to the classic memoization the introduced technique does not cache single results of a tasks function evaluation, but a complete output of a task.
+
+Elghandour and Aboulnaga introduced ReStore a system to reuse intermediate data of single MapReduce Jobs within a workflow of MapReduce jobs. The implementation is an extension to Pig[14]. It rewrites the MapReduce jobs compiled by Pig and stores intermediate data for reuse in similar jobs.
+
+[15] Unlike the Pig extension the approach described in this paper is independent from the higher layer language.
+
+Popa et al. describe DryadInc a incremental computation for append only data sets. It has two functionalities, either the user has to give a merge function for previously and newly computed data, or the fully automated reuse of pre- vious results for a new computation. The automatic so called IdenticalComputation is a form of memoization and similar to the approach described in this paper. In contrast it is only based on additional data input in order to avoid re-execution of the previous executed data [16].
+
+Nectar is an approach to manage automatic caching for computations to improve data center management and resource utilization, including the reuse of sub-computations. This is done by rewriting programs to be able to use cached data for sub-expressions. [17] As distinguished from this idea, the de- scribed memoization does not consider resource management but runtime optimization.
+
+
+
+VIII. CONCLUSION  This paper describes an approach to use intermediate ma- terialized data to avoid a complete job re-run in case of an updated task. The concept of materialization points in Nephele was briefly described. We discuss the comparability of jobs and the problems that arise with automatic comparison. We define our solution to this issue using user input. We introduce memoization of materialization points to reuse intermediate data from previous job runs to omit the execution of tasks that remained constant between two runs. The memoization was done by rewriting the job, in order to replay materialization points of unchanged task in the overall job.
+
+In Section VI we showed that memoization can decrease the job-runtime significantly. However, we also showed, that the benefit of the technique is highly dependent on the job characteristic and the position of the task that has changed within the job. But the overhead for the job setup using memoization, showed to be comparably small and the runtime itself does not increase using this method. Thus memoization turns out to be a helpful tool especially in development phase, were failures in the code are still expected to occur. The developer is able to use the memoization technique to program an fine-tune his code.
+
+Overall the introduced memoization approach has still room for improvement, which are our future work. The discussed  issue about the comparison of jobs, is an important part for optimization in order to make memoization as transparent to the user as possible. As mentioned in IV the main issue of dependency analysis is a complex field. A solution might be to use a third party tool for this.
+
+Another improvement would be the optimization of the re-execution in terms of optimization of parallel execution.
+
+If all data is read immediately from disk, and the next consuming task does not have to wait for it to be produced, it could be beneficial to increase the degree of parallelism for the consuming task. This is not yet possible in the described approach.
+

@@ -1,0 +1,224 @@
+Experimental Framework for Searching Large RDF  on GPUs based on Key-Value Storage
+
+Abstract? Resource Description Framework (RDF) is  commonly used for the semantic web query.   During this decade, due to big data processing, the large numbers of RDF triples are crawled.   The triples usually stored distributed on the clouds storage or the large clusters. To search for the query answer, it is usually difficult to handle the search across platforms. Also, the search takes a long executed time. Thus, the data representation and platform are important to speedup the search and handle the heterogeneousness. In this paper, we present the experimental framework which can be used to handle the search of RDF data in GPU clusters. Our framework uses the Java platform to manipulate the semantic query while using JCuda1  to perform the GPU processing. Apache Cassandra storage, known as CumulusRDF, is used to store key-values for searching.  In the experiments, DBpedia and Freebase dataset are extracted and manipulated. The triple structures are transformed and loaded into Apache Cassandra storage as CumulusRDF?s flat layout.
+
+The subject-predicate-object keys are kept in CQL caching.
+
+There are about 3-hundred-million tags that can be handled with in one machine, which can reduce time, with an inexpensive cost.
+
+We shape the data grid from row-major-ordering of Java, to GPU thread grid of CUDA, retrieved keys to join for finding the correspondence of the RDF graph.
+
+Keywords-parallel processing; concurrent Java; GPU; RDF; memory management; parallel string matching
+
+I. INTRODUCTION Recently, big data processing of semantic web data is  becoming popular. The commonly used format in such an application is the RDF triples. They are used as a large graph structured data model as corresponding subject-predicate- object triples.
+
+The query processing is to filter the answers from the several and large distributed sources such as the Linked Data.
+
+These linked data are stored in a triple form. To speedup the search, proper data representation and algorithms are important for rapid query processing of the scalable billion tags of data along with the use of parallel architecture.
+
+In this work, we focus on the problem of query Linked Data which is a correspondence in URI or via HTTP redirects between a thing and the information resource. It is explained by looking up the object-subject with URI as a constant [6].
+
+We choose the CumulusRDF as a RDF storage with nested key value. However, BitMat is also another choice to the same challenge. On the other hand, the emphasis of the BitMat is to address the cross-dimensional join [7] with relational algebra   1 jcuda.org and forum at forum.byte-welt.net  proof.  We focus on the GPU hardware for parallelization.
+
+Regarding to the hardware, general purpose graphic  processing units (GPGPU) are used with many researches that the high performance of multicores can perform on a machine.
+
+For such a hardware, CUDA framework has been used in many applications. However, it is based on C language that difficult to operate on the heterogeneous platforms. Since many semantic web applications are run with Java middleware such as Jena2, we apply Java with various libraries such as Rootbeer3 (with JDK84 recommendation), JCuda1 and data structure in our experiments.
+
+The importance of query processing on GPUs is to encode the data into an appropriate string format for transferring between host and device. The size limitation of the device is also the challenge of the large string processing. Many researches [1, 2] in recent years have focused on the data transformation for running in multi-cores and accessing different levels of memory. An alternative approach was developed with the dictionary file by encoding or compressing the data and then decoding at the last such as executing inverted file across platforms [3]. However,   the big RDF data in semantic web are the graph data structure, with the  meaning in itself.   The other sources of data can be linked into it with the specified keyword.
+
+The contributions of this framework are as following. 1) The RDF query process can be speedup using the GPUs. 2) We handle the heterogeneousness using Java Platform. 3) We can study the appropriated data representation using key-value stores for querying the triple within the small memory size.
+
+
+
+II. BACKGROUNDS This section presents some backgrounds related to our work.
+
+A. RDF Dataset and Query DBpedia5  is one of the real-time central hubs of the semantic  linked data. It can connect to the others dataset by owl:sameas tags which means the  synonym relation in the web ontology language (OWL). RDF is mostly format for transferring between the networks. It is a based specification of the Semantic Web stack.
+
+The RDF graph uses URIs to name nodes and edge types, arriving at its triples. Due to N-Triples are a line-delimited syntax. In the experiments, we use the BTC2012 dataset. It is a set of N-Quads: subject-predicate-object-context. We choose two dump files as   2 http://jena.sourceforge.net/tutorial/ 3 chirrup.org/rootbeer/ 4 http://openjdk.java.net/projects/sumatra/ 5 linkeddata.org  2013 10th International Joint Conference on Computer Science and Software Engineering (JCSSE)     DBpedia and Freebase6 . They are different in entities, update frequency, query languages, and objectives. DBpedia retrieved from Wikipedia that is opposed to Freebase for commercial purpose, Google inc. However, they can connect to each other by the synonym properties.
+
+Ordinary RDF query language and protocol is SPARQL [4]. In this work, we focus at the backend process, assuming the dataset is large. We transform it into CulumusRDF format that is based on Apache Cassandra storage. Then, CQL is applied at the backend since keys are stored in a cache and the key-value strings are used to process the search in the GPUs.
+
+On the other hand, at the frontend, the query of the user of the web application is transformed into SPARQL for querying RDF. At this moment, the frontend part is in the ongoing work.
+
+B. Cooperative Thread Arrays (CTA) Java?s array representation is based on the row-major  ordering. One-dimension array access depends on only the array length. In an array of array, namely 2D array, array offset, A[i,j] = i*[#Col] + j. In an array of arrays of arrays, namely 3D array7, array offset, A[i,j,k] =  k * [#Rows] * [#Col] + i * [#Col] + j.
+
+In the CUDA kernel with Java controller, we have to define the kernel parameters that hold an executed unique thread id. CUDA assigns each thread and block id that is unique only to its dimension.  The unique thread id is equal to current thread id + current block id * number of threads per block. Since the dataset is big, which larger than the number of available threads. This means a thread needs to process several at a time.  We need to check thread id does not exceed the size of data array.
+
+We create two types of CTA for implementing on a GPU processor. 1) In-memory data grid [7]. 2) Relational algebra CTA for the GPU enabled RDBMS [5] which are applied to the nested key-value RDF management.
+
+C. RDF Cross-Dimensional Joins Query Processing  The basic Linked Data concepts are defined as follows [6].
+
+Definition 1. (RDF Triple, RDF Term, RDF Graph) Given a set of URI references , a set of blank nodes , and a set of literals L, a triple (s, p, o)  (  B)  (  B L) is called an RDF triple. Elements of  B  L RDF terms are called.  Sets of RDF triples are called RDF graphs.
+
+Definition 2. (Triple Pattern) A triple pattern is an RDF triple that may contain variables (prefixed with ???) instead of RDF terms in any position.
+
+Definition 1 explains RDF data terms and Definition 2 expresses the query terms. There are eight possible patterns for RDF triples (where s,p,o denote a constant and ? a variable): (spo), (sp?), (?po), (s?o), (?p?), (s??), (??o), (???).
+
+Definition 3. T is a relational table with three columns S, P, O corresponding to subject, predicate, object respectively. Two join triple patterns are TP1 and TP2. 1 and 2 are the propositional formulae such that if TP1 is (?s :p1 ?x) then 1 is (P=:p1). T1 and T2 are the auxiliary tables such that   6 http://www.freebase.com/ 7 http://www.cs.miami.edu/~geoff/Courses/MTH517-00S/Content/Array  BasedADTs/ArrayADT.html  T1 = ? 1(T)                       T2 = ? 2(T)         (1) Tjoin = T1 dim T2                          (2)  where ?dim? is the column (either S, P, or O) over which the join is performed. a1 is (T1.S, T1.P, T1.O) and a2 is (T2.S, T2.P, T2.O).
+
+The same or cross-dimensional join algorithm needs the specific operation.  The corresponding positions have the same URI or the literal mapped to them. For example, (?s :p1 ?x. ?y :p2 ?s) is the subject-object cross-dimensional join, which is transformed to the bitwise-AND on the subject and object arrays.  There are three cases concerned subject-object joins: (o p1?) (?p2 o), (??o) (o p?) and (??o) (o??). These are relational concepts for RDF [7]. In particular, nested key-value storage concept concerns (? p1 uri)(uri p2?) [6], with no-join query.
+
+D. Key Matching Algorithms At the backend, after the encoded RDFs are loaded to the  GPUs? memory, the search through the key-value storage begins. With the string encoding, the search algorithms become the string matching problem. There are several researches for string matching on the GPUs. For example, exact string matching8use Brute-force, Hospool and Quick- search. String Matching on a multicore GPU using CUDA that use native parallel, Knuth-Morris-Pratt, Boyer-Moore, Horspool and Quick-Search by varient pattern size test [10]. As a prelimiary step, we start by the Brute-force and Horspool.
+
+Based on the RDF storage, concept is the nested key- value rows. Previous work considered the problem in a Map- Reduce framework. Grex is an efficient one for GPUs that group the intermediate keys via parallel sorting in GPU [11].
+
+The results of the control flow are key-value pairs. In our case, we have a different way for using key-value pair before handling and querying RDF in GPU.
+
+
+
+III. FRAMEWORK IMPLEMENTATION This section describes the methodology and tools.
+
+Fig. 1 Overviews of the query RDF through GPU  In Figure 1 illustrates the overview of RDF query processing through the GPUs. First, the system receives the users query, and then it allocates the memory in the host and device and starts the kernel by the host code.   The input key is retrieved from Cassandra and then is sliced into the smaller table for mapping with the query matching in the GPUs. After finding the answer to the query, the device memory is freed and the results are copied back to the host by lookuping the associated value from the key, and   the result is displayed.
+
+In this work, the area between Cassandra and device are focused. From Figure 2, processes are implemented in three stages. The first stage re-arranges the input to access multi-   8 https://code.google.com/p/exactstrmatchgpu/     dimensional array. The second stage performs an array transformation to construct a device array. The third stage implements the GPU parallelization which generated code to operate on the GPUs. Detailed of all steps are described as follows.
+
+Fig. 2 Implementation with the memory hierarchy of the GPUs.
+
+A. Loading N-Quad to Apache Cassandra as RDF Storage  We transform a set of RDF triple that is given as a set of N-Quads format9. It is extended from n-triple with the context: <c> in the last column as {<s> <p> <o> <c>}. The input is transformed to the flat layout by CumulusRDF 10 .  Three indices {SPO, POS, OSP} can be enumerated into 8 triple patterns. They are (???) with all indices, (spo), (sp?) and (s??) with SPO, (?po) and (?p?) with POS and  (s?o) and (??o) with OSP [8]. We select the flat layout because it is a standard key-value data model and it outperforms on the requested query compared with the hierarchy layout [8]. Columns are stored in the sorted manner.   The prefix is looked up on the column keys. (s,p,o) triples are stored as {s: {po: -} where s is a row-key, p is a column-key and o is a value. Using {s:{p:{o}}} is opposed to the column-key uniqueness condition because the same predicate was added to a subject multiple times in the RDF. All low-level index modes are in Cassandra operation. In the same way, OSP is stored as {o:{sp:-}.
+
+Regarding to the URI is a string which used to identify a name or a web resource. Its space is partitioned and related to URLs, and uniform resource names (URNs). These two indices (SPO, OSP) can refer to the corresponding URI syntax and HTTP redirect and cross dimensional joins. The case occurs as (?s:p1<uri>)(<uri>p2?o). There are three types of object: URI, literal and blank node. Thus, some types of object are URI.
+
+However, all types of subjects are URI. The projection of CQL is unlike SQL. There is no guarantee that the results will contain the column key that does not index as comparing the column with in O-S column in OSP table. For the large number of data, it takes a long time for lookup the S-O joins.
+
+Hence, using parallel computing, we   retrieve the two keys with the parallel string matching on GPUs. Assume the object   9 http://sw.deri.org/2008/07/n-quads/ 10 http://code.google.com/p/cumulusrdf  is data and the subject is to be matched. We will explain in details with the passing kernel parameters and searching algorithm.
+
+Table 1 Dataset distinct values count from the external sorting  Distinct name Freebase DBpedia0 DBpedia1 Triples 101,241,280a 100,000,000 98,090,024 Subject 22,826,967 12,031,393 12,158,885 Predicates 11,118 30,582 30,759 rdf:type 8,436,113 8,599,542 8,141,595 Objects 44,671,587 16,835,432 17,976,396  a. Original number of triples is 101241556.
+
+The other key concerned here is POS. From Table 1, we can see that the predicates  are shared by so many triples e.g.
+
+?rdf:type?.  CumulusRDF uses po as a row-key for the POS index and gains Cassandra?s secondary indexes. The advantages are the smaller number of  rows, better distribution.
+
+There are fewer triples sharing the same po; thus it is similar to only p. This index is stored as {po:{s:-}}. Moreover, ?p? is added as a special-column which has p as {po: {?p?: p}}.
+
+Comparing between CQL and the relation object, we assume the column-family-key is like the table, and the key- value pair is like a row, and row-key is just like a primary key.
+
+More importantly, the benefit of using the secondary index is that, it allows   retrieving all po row keys for a given p. We can perform a (?p?) to look up and then select all row-keys from the secondary index containing property: p. For retrieving s by (?po), the lookup  can  simply be done.
+
+The Cassandra distributes the key-value pairs    based on CumulusRDF.  We use it as middle software architecture on the host. Because it is simple to create the hash key for the lookup and store the large N-Quad to triples. However, the key generation time depends on the data size. About 300 million triples approximately use 70 hours for adding all above keys.
+
+We convert to 3 keyspaces: 1 Freebase and 2 Dbpedia keyspaces. From the Cassandra limitation, both of keys and column names must be under 64K bytes. For this reason, the 40 triples of generated keys are discarded that are about very small (0%) in this case.
+
+B. Retrieving Data from Apache Cassandra by CQL  CumulusRDF uses Apache Cassandra as a RDF storage. In the same cluster that installs Cassandra, the table creation supports the property of caching with keys-only default11. The configuration of Heap size is  1037959168/1037959168 global memtable threshold is enabled at 329 MB, initializing the keys cache with the capacity of 49 MB, and the scheduling key cache takes about 14,400 seconds .
+
+In this task the SPO and OSP keys are fetched to compare the string as a join operation on the GPUs.
+
+C. Creating Cooperation Thread Arrays  Regarding to shaping the blocks, we design  the cooperation thread array   in  the GPUs. We take keys into GPUs by 1) passing one-dimensional array to the GPUs that includes the data size, an array of keys? length, an array of keys input, output, indices, and offset.  In this way, the host prepares many pointers to the device with the offset. 2) Passing the pointer to pointer to the GPUs. This is opposite to the former by preparing the array on the device. Thus, it allocates and fills   11 http://cassandra.apache.org/doc/cql3/CQL.html     the array that includes keys? size, the pointer of input and output array, and an array of keys? length.
+
+Java side?s program connects between Cassandra and Thrift connection, JCuda binds between CQL from Cassandra on the host with CUDA by calls PTX file.
+
+Since the memory array in both Java and C languages are row-major ordering, the offset increment by threadId-1 * key end indices.  For a ?char? data type, a C ?char? has only 1 byte (8-bit), and a Java ?char? has 2 bytes (16-bit)12. In our case, 2- bytes ?char? is used in a kernel. The question is what appropriate structure for this task.  We need to convert the location from keys into the pointers of CUDA and is conversely transformed back in an appropriate time.
+
+In particular, this CTA comes from GPU techniques survey [8]. A data structure is generalized array in the static way.
+
+GPU-based multidimensional arrays usually store data in the 2D memory. Firstly, all-words concatenation are concatenated, and stored in 1D array. Then they are formed as the 2D. We build Java byte[] array on host side and pass a char* to the kernel.
+
+JCuda is rewritten as CUDA codes that  are parallelized in the same way as the original Java multithreaded code where each JCUDA thread performing the same computation as a Java thread [12]. Our program is structured by JCuda ways as follows.
+
+1). Compute the word size, offset and index of each words, then concatenate arrays.
+
+2). Allocate an array on the device for the size of word lengths multiplied the size of words. Fill the device input memory. Copy the both from the host to the device with the pointer of the length of words.
+
+3). Allocate the array of device and send the pointer for word end indices from the host to the device.
+
+4). Allocate the device memory storage for the actual input and output of data, and then fill the data to device memory.
+
+5). Set up the parameters of kernel and call launch CUDA kernel function which includes the grid dimension, the block dimension, and the shared memory size.
+
+6). In the CUDA, using C static pointer kernel, declare kernel parameter that receives the data from 4). Next, declare constant integer of unique thread id = current thread id + current block id * number of threads per block. Offset is loop of word indices of thread id-1. For compiling the kernel, we create PTX file as the parallel thread execution architecture that is the low-level virtual ISA. We create PTX because it is compiled at runtime for the GPU of the target machine, if specifying the architecture and Compute Capability of the target machine. In PTX file, we use .param as the directive of the input to kernel and the sharing per grid. Moreover, we use the local parameters or functions and restrict the address per thread. Address may be taken via mov instruction in kernel. We access the address via ld.param and st.param instructions. Device function input parameters are located on the stack frame and their addresses are in the .local state space.
+
+7). Copy each word from the output device by the device pointer back into the host array, generate a string from each array, and put it into the result list for formatting.
+
+8). Free memory of the device: input words, output words, words length and indices of end word.
+
+12 http://docs.oracle.com/javase/tutorial/java/nutsandbolts/datatypes.html  The other technique uses one string with each char*, mapping only a subset of possible pages to global that is received from a char**. This function is structured as follows.
+
+1). Allocate arrays on the device by defining the array for each input word which is filled with the byte data and define the array for each output word.
+
+2). Allocate the device memory for the array of pointers that points to the individual input/output words, and copy the input/output word pointers from the host to the device.
+
+Allocate the device array for the size of word lengths.
+
+3). Setup the kernel parameters and call  the kernel function that includes the grid/block dimension, the shared memory size, and the kernel parameters.
+
+4). Pass the char** of input/output words, the pointer of word lengths and the size of words to the dynamic pointer kernel.
+
+Generate to PTX file for machine model. Read data set in device.
+
+5). Copy the contents of each device output pointer back into a host array. Create a string from each array, and store it in the result list for formatting.
+
+6). Free device memory: input/output word  pointers by the loop of word size. Free device?s input/output pointer arrays and word lengths.
+
+The initial command can sort by the initialize the driver and create a context for the first device. Then the PTX file is loaded. After that, we get the pointers of functions to the kernel?s functions that are static and dynamic pointers.
+
+We manage all sub-functions by the main method. We connect ?Test Cluster? by name and IP: port. We define Keyspace and query CQL in various sizes. The results of query are all keys with times.
+
+D. Keys Matching in GPU  The keys matching algorithms are based on 2 categories: UUID and String types. UUID is the row-key of POS that beyond this phase. We use the exact string matching on the GPUs. OSP is used as the data and SPO is role as a pattern.
+
+The selected string matching algorithms are Brute-force and Horspool. To perform the Brute-force string matching in CUDA, we use the constant memory and the shared memory.
+
+Block size is equal to N threads. Each of the N threads scan for a key text matching in parallel and store the updated indices.
+
+Algorithm1: Brute-force searching in CUDA Constant memory is stored the S keys pattern Shared memory is stored the segment of O keys Data 1.Tid = blockIdx.x * blockDim.x + threadIdx.x; 2.Copy text to shared memory 3.Scan O-keys data in device memory, try to match S-keys 4.CUDA thread found, update indices  Horspool algorithm uses a window of size m to search the data from the right to left and a bad-character shift (pre- computed array) of the right most character of the window to skip character positions when a mismatch occurs [10]. We use this algorithm because the mostly pattern and data are URIs.
+
+The left side is repeated with the URL, so the right side shows the uniform resource name. In this way, we hope Horspool will be simple and efficient for this task.
+
+Algorithm2: Horspool searching in CUDA 1. Define pre-computed array condition 2.CUDA kernel trying to scan data for matching the keys Include skipping distance which is an 1D array regardless of a match/mismatch and each valid index element of thread Id     After that, we set all CUDA modules as PTX file for CTA, and as binary file for the 2 algorithms.
+
+
+
+IV. RESULTS In this section, we present some experimental results of the  experimental framework on the data set of Freebase that are crawled by the world?s entities and DBpedia from the Wikipedia retrieval. Both of them come from BTC2012 data set13.
+
+In these preliminary studies, we attempt to establish the data representation and algorithm for joining in the GPUs. The results are divided into two parts as follows subsection B: CTA test and C: cross dimensional join test.
+
+A. Machince Specification  The specification of the system is listed as shown in Table2. We set up the JCuda with NVIDIA CUDA 4.2.
+
+Storage is cumulusRDF on Apache Cassandra 1.1.7.
+
+Table 2 Machine Specification Resources CPU: Intel ? Core? i5 GPU: GTX 560 Ti Cores 4 384 Graphics Clock 850 MHz 822 MHz Processor Clock 3.1 GHz 1645 MHz Memory Clock 21 GBps 4008 Gbps (501GBps) Standard Memory 1024 x 8 1024 Level 2 cache size 4 x 256 KB 512 KB Level 3 cache size 6 MB shared cache  B. Time of CTA Transfering between Host and Device We have generated keys to Cassandra; however, the  cluster-admin14 does not display any column key. Hence, this phase, we apply browser and query by CQL for retrieving column keys and row keys.   We have to generate CTA in the form of key and value using static and dynamic arrays. Thus this is to prepare the unique keys that are used to search in the multiple key-value store of the GPUs.
+
+The main purpose of this work was to test CTA data representation performance. We use Freebase dataset. Due to CTA, the problem size of tested queries are 100, 1000, 10000, and 100000 row keys. The execute time is measured from the program execution and is focused on ?Pre-process from host to device?, ?Send kernel parameter and call kernel?, and ?Transfer the results back to host? without the secondary index. These are three stages illustrated as Figure 3.
+
+13 http://km.aifb.kit.edu/projects/btc-2012/ 14 https://github.com/sebgiroux/Cassandra-Cluster-Admin  Fig. 3 Comparison ?Preprocess from host to device?, ?Call kernel and send parameters from Java?, and ?Results from device to host? between static and dynamic CTA.
+
+C. Algorithm s for Cross Dimensional Join Test The other issue remains about S-O join in the GPUs because CQL has no join like SQL. This query type is in <??o><?o??> forms. We can compare to the cross dimensional join tested queries in the relational database. Since we have the nested key-value storage and keys cache that are retrieved to GPU as arrays, we use the string matching in the device memory. The test environment includes the number of threads per block as: 8, 16, 32, 64, 128, 256, 512, and 1024.
+
+The test here is based on the performance of the string matching algorithm15 in the GPUs. We select less complex algorithms first. The one is the Brute-force using the shared and constant memory for optimization. The second, Horspool was chosen for the S keys pattern which the former letter similar from each row-keys. Thus, the pattern S is compared to the O string between uniform-resource-name at the latter position. The results are shown as in Figure 4. The two algorithms perform about the same at 64 threads.
+
+Fig. 4 Comparison between Horspool and Brute-force on GPU with 100 S keys pattern on O keys for the cross dimensional join and Linked Data redirect with RDF key-value pair storage
+
+V. ANALYSIS OF THE RESULTS This section analyzes the results of the above two  subsections that include  static and dynamic CTA from host to device and cross dimensional join test by the string matching algorithms : Brute-force and Horspool algorithms.
+
+A. Analysis of  CTA between Host and Device  We test against the sending of the static and dynamic CTA from Java to CUDA kernel, process in the running kernel and receiving the results from the device to the host. For these reasons, we measure the JCuda time spent in the data transfer before and after kernel execution, and kernel computation.
+
+JCuda cost includes the overhead of the JNI calls generated by the JCuda kernel. As details in Figure 3, the results are divided into three parts respectively from top to bottom.
+
+Comparison of the preprocessing which allocates and fill array from the host to the device between static and dynamic CTA: it is found that the static CTA is time-consuming more than the dynamic CTA. Because static array have to prepare   15 https://code.google.com/p/exactstrmatchgpu/     for combinding array in pre-compute execution whereas dynamic array did not to operate this task.
+
+In details, we consider the CTA with varying the key size.
+
+Static array approach consumes preprocessing time when the key size is small; i.e., 100 row-keys and gradually reduced the time in 1000, 1000, and 100000 keys.  These are opposed to the dynamic array that rapidly creates the array for a small size problem and gradually increase for the bigger key size.
+
+Comparison the time of the call to kernel between the static and the dynamic CTA with the difference in small size keys: the dynamic array approach takes more time than the static array approach. However, when the  key size is large, the time consumed is about the same.
+
+Comparison  the time of transfer to host between the static and the dynamic CTA. In small size 100 keys  case, the dynamic CTA uses time less than that of the static CTA.
+
+However, for about 1000-100000 keys the static?s time is reduced to be closer to that of the dynamic one.
+
+This methodology is to test the custom  cooperative thread arrays that include the static and dynamic CTAs. The goal is to select which CTA  that is appropriate to send data string and pattern to and results back from device, and kernel processing on GPU. Thus, the algorithm performance can be improved by these custom arrays.
+
+B. Analysis of Cross Dimensional Join Test with Algorithms  This part described the analysis of cross dimensional join test with two string matching algorithms. In Figure 4, we can prepare for joining subquery S-O of SPARQL statement.
+
+These Brute-force and Horspool are executed as binary files  by sending the pattern string, the main string, and which device to handle from the Java side.  This study addresses that Brute-force in the single thread matching by conduct the search text from left-right and output to console the position it finds the substring. However, in CUDA version, the difference is    by using N-threads. Each element attempts to scan in parallel and output the match data structure by updating in found indices? storage and copy the memory to host. In the Horspool algorithm, it seems  not to be very efficient in case the pattern is shorter than the string so this test the object have to be only URI keys.
+
+The way of improving these algorithms with JCuda and compare to the other task. The advantage of two algorithms to perform subject-object join query on case <? ? ?o> <?o ? ?>.
+
+This process has to use  the static and dynamic CTAs for searching the pattern in the main string. Other cross- dimensional joins such as subject-predicate and predicate- object are rare case in the instance data of semantic web.
+
+Supporting such joins would involve an extra step of mapping the bit position form one dimension to the appropriate position of bit vector from one dimension to the other position to performing bitwise operation task [7]. However, the original BitMat task performed on the large cluster and no focus on GPU. Thus, this is the reason we apply string matching for no  join query language to parallel process large scale RDF in GPU.
+
+
+
+VI. CONCLUSIONS We present the experimental framework for searching key-  value pairs based on GPUs. The framework uses Java platform to manipulate the data into key-value storages by Cumu- lusRDF. Then the triples in the key-value storage are transformed into a flat layout and kept in CQL caching. The data in this form is sent to GPUs. After that, the GPU searching can apply.
+
+In the future, we can apply the CTA and modify the search algorithms to use with the rows-key that has the secondary index. It has unique UUID format that we should look up for the column slice key and value for POS index. The static array is the best condition for small data size and transfer between host and device. The larger data size should include the dynamic array for compression and decrease preprocess time- consuming.
+

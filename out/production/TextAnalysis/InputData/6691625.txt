@@ -1,0 +1,96 @@
+Parallel Subgroup Discovery on Computing Clusters ? First Results
+
+Abstract?Data mining tasks often have very high computa- tional costs. In this paper, we present a parallel computation ap- proach for the local pattern mining task of subgroup discovery.
+
+Unlike earlier related approaches, we do not distribute the data to be analyzed, but instead distribute portions of the overall search space to be considered on different computing nodes.
+
+Our approach has low communication costs, only submitting messages when new exceedingly good patterns are visited.
+
+While the paper describes work-in-progress, we already present first experiments, witnessing a speedup factor of about 34 on 64 computing units.
+
+
+
+I. INTRODUCTION  Many data mining tasks have high computational costs, meaning that an analysis can run for days or longer on a single machine. At the same time, there has recently been a lot of interest in approaches that speed up com- putation by distributing complex computational tasks on large clusters of machines. These approaches rely on a new generation of distributed computation frameworks, the most prominent arguably being the big data framework Hadoop (http://hadoop.apache.org) and its underlying map-reduce paradigm [1]. The trend to distributed computation has been additional propelled by the fact that computational power can be rented (e.g. via Amazon EC2), which makes cluster computation accessible to everyone.
+
+In this paper, we present a new distributed computing approach for the task of top-k subgroup discovery [2]. This is a local pattern discovery task that searches for the k most interesting sub-populations in labeled data. Subgroup discovery has several applications, including medical data analysis ? where the label represents some medical condition like dementia, and a subgroup description is a conjunction of features characterizing a sub-population with high positive rate [3], or election analysis ? where the label corresponds to the votes, and a subgroup description is a conjunction of socio-economic variables characterizing a sub-population with above-average votes for a particular party [4].
+
+In spite of the popularity of the map-reduce paradigm, it is not easily applicable to existing subgroup discovery algorithms. To see why, we need to briefly go into the details of a typical subgroup discovery algorithm. Essentially, in subgroup discovery all subgroups are ranked by a quality function which takes into account both the size of the subgroup and its distributional unusualness. The goal of subgroup discovery algorithms is to search for the top-k  subgroups having maximum quality. This is typically done by traversing the space of candidate subgroups.
+
+Obviously, the size of the search space is exponential in the number of features. If the exact solution is requested, the only way to avoid traversing the exponentially large set of candidate patterns is to apply some admissible pruning technique, like optimistic estimate pruning [5], [6]. The idea is that once at least k subgroups have been collected, only subgroups are of interest whose quality exceeds that of the k-th best subgroups visited so far. The quality of the k- th subgroup thus represents a threshold, which is updated whenever a new, higher-quality subgroup is visited. The idea of optimistic estimate pruning is to prune all branches of the search space that can be inferred to include only subgroups having quality below the current threshold.
+
+Figure 1. Search space pruning example. For each node the name, the quality q and the optimistic estimate oe is shown. Whenever the optimistic estimate of a subtree is below the quality of the already-found subgroup(s), the entire subtree can be pruned. If the different branches are searched by independend workers, however, this information may not be available.
+
+This idea is illustrated in Figure 1, which shows the space of subgroup descriptions for a domain with only 3 features: the first level includes all subgroup descriptions built from a single feature, like ?A?, ?B? and ?C?. The second level consists of subgroup descriptions built from two features, etc. Suppose we are looking for the top-2 subgroups, and the algorithm has already visited the nodes      ?A? and ?B?, having quality 1.4 respectively 1.7. Then, if all nodes below the branch ?C? can be inferred to have quality below 1.4, the whole branch below ?C? can be pruned. The computation of such bounds involves the computation of so- called ?optimistic estimates?, and their use can dramatically speed up execution [7], [8].
+
+The problem with the parallelization of such an algorithm via the map-reduce approach is that map-reduce assumes that its different tasks work in complete isolation. Thus, if the search space is searched in parallel by independent mapper tasks, then the information about the currently best qualities cannot be shared, and hence the dynamic threshold will not increase as in the sequential traversal. In our example from Figure 1, if the three branches are searched by independent workers (i.e. mappers), then Worker 3 will not learn about the minimum qualities found by Worker 1 and 2, and hence will not be able to prune the branch below ?C?. The effect can be that the distributed execution on cluster with dozens of machines can easily be slower than a pruning algorithm running on a single desktop machine [9]!
+
+As a remedy, in this paper we present a distributed subgroup discovery algorithm that relies on the actor model [10], where independent concurrent workers fulfill a task while communicating via messages. This allows the different workers to exchange information about the best subgroups they found in the sub-space of the overall search space they considered, and will hence unleash the full potential of optimistic estimate pruning.
+
+Compared to existing approaches to distributed subgroup discovery [11], [12], we assume the data to be analyzed to be stored at one central location. More importantly, however, unlike the afore-mentioned approaches our algorithm has very low communication costs. The earlier approaches need to send messages for every subgroup considered, which is likely to result in a severe communication bottleneck. Our approach, on the other hand, only requires communication when a subgroup is visited whose quality exceeds that of all subgroups visited so far.
+
+The current paper presents work in progress. Nevertheless, it already makes the following contributions:  ? It describes the problems that arise if subgroup discov- ery and optimistic estimate pruning is to be performed in a computational cluster;  ? It describes a distributed algorithm based on the actor model, which (i) allows for optimistic estimate pruning and (ii) has low communication costs.
+
+? It shows first results, which demonstrate the potential of the approach to scale with the number of computational units available.
+
+The rest of this paper is structured as follows: In section II we introduce the required concepts. Next we describe our approach before we present first results. We conculde in section V.
+
+
+
+II. PRELIMINARIES  In this section, we will define the task of subgroup discovery, review the theory of optimistic estimate pruning and briefly describe actor models.
+
+A. Subgroup Discovery  Subgroup discovery [2] aims at discovering descriptions of interesting sub-portions of a dataset. All records of the dataset to be described by a set of binary features. A subgroup description sd is a subset of the feature set, and a data record d satisfies a subgroup description sd if the record d satisfies all features in sd ? that is, subgroup descriptions are interpreted conjunctively. The subgroup described by sd in a database DB={d1, . . . , dm}, denoted by DB[sd], is the set of records d ? DB that satisfy sd.
+
+The interestingness of a subgroup description sd in the context of a database is defined with respect to a designated target variable, the class. Here, we only consider the case where the label is a binary feature, taking value in {+,?}.
+
+The interestingness of a subgroup description sd in the context of a database DB is measured by a quality function q that assigns a real-valued quality q(sd,DB) ? R to sd. The quality function usually combines the subgroup?s size and its unusualness with respect to a designated target variable.
+
+The most common quality functions are of the form:  |DB[sd]|a ? ( |TP(DB, sd)||DB[sd]| ? |TP(DB, ?)| |DB| ) (1)  where TP(DB, sd) := {d ? DB[sd] | class(d) = +} denotes the true positives of the subgroup sd, and a is a constant such that 0 ? a ? 1. The family of quality functions characterized by Equation 1 includes some of the most popular quality functions: for a = 1, it is order equivalent to the Piatetsky- Shapiro quality function [2] and the weighted relative accu- racy WRACC [13], while for a = 0.5 it corresponds to the binomial test quality function [2]. Based on these definitions, the task of subgroup discovery is defined as follows:  Task 1: (Classical) Top-k Subgroup Discovery Given a database DB, a quality function q, and an integer k > 0, find a set of subgroup descriptions G of size k, such that  ?sd : sd ?? G? q(DB, sd) ? min sd?G  q(DB, sd).
+
+B. Optimistic Estimate Pruning  While it is, in principle, possible to exhaustively traverse the whole space of subgroup descriptions, its size is typically prohibitive: in general, the number of subgroup descriptions is exponential in the number of features. To cope with this problem, efficient algorithms make use of pruning to avoid traversing less-interesting parts of the search space. The idea is to use, for every branch, a function called an ?optimistic estimator? [6], which calculates a bound on the quality of the subgroups in the branch. If the estimate is below the     quality of the best subgroup already found, then the branch can be safely pruned.
+
+Formally, an optimistic estimator for a quality function q is a function oe mapping a database DB and a subgroup description sd to a real value such that for all DB, sd and spe- cializations sd? ? sd, it holds that oe(DB, sd) ? q(DB, sd?).
+
+The following function is a tight optimistic estimator for the WRACC respectively Piatetsky-Shapiro quality function: np(1? p0).
+
+Optimistic estimate pruning can greatly accelerate a sub- group discovery algorithm, in particular if it is combined with an dynamic increase of the minimum quality threshold.
+
+The reason is that subgroup discovery algorithms perform a search in the space of subgroup descriptions, using a minimum quality threshold. An optimistic estimate allows pruning branches of the search space that do not satisfy the minimum quality. This is particularly effective if the minimum quality threshold is as high as possible. The idea of a dynamic quality threshold is to increase the threshold whenever a high-quality subgroup is visited: As only the top-k subgroups are of interest, the minimum threshold can be set to the quality of the k-best subgroup visited so far. This results in an monotonic increase of the quality threshold. Several empirical investigations have shown that the effect is a dramatically speed-up, often by several orders of magnitude [7], [8]  C. The Actor Model  The actor model [14] is a model of computation based on the direct asynchronous exchange of messages between independent agents. An actor can send a message to any actor it has the address of at any time. An actor is a computational entity that can do the following in response to an incoming message  ? send messages to other actors, ? create a finite set of new actors, and ? change it?s behavior.
+
+The order of these actions is arbitrary. These actions could be executed in parallel. The actor model does not guarantee any order of message processing nor does it give guarantees on the time it will take to process a message. As a result there is no global state within an actor model. A message sent to several actors might be processed at different points of time by the different actors receiving the message.
+
+
+
+III. ACTOR BASED SUBGROUP DISCOVERY  We use the actor model to build a scalable fast Subgroup Discovery system. Our design relies on a ?Master? actor, which coordinates the search, and on ?Worker? actors, which perform the actual traveral of the search space, searching for the best subgroups. The topology is illustrated in Figure 2.
+
+The master sends ?Search subspace? messages to tell the individual workers to search a subset of the overall search space. When a worker finds a high-quality subgroup, it sends  the quality to the master via a ?New quality? message. Note that this happens before the search of the subspace is com- pleted. The master collects all qualities and calculates the minimum quality threshold to be used in pruning. Whenever the threshold changes, it is broadcasted to all workers via a ?Minimum quality? message. Each worker updates its local minimum quality threshold to the current global value and uses this value for pruning. When the worker completes search, it sends the ?Search result? to the master and asks whether it shall execute more tasks.
+
+One important question is how to distribute the search space on the workers. On one hand, we need to ensure that there are enough shards to be distributed, on the other hand we have to avoid running into a countless number of tiny tasks. In our current implementation, the search subspace- tasks correspond to the branches of the search space located directly below the root. To avoid that a pattern is considered by multiple workers, we rely on a lexicographic ordering of the features. A ?search subspace? message thus includes exactly one feature i, and requests the worker to consider all patterns that (i) include feature i, (ii) are built only from features having lexicographic order less-or-equal to i ? just as in the example from Figure 1.
+
+We have implemented this approach on top of Akka (http://akka.io), an actor library for java. Akka takes care of the distribution of the workers to the actual hardware, this allows scaling beyond a single machine simply by providing Akka with a description of the machines to be used. One peculiarity of our implementation is that unlike in a pure actor model, once a worker gets a ?Search subspace? mes- sage, it perform the search space traversal and concurrently processes new incoming ?Minimum quality? messages. This feature, which is realized via Java threads, ensures that changes of the minimum quality threshold are immediately taken into account.
+
+
+
+IV. FIRST RESULTS  To evaluate our implementation, we have run it on our local cluster. The data we analyzed stems from a credit card fraud detection project: that is, every record represents a credit card transaction, with the label revealing whether the transaction was fraudulent, and the features describing different characteristics of the transaction (like amount, currency, country, type of merchant, etc). Overall, the dataset is built from 238 features and consists of 10.000 records.
+
+Figure 3 shows the speedup achieved by distributing the computation. The x-axis shows the number of computational units involved, while the y axis shows the speedup wrt. to the single-threaded execution. In total, we used 8 machines with a total of 64 cores. The figure shows that although the speedup is not fully linear, on 64 cores it increases to a factor of more than 34.
+
+Figure 2. Actor based Subgroup Discovery architecture.
+
+Figure 3. Speedup achieved by distribution
+
+V. CONCLUSION  In this section, we will briefly summarize the approach presented in this paper, before we discuss the next steps and open issues to be adressed.
+
+A. Summary and Discussion  In this paper, we have presented a distributed algorithm for finding the best subgroup(s). One central goal of our ap- proach is to allow for optimistic estimate pruning during the distributed computation. This is achieved by relying on an actor model, where the different workers communicate, and in particular exchange information about the best subgroups visited so-far. In the experimental section, we have presented first results which show that our approach has the potential to scale well with the number of machines involved in the computation.
+
+While we only considered the setting of top?k subgroup discovery, it is obvious that our algorithm can directly be combined with iterative approaches. In particular, it can be used within the popular weighted covering scheme [13],  which computes a collection of (relatively) uncorrelated subgroups by iteratively finding the best subgroup and afterwards decreasing the weight of the records covered by that subgroup.
+
+B. Next Steps and Open Questions  Although we have achieved promising results, much re- mains to be done. In particular:  ? Our current implementation distributes sub-tasks cor- responding to branches of the search space located directly below the root. It is obvious that this results in a number of tasks limited by the number of features in the dataset. While for small number of workers this approach is feasible, it will not scale to very large clusters of machines. The most important question is hence: how to scale to a number of workers beyond the number of features in the dataset?
+
+? Another important question is how to deal with failures of hardware nodes or communication links. While Akka provides some support for these issues, it is not as robust and straightforward as the map-reduce approach.
+
+? The current solution relies on a single master to coor- dinate the work. With hundreds of workers commu- nicating with the master this master may become a bottleneck.
+
+? Finally, several technical questions have to be solved if the algorithm is to be adapted to run on a remote cluster environment like Amazon EC2.
+
+We plan to tackle these questions in future work, in particular in a ready-to-start master thesis.
+

@@ -1,0 +1,106 @@
+Big Data Analytics on High Velocity Streams: A Case Study
+
+Abstract?Big data management is often characterized by three Vs: Volume, Velocity and Variety. While traditional batch- oriented systems such as MapReduce are able to scale-out and process very large volumes of data in parallel, they also introduce some significant latency. In this paper, we focus on the second V (Velocity) of the Big Data triad; We present a case- study where we use a popular open-source stream processing engine (Storm) to perform real-time integration and trend detection on Twitter and Bitly streams. We describe our trend detection solution below and experimentally demonstrate that our architecture can effectively process data in real-time?even for high-velocity streams.
+
+Keywords-stream analytics; trend detection; storm; deploy- ment; case-study
+
+I. INTRODUCTION  Online social networks, like Facebook or Twitter, are increasingly responsible for a significant portion of the digital content produced today. As a consequence, it be- comes essential for publishers, stakeholders and observers to understand and analyze the data streams originating from those networks in real-time.
+
+Advertisers, for instance, would originally publicize their latest campaigns statically using pre-selected hashtags on Twitter. Today, real-time data processing opens the door to continuous tracking of their campaign on the social networks, and to online adaptation of the content being published to better interact with the public, e.g., by aug- menting or linking the original content to new content, or by reposting the material using new hashtags.
+
+Typical Big Data analytics solutions such as batch data processing systems can scale-out gracefully and provide insight into large amounts of historical data at the expense of a high latency. They are hence a bad fit for online and dynamic analyses on continuous streams of potentially high velocity.
+
+In the following case-study, we discuss how a modern, popular and open-source stream processing system, Storm1, can be brought to use to carry out complex analytics such as trend prediction on high velocity streams. We introduce our problem and briefly describe related work below in Section II. We introduce Storm and present our solution in  1http://storm-project.net/  Section III, discuss its performance in Section IV, before concluding in Section V.
+
+
+
+II. PROBLEM DESCRIPTION  The goal of this use case is to combine and analyze both Bitly2 and Twitter3 streams in real-time. It our context, real- time alludes to processing data continuously as it arrives.
+
+More concretely, the idea is to process both Bitly and Twitter streams in order to detect trends and analyze, in real-time, the timeline of the tweets, retweets and clicks on bitly links.
+
+The main challenge we tackled was to find a system for analyzing and mixing both streams in real-time.
+
+Analyzing or processing large amounts of data in a paral- lel manner is, nowadays, rather simple thanks to distributed batch processing solutions such as Apache Hadoop. How- ever, Hadoop and related systems tackle the Volume aspect of Big Data problems mostly, and are limited to processing data in a batch manner. Therefore, when processing data with Hadoop, the output of a MapReduce job is typically already aged by a few hours. Hadoop is definitely not a good fit for processing the latest version of the data or to process continuous data.
+
+A better idea in our context would be to use stream processing, that is, to setup a processing infrastructure that is able to collect information and analyze incoming streams of data continuously and in real-time. Several solutions can be used in that sense. Stream database systems were a very popular research topic a few years ago; Their commercial counterparts (such as Streambase4 or Truviso5) allow users to pose queries using declarative languages derived from SQL on continuous streams of events. While extremely efficient, the functionalities of such systems are intrinsically limited by the operators that are bundled with the system6  Another class of systems relevant to our problem are dis- tributed stream processing frameworks. These frameworks typically propose a general-purpose, distributed, and scalable  2https://bitly.com/ 3http://twitter.com/ 4http://www.streambase.com/ 5http://www.truviso.com/ 6though both Streambase and Truviso support limited forms of UDFs  (User Defined Functions) for extensibility.
+
+platform that allows programmers to develop arbitrary ap- plications for processing continuous and unbounded streams of data. IBM InfoSphere7, Apache S48 or Twitter Storm are popular examples of such frameworks.
+
+We focus on the Storm framework in the following. We describe a production-ready pipeline for integrating and processing both Twitter and Bitly streams and supporting two essential features:  ? Real-Time Complex Analysis: we wish our system to support complex analyses on data streams continuously and in real-time.
+
+? Distribution & Fault Tolerance: in addition, the system should be able to scale-out (i.e., to support parallel processing on clusters of commodity machines) to support high-velocity streams whenever necessary and also for fault-tolerance purposes.
+
+
+
+III. SOLUTION OVERVIEW The general idea of our real-time trend analysis im-  plementation is to combine real-time data from Bitly, a popular URL shortening and bookmarking service, with real- time data from Twitter, an online microblogging platform.
+
+Bitly.com is a very well-known link shortener. It is mainly used for shortening long links to be able to more efficiently use the 140 character limit on Twitter. For example, if someone wants to post a tweet containing a link to the Wikipedia page of Albert Einstein, he/she can shorten the link http://en.wikipedia.org/wiki/Albert Einstein with Bitly to produce a shorter url: http://bit.ly/4za3r. In this url, 4za3r is the code used by Bitly to match the shortened URL with the original one. In the following, we refer to this value as the Bitly code.
+
+From a data analysis perspective, the integration of Bitly and Twitter streams in real-time allows for a finer-grained analysis of the social interactions between the different users sharing the data. For example, it becomes possible to construct a timeline between the posting of the information on Twitter and the corresponding Webpage visits by analyz- ing both Twitter and Bitly data (Figure 1 below shows an example of such an analysis). This profile could then be used to track social advertising campaigns and further increase the reach and click rate by reacting to the information provided by this analysis. The main idea of the present use-case is hence to track the Bitly clicks and keep track of the associated hashtags or words over time. This allows for a detailed sentiment analysis and trend detection. In our system, we use a distributed rolling count implementation that calculates the frequency of terms over a moving window.
+
+A. Stream Processing Architecture  A Storm cluster can be compared to a Hadoop cluster.
+
+Whereas on Hadoop you run ?MapReduce jobs?, on Storm  7http://www-01.ibm.com/software/data/infosphere/ 8http://incubator.apache.org/s4/  you run ?topologies?. The main difference between ?jobs? and ?topologies? is that a MapReduce job eventually finishes and process a finished dataset, whereas a topology processes messages forever (or until you kill it) as they arrive, in real-time. There are two kinds of nodes on a Storm cluster, the master and the worker nodes. The master node runs a daemon called ?Nimbus?. Each worker node runs a daemon called the ?Supervisor?. The supervisor listens for work assigned to its address and manages worker processes based on Nimbus assignments. Each worker process executes a subset of a topology.
+
+The core abstraction in Storm is the stream. A stream is just an unbounded sequence of tuples. A tuple is a named list of values. A field in a tuple can be an object of any type.
+
+Storm provides the primitives for transforming an existing stream into a new stream in a distributed and reliable way.
+
+In order to process such streams, one has to create spouts and bolts. A spout is simply an abstraction representing the source of a stream. A spout can read tuples from different sources, for example from a queue system (like Kestrel9 or Kafka10) or simply from plain text files, and emits them as a stream.
+
+A bolt does single-step stream transformations. It con- sumes any number of streams as input, performs arbitrary computations, and possibly emits new streams as output. A bolt can receive its stream from a spout or another bolt.
+
+Bolts are not required to be idempotent. Spouts and bolts are in-turn packaged in a topology.
+
+For the use-case we describe in this paper, we defined a topology as shown in Figure 2. The input are two indepen- dent streams that are processed in the topology and that are served by Kafka. The first stream is a Twitter stream that is continuously checked for Bitly codes; if a Bitly code is detected in a Tweet, our system further extracts all values from the Tweet tuple. In addition, it emits the Bitly code that is sent to the processing pipeline of the Bitly data. In the Bitly part of the topology, this code is dynamically inserted into a Bloom Filter with a give time-to-live (hence, all codes are removed from the filter after some time).
+
+The Bitly stream is parsed in parallel. It provides real- time data about the Bitly pages that are visited by arbitrary Web users. For each new Bitly visit, our topology extracts the corresponding Bitly code and checks if it is already contained in the global bloom filter, thus verifying the relevance of the code for the current period that is analyzed.
+
+If the code is present in the data set, we continue extracting values from the tuple and finally push the results into a Cassandra cluster for persistence.
+
+On top of this architecture, we perform a trend analysis of the topics with links mentioned in our Bitly database.
+
+The analysis is based on the hashtags that we extract from  9https://github.com/robey/kestrel 10http://kafka.apache.org/     Figure 1. Our current stream dashboard combining in real-time both Twitter and Bitly streams to provide additional information such as geographic information about the users and click timelines for each Tweet containing a Bitly link.
+
+the tweets containing the Bitly code. Since the Bitly code is unique for each URL, this allows us to track specific topics even though the hash tags might vary or contain spelling errors.
+
+Our rolling count is implemented using a single bolt as emitter for words and hash-tags, and then uses multiple instances of an aggregation bolt to distribute the load of the count. Each bolt maintains minimal stateful information.
+
+The results of the count are emitted in a given time interval to a single collector bolt that merges the results from all instances of the aggregation bolt.
+
+The configuration can be tuned using two parameters: The first parameter is the size of the moving window. The larger the window, the larger the memory consumption of the aggregation bolt. As we might record not only hashtags but all other words as well, the memory consumption can be a critical property, even if the original tweet text was cleaned from stop-words. The second parameter is the emit frequency of the rolling count from the central collector node. Depending on the use-case, the emit frequency should be chosen between a minimal delay and the width of the moving window to avoid loosing information.
+
+
+
+IV. PERFORMANCE EVALUATION We tested our solution in a production-ready environment  and on a full month of Bitly and Twitter data, representing almost 2TB of compressed text data. Our performance evaluation was performed on a 6 node cluster consisting of Intel i7-2600 CPUs with 8GB of main memory per node.
+
+One of the nodes was dedicated for storing and feeding the Kafka system. Kafka was running on 2 nodes and the storm topology together with the Cassandra nodes consisted of 4 nodes.
+
+A. Twitter Data  We were able to use a Twitter dataset from June 2012 in our experiments. The whole dataset (Bitly and Twitter) is about 1600 GB of compressed text. The main difficulty with this static dataset is that Storm is designed to process continuous streams rather than a historical dataset. To bypass this issue, we simulate a stream by reading the files line by line and pushing them to a Kafka messaging queue system.
+
+B. Bitly Data  Through a cooperation between Bitly and Verisign, we were able to access the complete Bitly stream for the same period as for the Twitter stream and to combine the information of both feeds. The Bitly stream is actually separated into two streams: Bitly encode and Bitly decode.
+
+The Bitly encode stream contains every new short link created while the Bitly decode stream contains all the clicks on the shortened links.
+
+In our use case, we mainly use only the Bitly decode stream. The Bitly decode is encoded in JSON and contains different attributes like the user-agent string of the browser, the Bitly code, the timestamp when the user clicked on the link, and several geo-location attributes.
+
+C. Performance Results  On average the topology we used was able to process about 12,000 tweets per second and concurrently 37,000 Bitly codes per second, which was more than enough to process the full version of both streams in real-time. At full speed, our topology was able to process the data in ? 8 days.
+
+This basically means that we are able to process a month full of data using commodity machines approximatively 4x faster than what would be necessary for real-time processing.
+
+Figure 2. Our topology combining and processing a Twitter and a Bitly streams in real-time  In a second experiment, we analyzed the scalability of a Storm topology, i.e., what is the impact of adding or removing nodes. In order to do this, we stored 34 GB of data in Kafka as a stream source and we recorded the processing time for this amount of data from the Storm UI. The remainder of the configuration was left unchanged.
+
+The topology was run with, respectively, one, two and three supervisors (nodes).
+
+Figure 3 shows the results based on the time required for processing the dataset. With only one node, the 34 GB were processed in 23min15sec, i.e, at 24.9 MB/s. With two nodes, the data was processed 405 seconds faster, taking 16min30sec (35.3 MB/s). Finally, with three nodes the process took 13min50sec (41.9 MB/s). Hence, our system achieves near linear scalability for our use case.
+
+We gained 405 seconds when passing from one to two supervisors and 160 seconds from two to three. Adding additional nodes would not be useful, however, since in that case we would almost reach the maximum capacity of the topology. In stream data processing, the maximum throughput is always dictated by the slowest component (e.g., slowest spout or bolt in a Storm topology). For our use-case, we identified the slowest component as the bolt that parses the Twitter tuples (?Extract Values?). However, with three or more supervisors, the bottleneck switches to the components reading the input data from disk (?Storage Server? in Figure 2).
+
+
+
+V. CONCLUSIONS & LESSONS LEARNT  The main goal of this case-study was to use Storm in order to process and combine two different data flows in real-time. Storm turned out to be a perfect fit for our needs,  Figure 3. Scalability measurements  supporting scalable, fault-tolerant and complex analyses on high-velocity streams.
+
+However, Storm also suffers from three main shortcom- ings. First, even if running a topology is rather straightfor- ward, finding the good configuration can be really tricky.
+
+Actually, the only way to optimize a topology at this point is to manually play with the different parameters and empirically observe their impact on the performance. Main memory consumption can also be an issue, as the larger the topology, the more main memory is required since the whole framework and all the data being processed are essentially memory resident. Finally, a running topology cannot be updated on the fly at this stage; This means that the only way to modify or scale-out a current topology is to stop it, modify it, and then restart it, which systematically leads to a down-time of at least several seconds, and hence to some lost data in a continuous context.
+

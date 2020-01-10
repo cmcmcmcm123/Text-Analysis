@@ -1,0 +1,152 @@
+A PARALLEL ALGORITHM FOR BIG TENSOR DECOMPOSITION USING RANDOMLY COMPRESSED CUBES (PARACOMP)
+
+ABSTRACT  A parallel algorithm for low-rank tensor decomposition that is es-  pecially well-suited for big tensors is proposed. The new algorithm  is based on parallel processing of a set of randomly compressed,  reduced-size ?replicas? of the big tensor. Each replica is indepen-  dently decomposed, and the results are joined via a master linear  equation per tensor mode. The approach enables massive paral-  lelism with guaranteed identifiability properties: if the big tensor  has low rank and the system parameters are appropriately chosen,  then the rank-one factors of the big tensor will be exactly recovered  from the analysis of the reduced-size replicas. The proposed algo-  rithm is proven to yield memory / storage and complexity gains of  order up to IJ F  for a big tensor of size I ? J ? K of rank F with F ? I ? J ? K.
+
+Index Terms? Tensor decomposition, CANDECOMP /  PARAFAC, Big Data, Parallel and Distributed Computation, Cloud  Computing and Storage.
+
+1. INTRODUCTION  Tensors are data structures indexed by three or more indices - a gen-  eralization of matrices, which are datasets indexed by two indices  (row, column). Tensor algebra has many similarities but also many  striking differences with matrix algebra - e.g., determining tensor  rank is NP-hard, while low-rank tensor factorization is unique un-  der mild conditions. Tensor factorizations have already found many  applications in signal processing (speech, audio, communications,  radar, signal intelligence, machine learning) and well beyond. Ten-  sors are becoming increasingly important, especially for analyzing  big data, and tensors easily turn really big, e.g., 1000?1000?1000 = 1 billion entries.
+
+Memory issues related to tensor computations with large but  sparse tensors have been considered in [1], [2], and incorporated in  the sparse tensor toolbox [3]. The main idea in those references is  to avoid intermediate product ?explosion? when computing sequen-  tial mode products, but the assumption is that the entire tensor fits in  memory (in ?coordinate-wise? representation), and the mode prod-  ucts expand (as opposed to reduce) the size of the ?core? array that  they multiply. Adaptive tensor decomposition algorithms for cases  where the data is serially acquired (or ?elongated?) along one mode  have been developed in [4], but these assume that the other two  modes are relatively modest in size. More recently, a divide-and-  conquer approach to tensor decomposition of large tensors has been  ?E-mail: nikos@umn.edu, Tel: +16126251242, Fax: +16126254583.
+
+Supported by NSF IIS-1247632.
+
+?E-mail: (epapalex,christos)@cs.cmu.edu. Supported by NSF IIS- 1247489.
+
+proposed in [5], whose idea is to break the data in smaller ?boxes?,  each one of which is factored independently, and the results are sub-  sequently concatenated using an iterative process. This assumes  that each smaller box admits a unique factorization (which cannot  be guaranteed from ?global? uniqueness conditions alone), requires  reconciling the different permutations and scalings of the different  blocks, and significant communication and signaling overhead.
+
+All of the aforementioned techniques require that the full data  be stored in (possibly distributed) memory. Realizing that this is  a show-stopper for truly big tensors, [6] proposed a random sam-  pling approach, wherein judiciously sampled ?significant? parts of  the tensor are independently analyzed, and a common piece of data  is used to anchor the different permutations and scalings. The down-  side of [6] is that it only works for sparse tensors, and it offers no  identifiability guarantees - although it usually works well for sparse  tensors. A different approach was taken in [7], which proposed ran-  domly compressing a big tensor down to a far smaller one. Assuming  that the big tensor admits a low-rank decomposition with sparse la-  tent factors, such a random compression guarantees identifiability of  the low-rank decomposition of the big tensor from the low-rank de-  composition of the small tensor. The line of proof is a generalization  of compressed sensing ideas from the linear to the multi-linear case.
+
+Still, this approach works only when the latent low-rank factors of  the big tenor are known to be sparse - and this is often not the case.
+
+This paper considers appropriate compression strategies for big  (sparse or dense) tensors that admit a low-rank decomposition / ap-  proximation, whose latent factors need not be sparse. Latent sparsity  is usually associated with membership problems such as clustering  and co-clustering [8]. A novel parallel algorithm for low-rank ten-  sor decomposition that is especially well-suited for big tensors is  proposed. The new algorithm is based on parallel processing of a  set of randomly compressed, reduced-size ?replicas? or the big ten-  sor. Each replica is independently decomposed, and the results are  joined via a master linear equation per tensor mode. The approach  enables massive parallelism with guaranteed identifiability proper-  ties: if the big tensor has low rank, and the system parameters are  appropriately chosen, then the rank-one factors of the big tensor will  indeed be recovered from the analysis of the reduced-size replicas.
+
+Furthermore, the approach affords memory / storage and complexity  gains of order up to IJ F  for a big tensor of size I ? J ?K of rank F with F ? I ? J ? K. No sparsity is required in the tensor or the underlying latent factors, although such sparsity can be exploited to  improve memory, storage and computational savings.
+
+2. TENSOR DECOMPOSITION: PRELIMINARIES  What is a tensor? A matrix is a dataset indexed by two indices,  say (r, c) for (row,column). A tensor is a dataset indexed by three      or more indices, say (i, j, k, ? ? ? ). The term tensor has a different meaning in Physics, however it has been widely adopted in recent  years to describe what was previously known as a multi-way ar-  ray. Matrices are two-way tensors, and they are special because it  turns out that there is an interesting dichotomy between two-way  and three- or higher-way tensors, with the latter sharing common  algebraic properties which are simply very different from those of  matrices.
+
+Notation: A scalar is denoted by an italic letter, e.g. a. A column  vector is denoted by a bold lowercase letter, e.g. a whose i-th entry  is a(i). A matrix is denoted by a bold uppercase letter, e.g., A with (i, j)-th entry A(i, j); A(:, j) (A(i, :)) denotes the j-th column (resp. i-th row) of A. A three-way array is denoted by an under-  lined bold uppercase letter, e.g., X, with (i, j, k)-th entry X(i, j, k).
+
+Vector, matrix and three-way array size parameters (mode lengths)  are denoted by uppercase letters, e.g. I . ? stands for the vector outer product: for two vectors a (I ? 1) and b (J ? 1), a ? b is an I ? J rank-one matrix with (i, j)-th element a(i)b(j); i.e., a ? b = abT .
+
+For three vectors, a (I ? 1), b (J ? 1), c (K ? 1), a ? b ? c is an I ? J ?K three-way array with (i, j, k)-th element a(i)b(j)c(k).
+
+The vec(?) operator stacks the columns of its matrix argument in one tall column; ? stands for the Kronecker product; ? stands for the Khatri-Rao (column-wise Kronecker) product: given A (I ? F ) and B (J ? F ), A?B is the JI ? F matrix  A?B = [ A(:, 1)?B(:, 1) ? ? ?A(:, F )?B(:, F )  ] Rank decomposition: The rank of an I?J matrix X is the smallest number of rank-one matrices (vector outer products of the form a?b) needed to synthesize X as  X = F?  f=1  af ? bf = AB T ,  where A := [a1, ? ? ? ,aF ], and B := [b1, ? ? ? ,bF ]. This relation can be expressed element-wise as  X(i, j) = F?  f=1  af (i)bf (j).
+
+The rank of an I?J ?K three-way array X is the smallest number of outer products needed to synthesize X as  X =  F? f=1  af ? bf ? cf .
+
+This relation can be expressed element-wise as  X(i, j, k) =  F? f=1  af (i)bf (j)cf (k).
+
+In the sequel we will assume that F is minimal, i.e., F = rank(X), unless otherwise noted. The tensor X comprises K ?frontal?  slabs of size I ? J ; denote them {Xk} K  k=1, with Xk := X(: , :, k). Re-arranging the elements of X in a tall matrix X := [vec(X1), ? ? ? , vec(XK)], it can be shown that  X = (B?A)CT ?? x := vec(X) = (C?B?A)1,  where, A, B are as defined for the matrix case, C := [c1, ? ? ? , cF ], 1 is a vector of all 1?s, and we have used the vectorization property  of the Khatri-Rao product vec(AD(d)BT ) = (B?A)d, where D(d) is a diagonal matrix with the vector d as its diagonal.
+
+CANDECOMP-PARAFAC: The above rank decomposition model  for tensors is known as parallel factor analysis (PARAFAC) [9,  10] or canonical decomposition (CANDECOMP) [11], or CP for  CANDECOMP-PARAFAC. CP is in a way the most basic tensor  model, because of its direct relationship to tensor rank and the con-  cept of rank decomposition; but other algebraic tensor models exist,  and we refer the reader to [12, 13] for gentle introductions to tensor  decompositions and applications.
+
+Uniqueness: The key feature of the CP model is its essential unique-  ness: under certain conditions, A, B, and C can be identified from  X up to permutation and scaling [9?11, 14?18]. The Kruskal-rank  of A, denoted kA, is the maximum k such that any k columns of A  are linearly independent (kA ? rA := rank(A)). Given X (? x), (A,B,C) are unique up to a common column permutation and scal- ing (e.g., scaling the first column of A and counter-scaling the first  column of B and/or C, so long as their product remains the same),  provided that kA + kB + kC ? 2F + 2. This is Kruskal?s cel- ebrated uniqueness result, see [14?17]. Kruskal?s result applies to  given (A,B,C), i.e., it can establish uniqueness of a given decom- position. Recently, more relaxed uniqueness conditions have been  obtained, which only depend on the size and rank of the tensor -  albeit they cover almost all tensors of the given size and rank, i.e.,  except for a set of measure zero. The latest available condition on  this front is the following.
+
+Theorem 1 [18] Consider an I ? J ? K tensor X of rank F , and order the dimensions so that I ? J ? K Let i be maximal such that 2i ? I , and likewise j maximal such that 2j ? J . If F ? 2i+j?2, then X has a unique decomposition almost surely.
+
+For I, J powers of 2, the condition simplifies to F ? IJ  . More  generally, the condition implies that if F ? (I+1)(J+1)  , then X has  a unique decomposition almost surely.
+
+3. BIG TENSOR COMPRESSION  When dealing with big tensors X that do not fit in main memory,  a reasonable idea is to try to compress X to a much smaller tensor  that somehow captures most of the systematic variation in X. The  commonly used compression method is to fit a low-dimensional or-  thogonal Tucker3 model (with low mode-ranks) [12,13], then regress  the data onto the fitted mode-bases. This idea has been exploited in  existing PARAFAC model-fitting software, such as COMFAC [19],  as a useful quick-and-dirty way to initialize alternating least squares  computations in the uncompressed domain, thus accelerating conver-  gence. A key issue with Tucker3 compression of big tensors is that  it requires computing singular value decompositions of the various  matrix unfoldings of the full data, in an alternating fashion. This is a  serious bottleneck for big data. Another issue is that Tucker3 com-  pression is lossy, and it cannot guarantee that identifiability prop-  erties will be preserved. Finally, fitting a PARAFAC model to the  compressed data can only yield an approximate model for the origi-  nal uncompressed data, and eventually decompression and iterations  with the full data are required to obtain fine estimates.
+
+Consider compressing x into y = Sx, where S is d ? IJK, d IJK. Sidiropoulos & Kyrillidis [7] proposed using a spe- cially structured compression matrix S = UT ?VT ?WT , which corresponds to multiplying (every slab of) X from the I-mode with  UT , from the J-mode with VT , and from the K-mode with WT ,  where U is I ? L, V is J ? M , and W is K ? N , with L ? I , M ? J , N ? K and LMN IJK. Such an S corresponds     to compressing each mode individually, which is often natural, and  the associated multiplications can be efficiently implemented when  the tensor is sparse. Due to a fortuitous property of the Kronecker  product [20],  ( U  T ?VT ?WT ) (A?B?C) =  ( (UTA)? (VTB)? (WTC)  ) ,  from which it follows that  y = ( (UTA)? (VTB)? (WTC)  ) 1 =  ( A?? B?? C?  ) 1.
+
+i.e., the compressed data follow a PARAFAC model of size L?M? N and order F parameterized by (A?, B?, C?), with A? := UTA,  B? := VTB, C? := WTC.
+
+Remark 1 It can be shown that multi-way tensor compression (i.e.,  computing Y from X, or, equivalently, y from x) can be ac-  complished at computational complexity O(max(L,M,N)IJK) if memory and speed of memory access are not an issue, or  O(LMNIJK) if memory and access are severely limited. If X has only NZ(X) nonzero elements, then computational complexity can be reduced to NZ(X)LMN without requiring any extra mem- ory or memory access. We skip details due to space limitations, but  full details will be included in the journal version.
+
+Using a Lemma in [7] and Theorem 1 from [18], we have estab-  lished the following result.
+
+Theorem 2 Let x = (A?B?C)1 ? RIJK , where A is I ? F , B is J ? F , C is K ? F , and consider compressing it to y =  ( UT ?VT ?WT  ) x =  ( (UTA)? (VTB)? (WTC)  )  = ( A?? B?? C?  ) 1 ? RLMN , where the mode-compression matri-  ces U (I?L,L ? I), V (J?M,M ? J), and W (K?N,N ? K) are independently drawn from an absolutely continuous distribution  with respect to the Lebesgue measure in RIL, RJM , and RKN , re-  spectively. If F ? min(I, J,K), A, B, C are all full column rank (F ), L ? M ? N , and  (L+ 1)(M + 1) ? 16F,  then A?, B?, C? are almost surely identifiable from the compressed  data y up to a common column permutation and scaling.
+
+Theorem 2 can establish uniqueness of A?, B?, C?, but we are ulti-  mately interested in A,B,C. We know that A? = UTA, and we know UT , but, unfortunately, it is a fat matrix that cannot be in-  verted. In order to uniquely recover A, one needs additional struc-  tural constraints. Sidiropoulos & Kyrillidis [7] proposed exploiting  column-wise sparsity in A (and likewise B,C), which is often plau-  sible in practice1. Sparsity is a powerful constraint, but it is not al-  ways valid (or a sparsifying basis may be unknown). For this reason,  we propose here a different solution, based on creating and factoring  a number of randomly reduced ?replicas? of the full data.
+
+A need only be sparse with respect to (when expressed in) a suitable  basis, provided the sparsifying basis is known a priori.
+
+4. THE PARACOMP APPROACH  Consider spawning P randomly compressed reduced-size ?replicas?{ Yp  }P p=1  of the tensor X, where Yp is created using mode com-  pression matrices (Up,Vp,Wp), see Fig. 1. Assume that identifia-  bility conditions per Theorem 2 hold, so that A?p, B?p, C?p are almost  surely identifiable (up to permutation and scaling of columns) from  Yp. Then, upon factoring Yp into F rank-one components, one will  obtain  A?p = U T p A?p?p. (1)  Assume that the first two columns of each Up (rows of U T p ) are  common, and let U? denote this common part, and A?p denote the  first two rows of A?p. We therefore have  A?p = U? T A?p?p.
+
+Dividing each column of A?p by the element of maximum modulus  in that column, and denoting the resulting 2 ? F matrix A?p, we obtain  A?p = U? T A??p.
+
+Notice that ? does not affect the ratio of elements in each 2? 1 col- umn. If these ratios are distinct (which is guaranteed almost surely if  U? and A are independently drawn from absolutely continuous distri-  butions), then the different permutations can be matched by sorting  the ratios of the two coordinates of each 2?1 column of A?p. In prac- tice using a few more ?anchor? rows will improve the permutation-  matching performance, and is recommended in difficult cases with  high noise variance. When S anchor rows are used, the optimal  permutation matching problem can be cast as a Linear Assignment  Problem (LAP), which can be efficiently solved using the Hungar-  ian Algorithm. After this column permutation-matching process, we  go back to (1) and permute its columns to obtain A?p satisfying  A?p = U T p A??p.
+
+It remains to get rid of ?p. For this, we can again resort to the  first two common rows, and divide each column of A?p with its top  element. This finally yields  A?p = U T p A??.
+
+For recovery of A up to permutation and scaling of its columns, we  then require that the matrix of the linear system  ? ??  A?1 ...
+
+A?P  ? ?? =  ? ??  UT1 ...
+
+UTP  ? ??A?? (2)  be full column rank. This implies that  2 +  P? p=1  (Lp ? 2) ? I  i.e., P?  p=1  (Lp ? 2) ? I ? 2.
+
+Note that every sub-matrix contains the two anchor rows which are  common, and duplicate rows clearly do not increase the rank. Also  note that once the dimensionality requirement is met, the matrix will  be full rank with probability 1, because its non-redundant entries are  drawn from a jointly continuous distribution (by design).
+
+Assuming Lp = L, ?p ? {1, ? ? ? , P} for simplicity (and sym- metry of computational load), we obtain P (L ? 2) ? I ? 2, or, in terms of the number of threads P ? I?2  L?2 . Likewise, from the corre-  sponding full column rank requirements for the other two modes, we  obtain P ? J M  , and P ? K N  . Notice that we do not subtract 2 from numerator and denominator for the other two modes, because the  permutation of columns of A?p, B?p, C?p is common - so it is enough  to figure it out from one mode, and apply it to other modes as well.
+
+One can pick the mode used to figure out the permutation ambiguity,  leading to a symmetrized condition. If the compression ratios in the  different modes are similar, it makes sense to use the longest mode  for this purpose; if this is the last mode, then  P ? max  ( I  L , J  M , K ? 2  N ? 2  )  We have thus established the following result.
+
+Theorem 3 In reference to Fig. 1, assume x := vec (X) = (A?B?C)1 ? RIJK , where A is I?F , B is J?F , C is K?F (i.e., the rank of X is at most F ). Assume that F ? I ? J ? K, and A, B, C are all full column rank (F ). Further assume that  Lp = L, Mp = M , Np = N , ?p ? {1, ? ? ? , P}, L ? M ? N ,  (L+ 1)(M + 1) ? 16F , the elements of {Up} P  p=1 are drawn from  a jointly continuous distribution, and likewise for {Vp} P  p=1, while  each Wp contains two common anchor columns, and the elements  of {Wp} P  p=1 (except for the repeated anchors, obviously) are drawn  from a jointly continuous distribution. Then the data for each thread  yp := vec ( Yp  ) can be uniquely factored, i.e.,  ( A?p, B?p, C?p  ) is  unique up to column permutation and scaling. If, in addition to  the above, we also have P ? max (  I L , J M , K?2 N?2  ) parallel threads,  then (A,B,C) are almost surely identifiable from the thread out-  puts {(  A?p, B?p, C?p  )}P p=1  up to a common column permutation  and scaling.
+
+The above result is indicative of a family of results that can be de-  rived. Its significance may not be immediately obvious, so it is worth  elaborating further at this point. On one hand, Theorem 3 shows  that fully parallel computation of the big tensor decomposition is  possible ? the first such result, to the best of our knowledge, that  guarantees identifiability of the big tensor decomposition from the  intermediate small tensor decompositions, without placing stringent  additional constraints. On the other hand, the memory/storage and  computational savings are not necessarily easy to see. The following  claim nails down the take-home message.
+
+Claim 1 Under the conditions of Theorem 3, if K?2 N?2  =  max (  I L , J M , K?2 N?2  ) , then the memory / storage and computational  complexity savings afforded by the PARACOMP approach in Fig. 1  relative to brute-force computation are of order IJ F  .
+
+5. SIMULATIONS  For simulations, we set I = J = K = 500 and L = M = N = 50,  so P ? 11 ? 10.375 = max (  I L , J M , K?2 N?2  ) for identifiability.
+
+The big tensor has 125M elements, or about 1Gbyte if stored in dou-  ble precision. This allows in-memory factoring of the big tensor  for comparison purposes. Each small tensor has 125K elements, or  about 1Mbyte in double precision; for P = 11, the overall stor- age needed for all 11 small tensors is only 11Mbytes, or about 1%  of the big tensor. We set F = 5 and generate the noiseless ten- sor by randomly and independently drawing A, B, and C from  randn(500,5), and then taking the sum of outer products of their  corresponding columns. Gaussian i.i.d. measurement noise of stan-  dard deviation ? = 0.01 is added to the noiseless tensor to produce
+
+X. Fig. 6 shows ||A ? A?||22, where A? denotes the PARACOMP estimate of A, as a function of P . The baseline is the total squared  error attained by directly fitting the uncompressed X. PARACOMP  yields respectable accuracy with only 1.2% of the full data, and total  squared error of order 10?6 ? 10?5 with 24% of the full data, vs.
+
+10?7 for the baseline algorithm that has access to 100% of the data.
+
+6. CONCLUSIONS  We have proposed a new parallel algorithm for tensor decomposi-  tion that is especially well-suited for big tensors. This new approach  is the first to enable complete parallelism of the core computation  together with substantial memory/storage savings and identifiability  guarantees. An in-depth study of pertinent trade-offs and extensions  is currently underway, and the results will be reported in follow-up  publications.
+
+Fig. 1. The fork spawns { Yp  }P p=1  , where Yp is obtained by ap-  plying (Up,Vp,Wp) to X. Each Yp is independently factored in  parallel. The join step anchors all { A?p  }P p=1  to a common reference,  and solves a linear problem for the overall A; likewise for B, C.
+
+Fig. 2. MSE vs. # of cores/repetitions P .
+
+7. REFERENCES  [1] B.W. Bader and T.G. Kolda, ?Efficient MATLAB computations with sparse and factored tensors,? SIAM Journal on Scientific Computing, vol. 30, no. 1, pp. 205?231, December 2007.
+
+[2] T.G. Kolda and J. Sun, ?Scalable tensor decompositions for multi- aspect data mining,? in ICDM 2008: Proceedings of the 8th IEEE 372.
+
+[3] B.W. Bader and T.G. Kolda, ?Matlab tensor toolbox version 2.5,? http://www.sandia.gov/?tgkolda/TensorToolbox/, January 2012.
+
+[4] D. Nion and N.D. Sidiropoulos, ?Adaptive algorithms to track the parafac decomposition of a third-order tensor,? IEEE Trans. on Sig- nal Processing, vol. 57, no. 6, pp. 2299?2310, 2009.
+
+[5] A.H. Phan and A. Cichocki, ?Parafac algorithms for large-scale prob- lems,? Neurocomputing, vol. 74, no. 11, pp. 1970?1984, 2011.
+
+[6] Evangelos E. Papalexakis, Christos Faloutsos, and Nicholas D.
+
+Sidiropoulos, ?Parcube: Sparse parallelizable tensor decompositions.,? in ECML/PKDD (1), Peter A. Flach, Tijl De Bie, and Nello Cristian- ini, Eds. 2012, vol. 7523 of Lecture Notes in Computer Science, pp.
+
+521?536, Springer.
+
+[7] N.D. Sidiropoulos and A. Kyrillidis, ?Multi-way compressed sensing for sparse low-rank tensors,? IEEE Signal Processing Letters, vol. 19, no. 11, pp. 757?760, 2012.
+
+[8] E.E. Papalexakis, N.D. Sidiropoulos, and R. Bro, ?From k -means to higher-way co-clustering: Multilinear decomposition with sparse latent factors,? IEEE Trans. on Signal Processing, vol. 61, no. 2, pp. 493?506, 2013.
+
+[9] R.A. Harshman, ?Foundations of the PARAFAC procedure: Models and conditions for an ?explanatory? multimodal factor analysis,? UCLA Working Papers in Phonetics, vol. 16, pp. 1?84, 1970.
+
+[10] R.A. Harshman, ?Determination and proof of minimum uniqueness conditions for PARAFAC-1,? UCLA Working Papers in Phonetics, vol.
+
+22, pp. 111?117, 1972.
+
+[11] J.D. Carroll and J.J. Chang, ?Analysis of individual differences in mul- tidimensional scaling via an n-way generalization of Eckart-Young de- composition,? Psychometrika, vol. 35, no. 3, pp. 283?319, 1970.
+
+[12] A.K. Smilde, R. Bro, P. Geladi, and J. Wiley, Multi-way analysis with applications in the chemical sciences, Wiley, 2004.
+
+[13] P.M. Kroonenberg, Applied multiway data analysis, Wiley, 2008.
+
+[14] J.B. Kruskal, ?Three-way arrays: Rank and uniqueness of trilinear de- compositions, with application to arithmetic complexity and statistics,? Linear Algebra and its Applications, vol. 18, no. 2, pp. 95?138, 1977.
+
+[15] N.D. Sidiropoulos and R. Bro, ?On the uniqueness of multilinear de- composition of N-way arrays,? Journal of chemometrics, vol. 14, no.
+
+3, pp. 229?239, 2000.
+
+[16] T. Jiang and N.D. Sidiropoulos, ?Kruskal?s permutation lemma and the identification of CANDECOMP/PARAFAC and bilinear models with ing, vol. 52, no. 9, pp. 2625?2636, 2004.
+
+[17] A. Stegeman and N.D. Sidiropoulos, ?On Kruskal?s uniqueness condi- tion for the CANDECOMP/PARAFAC decomposition,? Linear Alge- bra and its Applications, vol. 420, no. 2-3, pp. 540?552, 2007.
+
+[18] L. Chiantini and G. Ottaviani, ?On generic identifiability of 3-tensors of small rank,? SIAM. J. Matrix Anal. & Appl., vol. 33, no. 3, pp. 1018? 1037, 2012.
+
+[19] R. Bro, N.D. Sidiropoulos, and G.B. Giannakis, ?A fast least squares algorithm for separating trilinear mixtures,? in Proc. ICA99 Int. Work- shop on Independent Component Analysis and Blind Signal Separation, 1999, pp. 289?294.
+
+[20] J.W. Brewer, ?Kronecker products and matrix calculus in system the- ory,? IEEE Trans. on Circuits and Systems, vol. 25, no. 9, pp. 772?781, 1978.
+

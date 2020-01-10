@@ -1,0 +1,206 @@
+HadoopWatch: A First Step Towards Comprehensive Traffic Forecasting in Cloud Computing
+
+Abstract?This paper presents our effort towards comprehen- sive traffic forecasting for big data applications using external, light-weighted file system monitoring. Our idea is motivated by the key observations that rich traffic demand information already exists in the log and meta-data files of many big data applications, and that such information can be readily extracted through run-time file system monitoring. As the first step, we use Hadoop1 as a concrete example to explore our methodology and develop a system called HadoopWatch to predict traffic demand of Hadoop applications. We further implement HadoopWatch in our real small-scale testbed with 10 physical servers and 30 virtual machines. Our experiments over a series of MapReduce applications demonstrate that HadoopWatch can forecast the traffic demand with almost 100% accuracy and time advance.
+
+Furthermore, it makes no modification of the Hadoop framework, and introduces little overhead to the application performance.
+
+
+
+I. INTRODUCTION  The explosion of big data applications has imposed sig- nificant challenges on the design of network infrastructure in cloud and data center environments. Researchers have proposed various new network architectures [2, 18, 28] and traffic engineering mechanisms [3, 5, 32] to handle the rapid growth of bandwidth requirement in data center networks.
+
+Many of these proposals leverage the knowledge of application traffic demands to customize network design. For example, Hedera [3], MicroTE [5] and D3 [32] perform flow-level traffic engineering and rate control based on predicted traffic demands. Helios [12], c-Through [28] and OSA [6] rely on accurate traffic demand estimation to perform dynamic optical circuit provisioning. More recently, researchers have also looked into the tight integration of applications and network to configure the network topology and routing based on application run-time traffic demands [14, 29, 31]. All these systems require comprehensive understanding of application traffic in data center networks ? the ability to forecast traffic demand before packets enter the network.
+
+However, it is difficult to predict application traffic de- mand accurately. All the existing solutions focus on using heuristic algorithms based on the measurement of network level parameters. For example, Hedera [3] and Helios [12] estimate traffic demands using flow counter measurement on switches; c-Through [28] and Mahout [8] use socket buffer occupancy at end hosts to estimate traffic demands for different destinations. However, these schemes fall short. First, most of them cannot predict the traffic demand before the traffic  1One of the most popular and widely-used open-source software framework in cloud computing.
+
+enters the network; Second, parameters observed on network paths cannot accurately reflect the truth of application demands due to the noise of background flows and congestion control at end hosts; Third, they fail to capture the fine-grained traffic dependencies and priorities information imposed by applications. As a result, these network layer solutions are shown to perform poorly in predicting the real application demands [4], which further leads to undesired performance in network provisioning and traffic engineering mechanisms using these demands.
+
+In this paper, we explore an alternative solution to provide comprehensive traffic forecasting at application layer. With application specific information, application layer traffic fore- casting is expected to achieve more accurate traffic demand estimation. However, there are several design issues that make this approach challenging and interesting for exploration.
+
+? Ahead-of-time: The scheme must be able to predict traffic demand before the data is sent to the network, so that it can be most useful for network configuration and traffic engineering.
+
+? Transparency: Many big data applications in data cen- ters are complex distributed applications. Traffic forecast- ing should be transparent to these applications and do not modify any application codes.
+
+? Light-weighted: Traffic forecasting should be light- weighted. Many data center applications are large scale systems with high performance requirements. The traffic forecasting system should not introduce much overhead to degrade the application performance; and it should scale gracefully with the number of computing nodes and concurrent jobs.
+
+? Fine-grained: An application layer traffic forecaster is expected to provide more fine-grained traffic demand information than just traffic volume. For example, many distributed applications have computation barriers that cause dependencies among multiple flows, and flows with more dependencies need high priorities in transfer. Such structural information will be useful to enable better network control and optimization.
+
+We observe that rich traffic demand information exists in the log and meta-data files of many big data applications, and such information can be extracted efficiently through run-time file system monitoring. We use Hadoop as a concrete example to explore the design of application layer traffic forecasting using file system monitoring. We develop a system called  IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     HadoopWatch, which is a passive monitoring agent attached to the Hadoop framework that monitors the meta-data and logs of Hadoop jobs to forecast application traffic before the data is sent. It does not require any modification to the Hadoop framework.
+
+We have implemented HadoopWatch and deployed it on a real small-scale testbed with 10 physical machines and 30 virtual machines. Our experiments over a series of MapReduce applications demonstrate that HadoopWatch can forecast the application layer traffic demand with almost 100% accuracy and time advance, while introducing little overhead to the application performance.
+
+Our work is a first step towards comprehensive traffic forecasting at the application layer. Many research problems remain to be explored in future work. However, we believe our work shows early promises of performing comprehen- sive and light-weighted traffic forecasting through file system monitoring, which could be a useful building block for tight network and application integration in cloud and data center environments.
+
+Roadmap: The rest of the paper is organized as follows.
+
+Section ? II introduces the background and key observations that enables the forecasting architecture. Section ? III presents the design of HadoopWatch. Section ? IV discusses the imple- mentation and evaluation results of HadoopWatch. Section ? V reviews the related works. We discuss the future work and conclude the paper in Section ? VI.
+
+
+
+II. TRAFFIC FORECASTING VIA FILE SYSTEM MONITORING  Due to a variety of data exchange requirements, there is a large amount of network traffic in the life cycle of a Hadoop job. We first briefly introduce the Hadoop architecture and its dataflow in different stages. Then, to motivate our key idea of forecasting application traffic through external, light- weight file system monitoring, we introduce the observations and opportunities in file systems that provide rich-semantics enabling traffic forecasting.
+
+A. Hadoop Background  Hadoop consists of Hadoop MapReduce and Hadoop Dis- tributed File System (HDFS). Hadoop MapReduce is an im- plementation of MapReduce designed for large clusters, while HDFS is a distributed file system designed for batch-oriented workloads. Each job in MapReduce has two phases. First, users specify a map function that processes the input data to generate a list of intermediate key-value pairs. Second, a user-defined reduce function is called to merge all intermediate values associated with the same intermediate key [11]. HDFS is used to store both the input to the map and the output of the reduce, but the intermediate results, such as the output of the map, are stored in each node?s local file system.
+
+A Hadoop implementation contains a single master node and many worker nodes. The master node, called the Job- Tracker, handles job requests from user clients, divide these jobs into multiple tasks, and assign each task to a worker  node for execution. Each worker node maintains a TaskTracker process that executes the tasks assigned to itself. Typically, a TaskTracker has a fixed number of slots for accepting tasks.
+
+B. Hadoop Dataflows  Many Hadoop jobs are communication intensive, involving a large amount of data transfer during their execution. We broadly characterize Hadoop dataflows into three types.
+
+? Import: The map reads data from HDFS. To increase overall data loading throughput of a job, multiple con- current map tasks may be scheduled to fetch data in parallel. Specifically, for each map task, the JobTracker will specify its input split. As a map task runs, it will fetch the corresponding data (in the form of key-value pairs) from HDFS and iteratively perform the user defined map function over it. Optimized with various scheduling techniques [30, 33], most map tasks achieve data locality, while there also exist some non-local map tasks reading their input splits from remote DataNodes which involve network transfer.
+
+? Shuffle: Intermediate results are shuffled from the map to the reduce. Before the reduce function is called, a reduce task requires intermediate results from multiple map tasks as its input. When a map task finishes, it will write its output to local disk, commit to the JobTracker, and reclaim the resources. Meanwhile, the reduce task will periodically query the JobTracker for any latest map completion events. Being aware of these finished map tasks and their output locations, a reduce task initiates a few threads and randomly requests intermediate data from the TaskTracker daemons on these nodes.
+
+? Export: The reduce writes output to HDFS. Large output data is partitioned into multiple fix-sized blocks2, while each of them is replicated to three DataNodes in a pipeline [24, 27]. A Hadoop job completes after the outputs of all reduce tasks are successfully stored.
+
+C. Observations and Opportunities  Rich traffic information in file systems: Most cloud big data applications, such as Hadoop, have various file system activities during the job execution. We observe that these file system activities usually contain rich information about the job run-time status and its upcoming network traffic.
+
+First, logging is a common facility in big data applications for troubleshooting and debugging purposes. However, these log file entries can also be used to identify network traffic.
+
+For example, the source and destination of a shuffle flow in MapReduce can be determined after locating a pair of map and reduce tasks, while such task scheduling results are written in the JobTracker?s log.
+
+Besides, intermediate computing results and meta-data are periodically spilled to disk due to limited capacity of memory allocation. The size of all the output partitions of a map task is  2The last block in a file may be smaller.
+
+IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     Event Description  IN CREATE File was created.
+
+IN ACCESS File was read from.
+
+IN MODIFY File was written to.
+
+IN ATTRIB File?s attribute was changed.
+
+IN CLOSE WRITE File was closed (opened for writing).
+
+IN CLOSE NOWRITE File was closed (opened not for writing).
+
+IN OPEN File was opened.
+
+IN MOVED FROM File was moved away from watch.
+
+IN MOVED TO File was moved to watch.
+
+IN DELETE File was deleted.
+
+IN DELETE SELF The watch itself was deleted.
+
+TABLE I VALID EVENTS IN inotify  saved in a temporary index file, from which we can compute the payload volume of all the shuffle flows from this map.
+
+In addition, the namespace of a distributed file system may also be accessible by parsing its meta-data files on disk. For example, when the HDFS starts up, its whole namespace is updated in a file named FsImage. Another file called EditLog is used to record all namespace changes thereafter.
+
+Although Hadoop only maintains a snapshot of the namespace in memory for frequent remote queries, it can be externally reconstructed with those two files on disks. The reconstructed namespace can be used to recover the network traffic generated by HDFS read and write operations.
+
+Light-weighted file system monitoring. We also observe that these file system activities can be monitored using light- weighted file monitoring facility in modern operating systems.
+
+In recent Linux system, there is a file change notification subsystem called inotify [21]. The key of inotify is to perform file surveillance in the form of watch, with a pathname and an event mask specifying the monitored file and the types of file change events. A file will be monitored after it is tagged to watch, while all the files in a directory will be monitored if the directory is watched. Table I shows all the valid events in inotify. With inotify, we can dynamically retrieve the footprint of an application with its file system activities. Inotify can monitor file change events efficiently in an asynchronous manner to avoid polling. By doing that, the application?s file system operations can be executed in a non-blocking mode when inotify is running.
+
+In summary, the above two key observations enable us explore the idea of forecasting application traffic through external, light-weight file system monitoring.
+
+
+
+III. HADOOPWATCH  As the first step, we use Hadoop as a concrete example to explore the detailed design of our traffic forecasting approach.
+
+We choose Hadoop because it is one of the most popular big data applications running in today?s cloud and data centers, and its execution structure represents several typical traffic patterns in data center applications. We develop a system called HadoopWatch and show how we can forecast traffic demand of Hadoop jobs by only monitoring the file system  Fig. 1. Architecture of traffic forecasting  activities. In the following, we first introduce the Hadoop- Watch architecture, then illustrate the monitor file selection, and finally show how to perform traffic forecasting.
+
+A. Architecture Based on the above observations, we propose to forecast  the traffic demand of big data applications by monitoring their file system activities. Figure 1 shows the architecture of this traffic forecasting framework. This framework is a passive monitoring engine attached to a big data cluster, which does not require any modification to the applications.
+
+It continuously monitors the file system activities underneath big data applications and predict their traffic demands at job run-time. The traffic forecasting framework has two compo- nents, Forecast Agents and Forecast Controller. We implant a Forecast Agent in each worker/master node to collect traffic information and report to the centralized Forecast Controller.
+
+? Forecast Agent: Forecast Agent is a daemon implanted on each node that collecting run-time file system activ- ities. To keep it light-weighted, we selectively monitor the specific files and principal activities with inotify. To monitor file accessing details, some system call param- eters are also collected and encoded in the redundant space of inotify interface. To get the content of other bulk data and metadata on disk, the agent will read them directly. Information collected by Forecast Agent will be continuously reported to the Forecast Controller.
+
+? Forecast Controller: The main function of the Forecast Controller is to collect reports from all the Forecast Agents and generate comprehensive traffic demand re- sults. The reported traffic demand information may in- clude the basic information such as source, destination and volume and more fine-grained information such as flow dependencies and priorities.
+
+Note that this centralized model is also inspired by the suc- cess of several recent large-scale infrastructure deployments such as GFS [17] and MapReduce [11] which employ a central master to manage tasks at the scale of tens of thousands of worker nodes.
+
+B. Monitor File Selection In Table II, we summarize all the files that should be  monitored to forecast the three types of dataflows in Hadoop.
+
+IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     Application Flow type Required information Monitoring files & events Response action  Hadoop  Shuffle  location of a complete map task, size of each map output partition file.out.index IN CLOSE WRITE parse the sequence file format, collect partLengths of all partitions  location of a new reduce task JobTracker?s log IN MODIFY scan next entry for the TaskTracker that launches a reduce task  when a flow starts file.out IN SEEK 3 determine which reduce task are fetching the intermediate data  when a flow terminates TaskTracker?s log IN MODIFY scan next entry indicating success of the shuffle flow  Export  block allocation results NameNode?s log IN MODIFY scan next entry for a new block allocation result  where a pipeline establishes and when a flow starts DataNode?s logs IN MODIFY scan next entry for remote HDFS writing request  when a flow terminates DataNode?s log IN MODIFY scan next entry indicating success of the HDFS writing flow  Import  locality of a map task JobTracker?s log IN MODIFY scan next entry for locality of a map task  input split (blocks) and flow size split.dta IN CLOSE WRITE parse split(HDFS path/start/offset), query for corresponding blocks  when a flow starts block file IN SEEK match the probable map task fetching the data block  when a flow terminates DataNode?s log IN MODIFY scan next entry indicating success of the HDFS reading flow  TABLE II THE FILES FOR TRAFFIC FORECASTING IN HADOOPWATCH  Fig. 2. Data flows in shuffle phase  Note that the selection of these files is based on the detailed analysis and observation of the Hadoop framework and job execution semantics as follows.
+
+Import: The map needs to read input from HDFS. From the JobTracker?s log, we can easily identify whether a map task is data-local, rack-local or non-local. For rack-local and non-local maps, they introduce data import from remote nodes through networks. However, the JobTracker?s log does not tell from which DataNodes a map will read its input data split. To forecast this information, we pick out the split.dta file. This file contains a map task?s input split information, i.e., the input file location, offset and length in HDFS.
+
+Shuffle: To forecast the shuffle traffic from the map to the reduce, we observe that the output of a map task is stored in a file named file.out as shown in Figure 2. To support direct access to all data partitions in it, there is an index file named file.out.index that maintains all their offsets and sizes. Since each partition in file.out corresponds to the payload of a shuffle flow sent to a reduce, we can forecast its volume based on the size of the corresponding partition. On the other hand, to infer the source and the destination of a shuffle flow, we use the scheduling result in the JobTracker?s log which includes the information where a map task or a reduce task is launched.
+
+Export: The reduce may export its output to HDFS, which entails HDFS writing. In HDFS, each data block is replicated with multiple replicas (3 replicas by default). The HDFS writ-  Fig. 3. Pipelined HDFS writing  ing is implemented using a pipeline set up among replica nodes to maintain data consistency. Figure 3 shows the diagram of a pipelined HDFS writing. First, when a HDFS client requests to write a block, the NameNode allocates 3 sequential DataNodes and writes this allocation in its log (1). Then, before the block is transferred between each pair of DataNodes, the receiver side writes a log indicating the upcoming HDFS writing (2- 4). Finally, when the write completes, its volume is saved in the DataNode?s log (5-7). Through these log files, we can forecast the communication matrix according to the pipeline and predict the volume of upcoming flows based on the HDFS block size (e.g., 64MB).
+
+C. Traffic Forecasting  As above, HadoopWatch can provide accurate traffic fore- casting for every data flow, including its source, destination and volume. As shown in Table III, the source and destination are two identities, which can uniquely identify a flow in a  3This event type is not implemented in primitive inotify.
+
+IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     Dataflow Source Destination Volume  Import mapID, input blockID mapID blockID?s size  Shuffle mapID reduceID partition size  Export reduceID reduceID, output blockID blockID?s size  TABLE III PER FLOW METRICS  Hadoop job. With these per flow metrics, we can not only compose the overall traffic matrix in the cluster, but also identify fine-grained flow relations such as dependency and priority.
+
+The source and destination in Table III are logical identities.
+
+To determine the physical locations, we just map the logical source and destination to the physical nodes. The mapping requires knowledge of task scheduling results and block lo- cations. Most of these information is plainly accessible by monitoring files listed in Table II. However, the source loca- tions of map input blocks and the volumes of reduce export flows cannot be explicitly captured. Therefore, HadoopWatch develops the following two heuristics to get these information.
+
+? Source location of a map input block: When the JobTracker schedules a rack-local or non-local map task, it will independently choose the closest block replica to fetch. For these map tasks, we can translate their input splits to blockIDs through querying the NameNode. Since there are rarely two tasks processing a same input dataset simultaneously, the node where we captured such block file access event probability is the chosen source of the data import flow.
+
+? Volume of a data export flow: When the reduce task output is written into HDFS, the data will be divided and stored into multiple blocks (typically 64MB) and replicated to several DataNodes. Because the block size is fixed, in most cases, the size of an export flow is fixed, i.e., 64MB. However, the last block size is uncertain.
+
+Considering that the output size of a fixed user-defined reduce function is approximately proportional to its input size, we maintain a selectivity, s(r), for reduce tasks in a job, which is defined as the output size to its input size. For an upcoming reduce operation, we estimate its selectivity based on the selectivities of the reduce operations in recent past using exponentially weighted moving average (EWMA).
+
+snew (r) = ?smeasured(r) + (1-?) sold(r)  where, ? is the smoothing factor (HadoopWatch uses ? = 0.25). On the other hand, a reduce task r?s input size, I(r), is the sum of shuffle flow volumes from all map tasks. We get the estimated reduce output using:  O(r) = I(r)? s(r) For the ith export flow of the reduce task r, its volume vol(i) is calculated by checking whether the maximum block size is enough to save the remaining bytes:  ????????????  ?????  ?????   ?????? ??????  ?????  Fig. 4. Flow patterns in Hadoop  Algorithm 1 Traffic matrix calculation Input: every f : (src, dest, vol)  1: for each f do 2: ip1 = location(f ?s src) 3: ip2 = location(f ?s dest) 4: TM (ip1, ip2) ? TM (ip1, ip2) + f ?s vol 5: end for  vol(i) =  { BLKmax, if O(r) > i?BLKmax O(r)? (i? 1)BLKmax, otherwise  Here, BLKmax stands for the maximum size of a HDFS block (e.g., 64MB).
+
+With the above basic data flow information inferred, we next can compose the traffic matrix and identify the flow dependency and priority. While easy to achieve, we anticipate that these information is very useful for a variety of data center network technologies to achieve a fine-grained traffic engineering, network profiling, to transport protocol design.
+
+For example, traffic distribution information is critical for fine- grained flow scheduling in Hedera [3] and traffic engineering in MicroTE [5], while dependency and priority information can be incorporated into several recent deadline-aware trans- port designs like D2TCP [26] and D3 [32] for more intelligent congestion control.
+
+? Traffic matrix: We can easily calculate the traffic matrix in a cluster with every data flow information. As shown in Algorithm 1, to calculate the traffic volume between any two physical nodes ip1 and ip2, we just need to sum up the volumes of individual flows between them.
+
+? Dependency: We define two types of dependencies, i.e., causal-dependency and co-dependency. The causal- dependency f1 ? f2 means that the initiation of f2 depends on the completion of f1. For example, flowA? flowC and flowC ? flowE in Figure 4. The co- dependency f1 ? f2 specifies that both f1 and f2 share a common barrier. The barrier cannot be passed through until the completion of all these co-dependent flows.
+
+One such example is the shuffle flows that serve the same reduce task (e.g. flowB ? flowC), and another example is the pipeline flows replicating the same block (e.g. flowE ? flowF ).
+
+IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     Algorithm 2 Dependency Input: f1: (src, dest) and f2: (src, dest) Output: 1 (f1 ? f2); 2 (f1 ? f2); 3 (f1 ? f2); 0  (otherwise).
+
+1: if f1?s dest == f2?s src then 2: return 1 3: else if f1?s src == f2?s dest then 4: return 2 5: else if f1?s dest == f2?s dest then 6: return 3 7: end if 8: return 0  We can infer the dependency of two flows based on their logical source and destination identities in Table III.
+
+Algorithm 2 determines the dependency between f1 and f2. For example, we know flowA ? flowC, since the destination of flowA and the source of flowC are both Map 4. And flowB ? flowC, since they share a same destination, Reduce 2.
+
+? Priority: Unlike flow dependency that reflects the inher- ent structure of Hadoop jobs, flow priority is a metric that depends more on the optimization objectives when the forecasted traffic is used in network planning. For different optimization objectives, we can define different policies to assign flow priorities. In a normal use case that we want to boost the execution of a Hadoop job, a flow in an earlier phase should be assigned to a higher priority. Because most Hadoop jobs are composed of multiple tasks (e.g., import ? map ? shuffle ? reduce ? export), and a job completes when the slowest task is finished. As shown in Figure 4, import, shuffle and reduce flows should be prioritized accordingly (e.g., flowA > flowB > flowD) to ensure the slowest task finishes as fast as possible. Another example of priority assignment policy is that shorter flows in larger co-dependent groups should be assigned with higher priorities. Using the ?shortest job first? strategy, finishing shorter flows in larger co-dependent group first can quickly decrease the number of blocking flows and speed up the execution of a Hadoop job.
+
+
+
+IV. EVALUATION  Testbed: We deployed HadoopWatch on 30 virtual ma- chines (VMs) running on 10 physical servers. All the 10 physical servers are HP PowerEdge R320 with a quad core Intel E5-1410 2.8GHz CPU, 8GB memory and a 1Gbps network interface. On each physical server, we set up 3 Xen VMs (DomU) and each of the VMs is allocated with 1 dedicated processor core (2 threads) and 1.5GB memory. We run Hadoop 0.20.2 on all the 30 VMs for the traffic forecasting experiments.
+
+Evaluation metrics: In our evaluation, we study the ac- curacy of HadoopWatch in prediction flow volumes, the time advance of these predictions and the overhead of Hadoop-  0 100 200  0.5   Lead time(ms)  C D  F  10G Terasort  0 100 200  0.5   Lead time(ms)  C D  F  40G Wordcount  0 100 200  0.5   Lead time(ms)  C D  F  20G Hive Join  0 100 200  0.5   Lead time(ms)  C D  F  20G Hive Aggregate  Fig. 6. Time advance in remote import flow forecasting  0 20 40 60  0.5   Lead time(s)  C D  F 10G Terasort  0 20 40 60  0.5   Lead time(s)  C D  F  40G Wordcount  0 20 40 60  0.5   Lead time(s)  C D  F  20G Hive Join  0 20 40 60  0.5   Lead time(s)  C D  F 20G Hive Aggregate  Fig. 7. Time advance in shuffle flow forecasting  Watch. To collect the ground truth of Hadoop traffic volume and timing, we use TCPdump to capture the actual time and volume of data flows. We extract the source and destination of each flow by parsing the application-level requests and responses in Hadoop flows. We use the absolute difference between the predicted volume and actual volume to evaluate the forecasting accuracy of HadoopWatch. We use the lead time metric to evaluate the time advance, which is defined as (actual time? predicted time) of Hadoop flows.
+
+Accuracy: Figure 5 shows the traffic volume and forecast accuracy for four representative Hadoop jobs: Terasort, Word-  IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     10G Terasort 40G Wordcount Hive Join Hive Aggregate  0.2  0.4  0.6  0.8   1.2  1.4  1.6  1.8  x 10   Import  V o  lu m  e (  M B  )  Forecast  Actual  10G Terasort 40G Wordcount Hive Join Hive Aggregate  0.2  0.4  0.6  0.8   1.2  1.4  1.6  1.8  x 10   Shuffle  V o  lu m  e (  M B  )  Forecast  Actual  10G Terasort 40G Wordcount Hive Join Hive Aggregate  0.2  0.4  0.6  0.8   1.2  1.4  1.6  1.8  x 10   Export  V o  lu m  e (  M B  )  Forecast  Actual  Fig. 5. Accuracy of traffic volume forecasting  0 5 10  0.2  0.4  0.6  0.8   Lead time(s)  C D  F  Wordcount 40G  0 100 200  0.2  0.4  0.6  0.8   Lead time(ms)  C D  F  Hive Join  0 100 200  0.2  0.4  0.6  0.8   Lead time(ms)  C D  F  Hive Aggregate  Fig. 8. Time advance in remote export flows forecasting  count, Hive Join and Hive Aggregation [19]. Overall, it can be seen that the shuffle and export phase introduced most of the traffic for these jobs4, and we achieve high accuracy for all types of traffic. The slight difference between the forecast results and the actual ones is mainly caused by the control signals and TCP retransmission packets. Besides, there are occasionally a few dead export flows, since a slower reduce task will be killed between a normal task and its backup instance.
+
+Time advance: Figure 6, 7 and 8 show the forecasting lead time for data import, shuffle and export flows, respectively. We use NTP [22] to synchronize the clock on these nodes. The results show that almost 100% traffic flows are successfully forecasted in advance. Most data import and export flows occur soon after the corresponding traffic forecasts (?100 ms), while most shuffle flows are forecasted much earlier in advance (5s - 20s). Because a reduce task only initiates 5 shuffle flows fetching intermediate data and other shuffle flows are pending. In a small percent (< 3%) of flows, we do observe some forecast delays that flows are forecasted after they are actually sent out. They are either caused by deviation of clock synchronization or monitoring delay of inotify events.
+
+Overhead: Figure 9 compares the execution time of Hadoop jobs with and without HadoopWatch to understand the over- head introduced by HadoopWatch. Among all the 4 jobs we tested, their execution time only increases by 1% to 2% with HadoopWatch running in the cluster.
+
+Dependency: Figure 10 shows the distribution of flow?s co-  4Note that the output of Terasort is not replicated in remote DataNodes, so it does not introduce any export flows.
+
+10G Terasort 50G Wordcount 20G Hive Join 20G Hive Aggregate        E xe  cu tio  n T  im e  (S ec  on d)     Without Forecasting With Forecasting  Fig. 9. Execution time (Second)       0.2  0.4  0.6  0.8   Number of co?dependent flows  C D  F  Flow co?dependency distribution       0.2  0.4  0.6  0.8   Number of causal?dependent flows  C D  F  Flow causal?dependency distribution  Fig. 10. Distribution of codependent and dependent flows  dependent flow numbers and casual-dependent flow numbers.
+
+We take the 40GB Wordcount job as an example, which consists of 658 map tasks and 20 reduce tasks. Therefore, shuffle flows can be divided into 20 co-dependent groups.
+
+Each group contains 658 co-dependent flows initiated by the same reduce task. On the other hand, because of the data locality of map tasks, a large number of them are importing data from local disks. Thus, only a small number of shuffle  IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     flows are casual-dependent on import flows. Meanwhile, the output export flows of each reduce task are casual-dependent on its input shuffle flows.
+
+Scalability: Due to the limitations of testbed size, our evaluation results of HadoopWatch are limited to tens of nodes.
+
+We use simulation analysis to understand the scalability of HadoopWatch. We first analyze the major determinants of monitoring overhead in Forecast Agent and Forecast controller, then estimate the HadoopWatch overhead in large production settings.
+
+On a worker node, our agent iteratively processes the inotify events that are caused by multiple tasks. It just parses the traffic related information and sends to the controller. The memory usage is fixed, since no extra data is stored locally.
+
+In addition, the CPU usage scale linearly with the number of active tasks (ntask) on each node, since the execution of each agent is strictly driven by these tasks? file system events. On the controller end, the forecasting controller continuously re- ceives event reports from multiple agents and generates traffic forecasts accordingly. As a result, its CPU usage scales linearly with the number of total active tasks (Ntask). Meanwhile, a lot of memory is required to store the volumes of shuffle flows between these map tasks and reduce tasks. The total memory usage exhibits a quadratic growth as Ntask increases.
+
+0 5 10 15 20 25 30 0%  10%  20%  30%  40%  50%  60%  70%  80%  90%  100%  n task  C PU  u sa  ge (  0%  )  0 5 10 15 20 25 30            Pe ak  m em  or y  (K B  )  Fig. 11. Agent overhead prediction  Based on the performance metrics collected on our testbed, we estimate the potential overhead that HadoopWatch intro- duces on large production clusters. Figure 11 shows the esti- mated overhead on clusters with sizes release by Google and Facebook. We observed that the agent only consume 6.89? of a CPU core under hours of heavy workload. To support 30 concurrent tasks one each node in the Google cluster [7, 35], HadoopWatch agent may take 10% consumption of a CPU core and fixed memory. Similarly, we estimate the overhead of HadoopWatch central controller. It will only consume a CPU core?s 30% resources and around 50MB memory to support hundreds of thousands of tasks running concurrently.
+
+In summary, we believe HadoopWatch is scalable to support traffic forecasting in large MapReduce clusters.
+
+0 2 4 6 8 10  x 10  0%  10%  20%  30%  40%  50%  60%  70%  80%  90%  100%  N task  C PU  u sa  ge (  0%  )  0 2 4 6 8 10  x 10             Pe ak  m em  or y  (M B  )  Fig. 12. Central control overhead prediction
+
+V. RELATED WORKS  Networking researchers have been exploring ways to pre- dict and estimate network traffic demands in different envi- ronments. For example, ISPs have employed various traffic demand matrices in their WAN traffic engineering and capacity planning [13, 23]. However, these methods required a large number of past statistics, such as server logs or link data, to provide reliable estimation of traffic demand in the next period of time. Such techniques are not feasible in data centers, where most of the longest-lived flows last only a few seconds [9] and the traffic is elastic. To gain more instant information for traffic demand forecasting, many researchers proposed to estimate the traffic demand based on real-time measuring socket buffers in end hosts [8, 28], or counters in switches [3, 9, 12]. Such techniques are designed for general traffic load prediction in data center, while our method can generate a more accurate traffic forecast with application-level semantics captured in real time.
+
+Various tracing and profiling tools have been proposed to collect execution information of Hadoop. X-Trace [15] is integrated into Hadoop to collect cross-layer event traces for performance diagnosis. To avoid modifying Hadoop, re- searchers proposed to perform off-line analysis on Hadoop log files for performance tuning and anomaly detection [16, 25].
+
+However, HadoopWatch is focused on forecasting traffic de- mands based on real-time file system monitoring. Compared with a recent attempt which focused on predicting shuffle flows by periodically scanning Hadoop logs [10], HadoopWatch can provide more comprehensive traffic forecast and more scalable event-driven monitoring.
+
+
+
+VI. CONCLUSION AND FUTURE WORK  In this paper, we have proposed to use file system monitor- ing to provide comprehensive traffic forecasting for big data applications. We develop HadoopWatch, a traffic forecaster for Hadoop, that can forecast Hadoop traffic demand accurately and efficiently without modifying the Hadoop framework. We  IEEE INFOCOM 2014 - IEEE Conference on Computer Communications     believe application layer traffic forecasting is a key building block to enable workload optimized networking in cloud data centers and tightly integrate network design with applications.
+
+We have implemented HadoopWatch and deployed it on a small-scale testbed with 10 physical machines and 30 virtual machines. Our experiments over a series of MapReduce applications demonstrate that HadoopWatch can forecast the application layer traffic demand with very high accuracy and time advance, while introducing little overhead to the application performance.
+
+Our work is a first attempt exploring the rich research space of comprehensive traffic forecasting at application layer. With the surge of software defined networking in cloud data centers, we believe HadoopWatch can be useful in a many scenarios that target to jointly optimize application performance and network configuration, e.g., from topology optimization, traffic engineering, flow scheduling to transport control, etc. In the meanwhile, we also acknowledge that there are many research problems remain to be explored in our future work. For example, HadoopWatch is now a traffic forecaster particularly designed for the Hadoop framework. The file selection and monitoring mechanisms are tied to the specific parameters of the Hadoop system. An important direction of our future work is to explore the generic design principles to apply the forecasting mechanisms to different big data applications, such as Dryad [20], HBase [1], Spark [34], etc.
+
+
+
+VII. ACKNOWLEDGEMENTS  We thank the INFOCOM anonymous reviewers for their comments, HKUST REC12EG07 funding, and Na- tional Basic Research Program of China (973) under Grant No.2014CB340303.
+

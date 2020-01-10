@@ -1,0 +1,226 @@
+Moment: Maintaining Closed Frequent Itemsets over a Stream Sliding Window
+
+Abstract  This paper considers the problem of mining closed fre- quent itemsets over a sliding window using limited mem- ory space. We design a synopsis data structure to monitor transactions in the sliding window so that we can output the current closed frequent itemsets at any time. Due to time and memory constraints, the synopsis data structure cannot monitor all possible itemsets. However, monitoring only frequent itemsets will make it impossible to detect new itemsets when they become frequent. In this paper, we in- troduce a compact data structure, the closed enumeration tree (CET), to maintain a dynamically selected set of item- sets over a sliding-window. The selected itemsets consist of a boundary between closed frequent itemsets and the rest of the itemsets. Concept drifts in a data stream are reflected by boundary movements in the CET. In other words, a status change of any itemset (e.g., from non-frequent to frequent) must occur through the boundary. Because the boundary is relatively stable, the cost of mining closed frequent item- sets over a sliding window is dramatically reduced to that of mining transactions that can possibly cause boundary movements in the CET. Our experiments show that our al- gorithm performs much better than previous approaches.
+
+1 Introduction  Mining data streams for knowledge discovery is impor- tant to many applications, such as fraud detection, intrusion detection, trend learning, etc. In this paper, we consider the problem of mining closed frequent itemsets on data streams.
+
+Mining frequent itemset on static datasets has been stud- ied extensively. However, data streams have posed new challenges. First, data streams are continuous, high-speed, and unbounded. It is impossible to mine association rules from them using algorithms that require multiple scans.
+
+Second, the data distribution in streams are usually chang- ing with time, and very often people are interested in the most recent patterns.
+
+It is thus of great interest to mine itemsets that are cur- rently frequent. One approach is to always focus on fre- quent itemsets in the most recent window. A similar effect can be achieved by exponentially discounting old itemsets.
+
+?The work of these two authors was partly supported by NSF under Grant Nos. 0086116, 0085773, and 9817773.
+
+For the window-based approach, we can come up with two naive methods:  1. Regenerate frequent itemsets from the entire window whenever a new transaction comes into or an old trans- action leaves the window.
+
+2. Store every itemset, frequent or not, in a traditional data structure such as the prefix tree, and update its support whenever a new transaction comes into or an old transaction leaves the window.
+
+Clearly, method 1 is not efficient. In fact, as long as the window size is reasonable, and the concept drifts in the stream is not too dramatic, most itemsets do not change their status (from frequent to non-frequent or from non- frequent to frequent) often. Thus, instead of regenerating all frequent itemsets every time from the entire window, we shall adopt an incremental approach.
+
+Method 2 is incremental. However, its space requirement makes it infeasible in practice. The prefix tree [1] is often used for mining association rules on static data sets. In a prefix tree, each node nI represents an itemset I and each child node of nI represents an itemset obtained by adding a new item to I . The total number of nodes is exponential.
+
+Due to memory constraints, we cannot keep a prefix tree in memory, and disk-based structures will make real time update costly.
+
+In view of these challenges, we focus on a dynamically selected set of itemsets that are i) informative enough to answer at any time queries such as ?what are the (closed) frequent itemsets in the current window?, and at the same time, ii) small enough so that they can be easily maintained in memory and updated in real time.
+
+The problem is, of course, what itemsets shall we se- lect for this purpose? To reduce memory usage, we are tempted to select, for example, nothing but frequent (or even closed frequent) itemsets. However, if the frequency of a non-frequent itemset is not monitored, we will never know when it becomes frequent. A naive approach is to moni- tor all itemsets whose support is above a reduced threshold minsup??, so that we will not miss itemsets whose current support is within ? of minsup when they become frequent.
+
+This approach is apparently not general enough.
+
+In this paper, we design a synopsis data structure to keep track of the boundary between closed frequent itemsets and the rest of the itemsets. Concept drifts in a data stream are reflected by boundary movements in the data structure. In  0-7695-2142-8/04 $ 20.00 IEEE    other words, a status change of any itemset (e.g., from non- frequent to frequent) must occur through the boundary. The problem of mining an infinite amount of data is thus con- verted to mine data that can potentially change the bound- ary in the current model. Because most of the itemsets do not often change status, which means the boundary is sta- ble, and even if some does, the boundary movement is local, the cost of mining closed frequent itemsets is dramatically reduced.
+
+Our Contribution This paper makes the following con- tributions: (1) We introduce a novel algorithm, Moment1, to mine closed frequent itemsets over data stream sliding windows. To the best of our knowledge, our algorithm is the first one for mining closed frequent itemsets in data streams. (2) We present an in-memory data structure, the closed enumeration tree (CET), which monitors closed fre- quent itemsets as well as itemsets that form the boundary between the closed frequent itemsets and the rest of the itemsets. We show that i) a status change of any itemset (e.g., from non-frequent to frequent) must come through the boundary itemsets, which means we do not have to moni- tor itemsets beyond the boundary, and ii) the boundary is relatively stable, which means the update cost is minimum.
+
+(3) We introduce a novel algorithm to maintain the CET in an efficient way. Experiments show Moment has significant performance advantage over state-of-the-art approaches for mining frequent itemsets in data streams.
+
+Related Work Mining frequent itemsets from data streams has been investigated by many researchers. Manku et al [14] proposed an approximate algorithm that for a given time t, mines frequent itemsets over the entire data streams up to t.
+
+Charikar et al [6] presented a 1-pass algorithm that returns most frequent items whose frequencies satisfy a threshold with high probabilities. Teng et al [15] presented an algo- rithms, FTP-DS, that mines frequent temporal patterns from data streams of itemsets. Chang et al [5] presented an al- gorithm, estDec, that mines recent frequent itemsets where the frequency is defined by an aging function. Giannella et al [10] proposed an approximate algorithm for mining frequent itemsets in data streams during arbitrary time in- tervals. An in-memory data structure, FP-stream, is used to store and update historic information about frequent item- sets and their frequency over time and an aging function is used to update the entries so that more recent entries are weighted more. Asai et al [3] presented an online algorithm, StreamT, for mining frequent rooted ordered trees. To re- duce the number of subtrees to be maintained, an update policy that is similar to that in online association rule min- ing [12] was used and therefore the results are inexact. In all these studies, approximate algorithms were adopted. In contrast, our algorithm is an exact one because we assume that the approximation step has been implemented through the sampling scheme and our algorithm works on a sliding window containing the random samples (which are a syn- opsis of the data stream).
+
+In addition, closely related to our work, Cheung et al [7, 8] and Lee et al [13] proposed algorithms to maintain discovered frequent itemsets through incremental updates.
+
+Although these algorithms are exact, they focused on min-  1Maintaining Closed Frequent Itemsets by Incremental Updates  ing all frequent itemsets (as do the above approximate algo- rithms). The large number of frequent itemsets makes it im- practical to maintain information about all frequent itemsets using in-memory data structures. In contrast, our algorithm maintains only closed frequent itemsets. As demonstrated by extensive experimental studies, e.g., [17], there are usu- ally much fewer closed frequent itemsets compared to the total number of frequent itemsets.
+
+2 Problem Statement  Preliminaries Given a set of items ?, a database D wherein each transaction is a subset of ?, and a threshold s called the minimum support (minsup), 0 < s ? 1, the frequent itemset mining problem is to find all itemsets that occur in at least s|D| transactions.
+
+We assume that there is a lexicographical order among the items in ? and we use X ? Y to denote that item X is lexicographically smaller than item Y . Furthermore, an itemset can be represented by a sequence, wherein items are lexicographically ordered. For instance, {A,B,C} is rep- resented by ABC, given A ? B ? C. We also abuse nota- tion by using ? to denote the lexicographical order between two itemsets. For instance, AB ? ABC ? CD.
+
+As an example, let ? = {A,B,C,D}, D = {CD,AB,ABC,ABC}, and s = 12 , then the frequent itemsets are  F = {(A, 3), (B, 3), (C, 3), (AB, 3), (AC, 2), (BC, 2), (ABC, 2)} In F , each frequent itemset is associated with its support in database D.
+
+Combinatorial Explosion According to the a priori prop- erty, any subset of a frequent itemset is also frequent. Thus, algorithms that mine all frequent itemsets often suffer from the problem of combinatorial explosion.
+
+Two solutions have been proposed to alleviate this prob- lem. In the first solution (e.g., [4], [11]), only maximal fre- quent itemsets are discovered. A frequent itemset is max- imal if none of its proper supersets is frequent. The total number of maximal frequent itemsets M is much smaller than that of frequent itemsets F , and we can derive each frequent itemset from M. However, M does not contain information of the support of each frequent itemset unless it is a maximal frequent itemset. Thus, mining only maximal frequent itemsets loses information.
+
+In the second solution (e.g., [16], [17]), only closed fre- quent itemsets are discovered. An itemset is closed if none of its proper supersets has the same support as it has. The total number of closed frequent itemsets C is still much smaller than that of frequent itemsets F . Furthermore, we can derive F from C, because a frequent itemset I must be a subset of one (or more) closed frequent itemset, and I?s support is equal to the maximal support of those closed itemsets that contain I .
+
+In summary, the relation among F , C, and M is M ? C ? F . The closed and maximal frequent itemsets for the above examples are  C = {(C, 3), (AB, 3), (ABC, 2)} M = {(ABC, 2)}   0-7695-2142-8/04 $ 20.00 IEEE    Since C is smaller than F , and C does not lose informa- tion about any frequent itemsets, in this paper, we focus on mining the closed frequent itemsets because they maintain sufficient information to determine all the frequent itemsets as well as their support.
+
+Problem Statement The problem is to mine closed fre- quent itemsets in the most recent N transactions in a data stream. Each transaction has a time stamp, which is used as the tid (transaction id) of the transaction. Figure 1 is an example with ? = {A,B,C,D} and window size N = 4.
+
+We use this example throughout the paper with minimum support s = 12 .
+
+w indow  #3  tid items        C,D  A,B  A,B,C  A,B,C  A,C,D  B,C  tim e line  w indow  #1  w indow  #2  Figure 1: A Running Example  To find frequent itemsets on a data stream, we maintain a data structure that models the current frequent itemsets.
+
+We update the data structure incrementally. The combinato- rial explosion problem of mining frequent itemsets becomes even more serious in the streaming environment. As a re- sult, on the one hand, we cannot afford keeping track of all itemsets or even frequent itemsets, because of time and space constraints. On the other hand, any omission (for in- stance, maintaining only M, C, or F instead of all itemsets) may prevent us from discovering future frequent itemsets.
+
+Thus, the challenge lies in designing a compact data struc- ture which does not lose information of any frequent itemset over a sliding window.
+
+3 The Moment Algorithm  We propose the Moment algorithm and an in-memory data structure, the closed enumeration tree, to monitor a dynamically selected small set of itemsets that enable us to answer the query ?what are the current closed frequent itemsets?? at any time.
+
+3.1 The Closed Enumeration Tree  Similar to a prefix tree, each node nI in a closed enu- meration tree (CET) represents an itemset I . A child node, nJ , is obtained by adding a new item to I such that I ? J .
+
+However, unlike a prefix tree, which maintains all itemsets, a CET only maintains a dynamically selected set of item- sets, which include i) closed frequent itemsets, and ii) item- sets that form a boundary between closed frequent itemsets and the rest of the itemsets.
+
+As long as the window is reasonably large, and the con- cept drifts in the stream are not too dramatic, most itemsets do not change their status (from frequent to non-frequent or from non-frequent to frequent). In other words, the effects  of transactions moving in and out of a window offset each other and usually do not cause change of status of many involved nodes.
+
+If an itemset does not change its status, nothing needs to be done except for increasing or decreasing the counts of the involved itemsets. If it does change its status, then, as we will show, the change must come through the boundary nodes, which means the changes to the entire tree structure is still limited.
+
+C,D  A,B  A,B,C  A,B,C  items  w indow  #1 ACAB  A B C D  ABC  3 3 3 1  3 2  tid  Figure 2: The Closed Enumeration Tree Corresponding to Win- dow #1 (each node is labeled with its support)  We further divide itemsets on the boundary into two cat- egories, which correspond to the boundary between fre- quent and non-frequent itemsets, and the boundary be- tween closed and non-closed itemsets, respectively. Item- sets within the boundary also have two categories, namely the closed nodes, and other intermediary nodes that have closed nodes as descendants. For each category, we define specific actions to be taken in order to maintain a shifting boundary when there are concept drifts in data streams (Sec- tion 3.3). The four types of itemsets are listed below.
+
+infrequent gateway nodes A node nI is an infrequent gate- way node if i) I is an infrequent itemset, ii) nI ?parent, nJ , is frequent, and iii) I is the result of joining I?s parent, J , with one of J?s frequent siblings. In Figure 2, D is an in- frequent gateway node (represented by dashed circle). In contrast, AD is not an infrequent gateway node (hence it does not appear in the CET), because D is infrequent.
+
+unpromising gateway nodes A node nI is an unpromising gateway node if i) I is a frequent itemset, and ii) there ex- ists a closed frequent itemset J such that J ? I , J ? I , and J has the same support as I does. In Figure 2, B is an unpromising gateway node because AB has the same support as it does. So is AC because of ABC. In Figure 2, unpromising gateway nodes are represented by dashed rectangles. For convenience of discussion, when a node in the CET is neither an infrequent gateway node nor an un- promising gateway node, we call it a promising node.
+
+intermediate nodes A node nI is an intermediate node if i) I is a frequent itemset, ii) nI has a child node nJ such that J has the same support as I does, and iii) nI is not an un- promising gateway node. In Figure 2, A is an intermediate node because its child AB has the same support as A does.
+
+closed nodes These nodes represent closed frequent itemsets in the current sliding-window. A closed node can be an internal node or a leaf node. In Figure 2, C, AB, and ABC are closed nodes, which are represented by solid rectangles.
+
+0-7695-2142-8/04 $ 20.00 IEEE    3.2 Node Properties  We prove the following properties for the nodes in the CET. Properties 1 and 2 enable us to prune a large amount of itemsets from the CET, while Property 3 makes sure cer- tain itemsets are not pruned. Together, they enable us to mine closed frequent itemsets over a sliding window using an efficient and compact synopsis data structure.
+
+Property 1. If nI is an infrequent gateway node, then any node nJ where J ? I represents an infrequent itemset.
+
+Proof. Property 1 is derived from the a priori property.
+
+A CET achieves its compactness by pruning a large amount of the itemsets. It prunes the descendants of nI and the descendants of nI ?s siblings nodes that subsume I .
+
+However, it ?remembers? the boundary where such pruning occurs, so that it knows where to start exploring when nI is no longer an infrequent gateway node. An infrequent gate- way node marks such a boundary. In particular, infrequent gateway nodes are leaf nodes in a CET. For example, in Fig- ure 2, after knowing that D is infrequent, we do not explore the subtree under D. Furthermore, we do not join A with D to generate A?s child nodes. As a result, a large amount of the itemsets are pruned.
+
+Property 2. If nI is an unpromising gateway node, then nI is not closed, and none of nI ?s descendents is closed.
+
+Proof. Based on the definition of unpromising gateway nodes, there exists an itemset J such that i) J ? I , and ii) J ? I and support(J) = support(I). From ii), we know nI is not closed. Let imax be the lexicograph- ically largest item in I . Since J ? I and J ? I , there must exist an item j ? J\I such that j ? imax. Thus, for any descendant nI? of nI , we have j ?? I ?. Further- more, because support(J) = support(I), itemset J\I must appear in every transaction I appears, which means support(nI?) = support(n{j}?I?), so I ? is not closed.
+
+Descendants of an unpromising gateway node are pruned because no closed nodes can be found there, and it ?remem- bers? the boundary where such pruning occurs.
+
+Property 3. If nI is an intermediate node, then nI is not closed and nI has closed descendants.
+
+Proof. Based on the definition of intermediate nodes, nI is not closed. Thus, there must exists a closed node nJ such that J ? I and support(J) = support(I). If I ? J , then nJ is nI ?s descendant since J ? I . If J ? I , then nI is an unpromising gateway node, which means nI is not an intermediate node.
+
+Property 3 shows that we cannot prune intermediate nodes.
+
+3.3 Building the Closed Enumeration Tree  In a CET, we store the following information for each node nI : i) the itemset I itself, ii) the node type of nI , iii)support: the number of transactions in which I occurs, and iv) tid sum: the sum of the tids of the transactions in  which I occurs. The purpose of having tid sum is because we use a hash table to maintain closed itemsets.
+
+The Hash Table We frequently check whether or not a cer- tain node is an unpromising gateway node, which means we need to know whether there is a closed frequent node that has the same support as the current node.
+
+We use a hash table to store all the closed frequent item- sets. To check if nI is an unpromising gateway node, by definition, we check if there is a closed frequent itemset J such that J ? I , J ? I , and support(J) = support(I).
+
+We can thus use support as the key to the hash table.
+
+However, it may create frequent hash collisions. We know if support(I) = support(J) and I ? J , then I and J must occur in the same set of transactions. Thus, a better choice is the set of tids. However, the set of tids take too much space, so we instead use (support, tid sum) as the key. Note that tid sum of an itemset can be incrementally updated. To check if nI is an unpromising gateway node, we hash on the (support, tid sum) of nI , fetch the list of closed frequent itemsets in the corresponding entry of the hash table, and check if there is a J in the list such that J ? I , J ? I , and support(J) = support(I).
+
+Tree Construction To build a CET, first we create a root node n?. Second, we create |?| child nodes for n? (i.e., each i ? ? corresponds to a child node n{i}), and then we call Explore on each child node n{i}. Pseudo code for the Explore algorithm is given in Figure 3.
+
+Explore (nI , D, minsup) 1: if support(nI) < minsup ? |D| then 2: mark nI an infrequent gateway node; 3: else if leftcheck(nI) = true then 4: mark nI an unpromising gateway node; 5: else 6: foreach frequent right sibling nK of nI do 7: create a new child nI?K for nI ; 8: compute support and tid sum for nI?K ; 9: foreach child nI? of nI do  10: Explore(nI? , D, minsup); 11: if ? a child nI? of nI such that  support(nI?) = support(nI) then 12: mark nI an intermediate node; 13: else 14: mark nI a closed node; 15: insert nI into the hash table;  Figure 3: The Explore Algorithm  Explore is a depth-first procedure that visits itemsets in lexicographical order. In lines 1-2 of Figure 3, if a node is found to be infrequent, then it is marked as an infrequent gateway node, and we do not explore it further (Property 1). However, the support and tid sum of an infrequent gateway node have to be stored because they will provide important information during a CET update when an infre- quent itemset can potentially become frequent.
+
+In lines 3-4, when an itemset I is found to be non-closed because of another lexicographically smaller itemset, then nI is an unpromising gateway node. Based on Property 2, we do not explore nI ?s descendants, which does not contain any closed frequent itemsets. However, nI ?s support and   0-7695-2142-8/04 $ 20.00 IEEE    tid sum must be stored, because during a CET update, nI may become promising.
+
+In Explore, leftcheck(nI ) checks if nI is an unpromising gateway node. It looks up the hash table to see if there ex- ists a previously discovered closed itemset that has the same support as nI and which also subsumes I , and if so, it re- turns true (in this case nI is an unpromising gateway node); otherwise, it returns false (in this case nI is a promising node).
+
+If a node nI is found to be neither infrequent nor un- promising, then we explore its descendants (lines 6-10). Af- ter that, we can determine if nI is an intermediate node or a closed node (lines 11-15) according to Property 3.
+
+Complexity The time complexity of the Explore algorithm depends on the size of the sliding-window N , the minimum support, and the number of nodes in the CET. However, because Explore only visits those nodes that are necessary for discovering closed frequent itemsets, so Explore should have the same asymptotic time complexity as any closed frequent itemset mining algorithm that is based on travers- ing the enumeration tree.
+
+3.4 Updating the CET  New transactions are inserted into the window, as old transactions are deleted from the window. We discuss the maintenance of the CET for the two operations: addition and deletion.
+
+Adding a Transaction  In Figure 4, a new transaction T (tid 5) is added to the sliding-window. We traverse the parts of the CET that are related to transaction T . For each related node nI , we up- date its support, tid sum, and possibly its node type.
+
+C,D  A,B  A,B,C  A,B,C  A,C,D  items  CDADACAB  A B C D  ABC  4 3 4 2   tid  Figure 4: Adding a Transaction  Most likely, nI ?s node type will not change, in which case, we simply update nI ?s support and tid sum, and the cost is minimum. In the following, we discuss cases where the new transaction T causes nI to change its node type.
+
+nI was an infrequent gateway node. If nI becomes fre- quent (e.g., from node D in Figure 2 to node D in Figure 4), two types of updates must be made. First, for each of nI ?s left siblings it must be checked if new children should be created. Second, the originally pruned branch (under nI ) must be re-explored by calling Explore.
+
+For example, in Figure 4, after D changes from an infre- quent gateway node to a frequent node, node A and C must be updated by adding new children (AD and CD, respec- tively). Some of these new children will become new infre- quent gateway nodes (e.g., node AD), and others may be-  come other types of nodes (e.g., node CD becomes a closed node). In addition, this update may propagate down more than one level.
+
+nI was an unpromising gateway node. Node nI may become promising (e.g., from node AC in Figure 2 to node AC in Figure 4) for the following reason. Originally, ?(j ? imax and j ?? I) s.t. j occurs in each transaction that I occurs. However, if the new transaction T contains I but not any of such j?s, then the above condition does not hold anymore. If this happens, the originally pruned branch (under nI ) must be explored by calling Explore.
+
+nI was a closed node. Based on the following property, nI will remain a closed node.
+
+Property 4. Adding a new transaction will not change a node from closed to non-closed, and therefore it will not de- crease the number of closed itemsets in the sliding-window.
+
+Proof. Originally, ?J ? I, support(J) < support(I); af- ter adding the new transaction T , ?J ? I , if J ? T then I ? T . Therefore if J?s support is increased by one because of T , so is I?s support. As a result, ?J ? I, support(J) < support(I) still holds after adding the new transaction T .
+
+However, if a closed node nI is visited during an addition, its entry in the hash table will be updated. Its support is increased by 1 and its tid sum is increased by adding the tid of the new transaction.
+
+nI was an intermediate node. An intermediate node, such as node A in Figure 2, can possibly become a closed node after adding a new transaction T . Originally, nI was an in- termediate node because one of nI ?s children has the same support as nI does; if T contains I but none of nI ?s children who have the same support as nI had before the addition, then nI becomes a closed node because its new support is higher than the support of any of its children. However, nI cannot change to an infrequent gateway node or an un- promising gateway node. First, nI ?s support will not de- crease because of adding T , so it cannot become infrequent.
+
+Second, if before adding T , leftcheck(nI) = false, then ? ?(j ? imax and j ?? I) s.t. j occurs in each transaction that I occurs; this statement will not change after we add T .
+
+Therefore, leftcheck(nI) = false after the addition.
+
+Figure 5 gives a high-level description of the addition operation. Adding a new transaction to the sliding-window will trigger a call of Addition on n?, the root of the CET.
+
+Deleting a Transaction  In Figure 6, an old transaction T (tid 1) is deleted from the sliding-window. To delete a transaction, we also traverse the parts of the CET that is related to the deleted transaction.
+
+Most likely, nI ?s node type will not change, in which case, we simply update nI ?s support and tid sum, and the cost is minimum. In the following, we discuss the impact of deletion in detail.
+
+If nI was an infrequent gateway node, obviously dele- tion does not change nI ?s node type. If nI was an unpromis- ing gateway node, deletion may change nI to infrequent but will not change nI to promising, for the following reason.
+
+For an unpromising gateway node nI , if before deletion,   0-7695-2142-8/04 $ 20.00 IEEE    Addition (nI , Inew, D, minsup) 1: if nI is not relevant to the addition then return; 2: foreach child node nI? of nI do 3: update support and tid sum of nI? ; 4: F ? {nI? |nI? is newly frequent}; 5: foreach child node nI? of nI do 6: if nI? is infrequent then 7: (re)mark nI? an infrequent gateway node; 8: else if leftcheck(nI?) = true then 9: (re)mark nI? an unpromising gateway node;  10: else if nI? is a newly frequent node or nI? is a newly promising node then  11: Explore(nI? , D, minsup); 12: else 13: foreach nK ? F s.t. I ? ? K do 14: add nI??K as a new child of nI? ; 15: Addition(nI? , Inew, D, minsup); 16: if nI? was a closed node then 17: update nI? ?s entry in the hash table; 18: else if ? ? a child node nI?? of nI? s.t.
+
+support(nI??) = support(nI?) then 19: mark nI? a closed node; 20: insert nI? into the hash table; 21: return;  Figure 5: The Addition Algorithm       A,B,C  A,B  A,B,C  A,C,D  items  w indow  #2  ACAB  A B C D  ABC  4 3 3 1  3 3  tid  Figure 6: Deleting a Transaction  leftcheck(nI) = true, then ?(j ? imax and j ?? I) s.t.
+
+j occurs in each transaction that I occurs; this statement remains true when we delete a transaction.
+
+If nI was a frequent node, it may become infrequent be- cause of a decrement of its support, in which case, all nI ?s descendants are pruned and nI becomes an infrequent gate- way node. In addition, all of nI ?s left siblings are updated by removing children obtained from joining with nI . For example in Figure 6, when transaction T (tid 1) is removed from the window, node D becomes infrequent. We prune all descendants of node D, as well as AD and CD, which were obtained by joining A and C with D, respectively.
+
+If nI was a promising node, it may become unpromising because of the deletion, for the following reason. If before the deletion, ?(j ? imax and j ?? I) s.t. j occurs in each transaction that I occurs, except only for the transaction to be deleted, then after deleting the transaction, I becomes unpromising. This happens to node C in Figure 6. There- fore, if originally nI was neither infrequent nor unpromis- ing, then we have to do the leftcheck on nI . For a node nI to change to unpromising because of a deletion, nI must be contained in the deleted transaction. Therefore nI will be visited by the traversal and we will not miss it.
+
+If nI was a closed node, it may become non-closed.
+
+To demonstrate this, we delete another transaction T (tid 2) from the sliding-window. Figure 7 shows this example  where previously closed node nI (e.g. A and AB) become non-closed because of the deletion. This can be determined by looking at the supports of the children of nI after vis- iting them. If a previously closed node that is included in the deleted transaction remains closed after the deletion, we still need to update its entry in the hash table: its support is decreased by 1 and its tid sum is decreased by subtracting the tid of the deleted transaction.
+
+A,B,C  A,B,C  A,C,D  items  ACAB  A B C D  ABC  3 2 3 1  2 3  tid  Figure 7: Another Deletion  From the above discussion we derive the following prop- erty for the deletion operation on a CET.
+
+Property 5. Deleting an old transaction will not change a node in the CET from non-closed to closed, and there- fore it will not increase the number of closed itemsets in the sliding-window.
+
+Proof. If an itemset I was originally non-closed, then be- fore the deletion, ?j ?? I s.t. j occurs in each transaction that I occurs. Obviously, this fact will not be changed due to deleting a transaction. So I will still be non-closed after the deletion.
+
+Figure 8 gives a high-level description of the deletion op- eration. Some details are skipped in the description. For ex- ample, when pruning a branch from the CET, all the closed frequent itemsets in the branch should be removed from the hash table.
+
+Discussion  In the addition algorithm, Explore is the most time con- suming operation, because it scans the transactions in the sliding-window. However, as will be demonstrated in the experiments, the number of such invocations is very small, as most insertions will not change node types. In addi- tion, the new branches grown by calling Explore are usu- ally very small subsets of the whole CET, therefore such in- cremental growing takes much less time than regenerating the whole CET. On the other hand, deletion only involves related nodes in the CET, and does not scan transactions in the sliding-window. Therefore, its time complexity is at most linear to the number of nodes. Usually it is faster to perform a deletion than an addition.
+
+It is easy to show that if a node nI changes node type (frequent/infrequent and promising/unpromising), then I is in the added or deleted transaction and therefore nI is guar- anteed to be visited during the update. Consequently, our algorithm will correctly maintain the current close frequent itemsets after any of the two operations. Furthermore, if nI remains closed after an addition or a deletion and I is con- tained in the added/deleted transaction, then its position in the hash table is changed because its support and tid sum are changed. To make the update, we delete the itemset   0-7695-2142-8/04 $ 20.00 IEEE    Deletion (nI , Iold, minsup) 1: if nI is not relevant to the deletion then return; 2: foreach child node nI? of nI do 3: update support and tid sum of nI? ; 4: F ? {nI? |nI? is newly infrequent}; 5: foreach child node nI? of nI do 6: if nI? was infrequent or unpromising then 7: continue; 8: else if nI? is newly infrequent then 9: prune nI? ?s descendants from CET;  10: mark nI? an infrequent gateway node; 11: else if leftcheck(nI?) = true then 12: prune nI? ?s descendants from CET; 13: mark nI? an unpromising gateway node; 14: else 15: foreach nK ? F s.t. I ? ? K do 16: prune nI??K from the children of nI? ; 17: Deletion(nI? , Iold, minsup); 18: if nI? was closed and ? a child nI?? of nI?  s.t. support(nI??) = support(nI?) then 19: mark nI? an intermediate node; 20: remove nI? from the hash table; 21: else if nI? was a closed node then 22: update nI? ?s entry in the hash table; 23: return;  Figure 8: The Deletion Algorithm  from the hash table and re-insert it back to the hash table based on the new key value. However, such an update has amortized constant time complexity.
+
+In our discussion so far, we used sliding-windows of fixed size. However, the two operations?addition and dele- tion?are independent of each other. Therefore, if needed, the size for the sliding-window can grow or shrink without affecting the correctness of our algorithm. In addition, our algorithm does not restrict a deletion to happen at the end of the window: at a given time, any transaction in the sliding- window can be removed. For example, if when removing a transaction, the transaction to be removed is picked fol- lowing a random scheme: e.g., the newer transactions have lower probability of being removed than the older ones, then our algorithm can implement a sliding-window with soft boundary, i.e., the more recent the transaction, the higher chance it will remain in the sliding-window.
+
+4 Experimental Results  We performed extensive experiments to evaluate the per- formance of Moment and we present some of them in this section. For more results, we refer readers to the full ver- sion of this paper [9]. We use Charm, a state-of-the-art algorithm proposed by Zaki et al [17], as the baseline al- gorithm to generate closed frequent itemsets without using incremental updates. All experiments were done on a 2GHz Intel Pentium IV PC with 2GB main memory, running Red- Hat Linux 7.3 operating system. All algorithms are imple- mented in C++ and compiled using the g++ 2.96 compiler.
+
+T20I4D100K The first dataset is generated using the syn- thetic data generator described by Agrawal et al in [2]. Data from this generator mimics transactions from retail stores.
+
+We have adopted the commonly used parameters: the num- ber of transactions D is 100,100, the average size of trans- actions T is 20, the average size of the maximal potentially frequent itemsets I is 4. We call this dataset T20I4D100K.
+
+We report the average performance over 100 consecutive sliding windows (each with size N = 100, 000).
+
+00.20.40.60.81  ?2  ?1     The Minimum Support (%)  R un  ni ng  T im  e (s  ec )  Charm Moment  (a)  00.20.40.60.81         The Minimum Support (%)  M em  or y  U sa  ge P  er P  at te  rn (K  B )  (b)  Figure 9: Running Time and Memory Usage for T20I4D100K  Figure 9 gives the result on T20I4D100K. Figure 9(a) shows the average running time for Moment and for Charm over the 100 sliding windows under different minimum sup- ports. As can be seen from the figure, as minimum sup- port decreases, because the number of closed frequent item- sets increases, the running time for both algorithms grows.
+
+However, the response time of Moment is faster than that of Charm by more than an order of magnitude under all the minimum supports.
+
+minsup closed CET CET node # changed new (in %) itemset # node # per closed node # node #  1.0 4097 148450 36.2 0.14 6.28 0.9 5341 168834 31.6 0.06 0.92 0.8 6581 187076 28.4 0.13 0.64 0.7 8220 212774 25.9 0.09 0.35 0.6 10270 249549 24.3 0.08 1.30 0.5 12655 309575 24.5 0.10 2.58 0.4 16683 433595 26.0 0.18 4.20 0.3 24907 722645 29.0 0.26 9.52 0.2 45353 1614726 35.6 0.67 27.23 0.1 172396 5955425 34.5 3.41 88.69  0.05 722261 19691999 27.3 14.75 286.34 0.03 1704558 45246906 26.5 41.07 646.84  Table 1: Data Characteristics for T20I4D100K  Table 1 shows the characteristics of the data and the min- ing results. All reported data are average values taken over the 100 sliding windows. The first three columns show the minimum support, the number of closed itemsets, and the number of nodes in the CET. From the table we can see that as the minimum support decreases, the number of closed itemsets grows rapidly. So does the number of nodes in the CET. However, the ratio between the number of nodes in the CET and the number of closed itemsets (which is reported in column 4) remains approximately the same. This implies that the sizes of the CET is linear in the number of closed frequent itemsets.
+
+Because an addition may trigger a call for Explore() which is expensive, we study how many nodes change their status from infrequent/unpromising to frequent/promising (column 5) and how many new nodes are created due to the addition (column 6). From the data we can see that dur- ing an addition, the average number of nodes that change from infrequent to frequent or from unpromising to promis- ing in the CET is very small relative to the total number of nodes in the CET. Similarly, the number of new nodes created due to an addition is also very small. These results   0-7695-2142-8/04 $ 20.00 IEEE    verify the postulation behind our algorithm: that an update usually only affects the status of a very small portion of the CET and the new branches grown because of an update is usually a very small subset of the CET.
+
+We also studied the memory usage for Moment. As shown in Figure 9(b), the average memory usage per closed frequent itemset actually decreases as the minimum support decreases. This suggests that as the CET becomes larger, it becomes more memory-efficient in terms of memory usage per closed frequent itemset.
+
+BMS-WebView-1 The second dataset we used is BMS- WebView-1, which is a real dataset that contains a few months of clickstream data from an e-commerce web sites.
+
+This dataset was used in KDDCUP 2000 [18]. There are 59,602 transactions in the dataset. We set the sliding win- dow size N to be 50,000 and do experiment on 100 consec- utive sliding windows. Other parameters are: the number of distinct items is 497, the maximal transaction size is 267, and the average transaction size is 2.5.
+
+00.050.10.150.2  ?4  ?2    The Minimum Support (%)  R un  ni ng  T im  e (s  ec )  Charm Moment  (a)  00.050.10.150.2      The Minimum Support (%)  T ot  al N  um be  r of  N od  es  CET nodes Closed Itemset  (b)  Figure 10: Performance for BMS-WebView-1  Figure 10(a) shows the running time for Moment and Charm. From the figure we can see that because the average transaction size of this data set (2.5) is smaller than that of the previous synthetic dataset (20), the relative performance of Moment is even better?it outperforms Charm by 1 to 2 or- ders of magnitudes. Figure 10(b) shows the total number of nodes in the CET and the total number of closed itemsets.
+
+As can be seen, although both grow exponentially as the minimum support decreases, the relative ratio between the two remains approximately the same, which suggests that for real data, the CET size is also linear in the number of closed frequent itemsets.
+
+5 Conclusion  In this paper we propose a novel algorithm, Moment, to discover and maintain all closed frequent itemsets in a slid- ing window that contains the most recent samples in a data stream. In the Moment algorithm, an efficient in-memory data structure, the closed enumeration tree (CET), is used to record all closed frequent itemsets in the current slid- ing window. In addition, CET also monitors the itemsets that form the boundary between closed frequent itemsets and the rest of the itemsets. We have also developed ef- ficient algorithms to incrementally update the CET when newly-arrived transactions change the content of the sliding window. Experimental studies show that the Moment al- gorithm outperforms a state-of-the-art algorithm that mines closed frequent itemsets without using incremental updates.
+
+In addition, the memory usage of the Moment algorithm is  shown to be linear in the number of closed frequent itemsets in the sliding window.
+
+Acknowledgement We thank Professor Mohammed J. Zaki at the Rensselaer Polytechnic Institute for providing us the Charm source code.
+

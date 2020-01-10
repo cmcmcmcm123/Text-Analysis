@@ -1,0 +1,294 @@
+Towards a Collective Layer in the Big Data Stack
+
+Abstract?We generalize MapReduce, Iterative MapReduce and data intensive MPI runtime as a layered Map-Collective architecture with Map-AllGather, Map-AllReduce, MapRe- duceMergeBroadcast and Map-ReduceScatter patterns as the initial focus. Map-collectives improve the performance and efficiency of the computations while at the same time facilitat- ing ease of use for the users. These collective primitives can be applied to multiple runtimes and we propose building high performance robust implementations that cross cluster and cloud systems. Here we present results for two collectives shared between Hadoop (where we term our extension H- Collectives) on clusters and the Twister4Azure Iterative MapReduce for the Azure Cloud. Our prototype implementa- tions of Map-AllGather and Map-AllReduce primitives achieved up to 33% performance improvement for K-means Clustering and up to 50% improvement for Multi-Dimensional Scaling, while also improving the user friendliness. In some cases, use of Map-collectives virtually eliminated almost all the overheads of the computations.
+
+Keywords: MapReduce, Twister, Collectives, Cloud, HPC, Performance, K-means, MDS
+
+I.  INTRODUCTION During the last decade three largely industry-driven dis-  ruptive trends have altered the landscape of scalable parallel computing, which has long been dominated by HPC applica- tions. These disruptions are the emergence of data intensive computing (aka big data), commodity cluster-based execution & storage frameworks such as MapReduce, and the utility computing model introduced by Cloud computing. Often- times MapReduce is used to process the ?Big Data? in cloud or cluster environments. Although these disruptions have advanced remarkably, we argue that we can further benefit these technologies by generalizing MapReduce and integrat- ing it with HPC technologies. This splits MapReduce into a Map and a Collective communication phase that generalizes the Reduce concept. We present a set of Map-Collective communication primitives that improve the efficiency and usability of large-scale parallel data intensive computations.
+
+When performing distributed computations, data often needs to be shared and/or consolidated among the different nodes of the computations. Collective communication primi- tives effectively facilitate these data communications by providing operations that involve a group of nodes simulta- neously [1, 2]. Collective communication primitives are very popular in the HPC community and used heavily in the MPI type of HPC applications. There has been much research [1] to optimize the performance of these collective communica- tion operations, as they have a significant impact on the per- formance of HPC applications.
+
+Our work highlights several Map-Collective communica- tion primitives to support and optimize common computation and communication patterns in both MapReduce and iterative MapReduce computations. We present the applicability of Map-Collective operations to enhance (Iterative) MapReduce without sacrificing desirable MapReduce properties such as fault tolerance, scalability, familiar APIs and data model. The addition of Map-Collectives enriches the MapReduce model by providing many performance and ease of use advantages.
+
+These include providing efficient data communication opera- tions optimized for particular execution environments & use cases, enabling programming models that fit naturally with application patterns and allowing users to avoid overhead by skipping unnecessary steps of the execution flow.  Map- Collective operations substitute multiple successive steps of an iterative MapReduce computation with a single powerful collective communication operation.
+
+We present these patterns as high level constructs that can be adopted by any MapReduce or iterative MapReduce runtime. We also offer proof-of-concept implementations of the primitives on Hadoop and Twister4Azure and envision a future where all the MapReduce and iterative MapReduce runtimes support a common set of Map-Collective primitives.
+
+This paper focuses on mapping the All-to-All communi- cation type of collective operations, namely AllGather and AllReduce, to the MapReduce model as Map-AllGather and Map-AllReduce patterns. Map-AllGather gathers the outputs from all the Map tasks and distributes the gathered data to all the workers after a combine operation. Map-AllReduce prim- itive combines the results of the Map Tasks based on a reduc- tion operation and delivers the result to all the workers. We also present MapReduceMergeBroadcast as an important collective in all (iterative) MapReduce frameworks.
+
+
+
+II. MAPREDUCE-MERGEBROADCAST (MR-MB) We introduce MapReduce-MergeBroadcast [1] abstrac-  tion, called MR-MB from here onwards, as a generic abstrac- tion to represent data-intensive iterative MapReduce applica- tions. Programming models of most of the current iterative MapReduce frameworks can be specified as MR-MB.
+
+A. API The MR-MB programming model extends the map and  reduce functions of traditional MapReduce to include the loop variant data values as an input parameter. MR-MB pro- vides the loop variant data (dynamicData), including broad- cast data, to the Map and Reduce tasks as a list of key-value pairs using this additional input parameter.
+
+Map(<key>, <value>, list_of <key,value> dynamicData) Reduce(<key>,list_of<value>,list_of<key,value> dynamicData)  2014 14th IEEE/ACM International Symposium on Cluster, Cloud and Grid Computing  DOI 10.1109/CCGrid.2014.123     B  p s th a T a g  b m ti M  M  C  a c s ty ta th M B th ( ? e f tr b e  D  i s c b B la d it e th a  M M M  M  M  B. Merge Task Merge [2] w  programming m single task, or he Reduce step  aggregation of The Merge step ates the loops gramming mod  Merge Task broadcast data merge, the over ion and data flo Map Combine  Following i Merge(list_of <k  C. Broadcast The broadca  all the tasks in computations, smaller than t ypically broad asks of the ne hought of as  MapReduce co Broadcast-Map he MapReduce  (e.g., ?MRn? ?...). Broadcas environment as for data broad ree (MST), pip  broadcast data executing on th  D. Current iter Twister4Az  s a MapReduc similar to the M computations b beginning of e Broadcast-Map ar to MR-MB  duce computati teration, effect  equivalent to t hrough a Map  and loop invaria  Pattern MapReduce MapReduce- MergeBroadcas  Map-AllGather  Map-AllReduce  k was defined as model to suppo  the convergen p that can be us  the results of p can also serv  condition in del.
+
+k receives all for the curren  rall flow of the ow would appe e Shuffle Sort s the programm  key,list_of<value list  ast operation tr an iteration. In the loop-varian the loop-invari casts the outpu ext iteration. F executing at  omputation. T pReduce-Merge e-Merge-Broad ? Mergen? Br  st can be imple s well as the da dcasting includ peline and cha between mult  he same node.
+
+rative MapRed ure[2] support e-Combine mo  Merge step of M broadcast the lo each iteration, pReduce-Comb . HaLoop [5] p ion to do the tively making the Merge tas  pReduce compu ant data.
+
+Executio Map?Comb  t Map?Comb ?Merge?B Map?AllGa tion?AllGa  Map?AllReputation)  s a new step to ort iterative ap nce point, whi sed to perform f a single Map ve as the ?loop  the iterative  l the Reduce nt iteration as e iterative Map ear as follows: t Reduce Me ming API of the >> reduceOutpu t_of <key,value>  ransmits the lo n typical data-i nt data is orde iant data. Bro ut data of the M For MR-MB, the beginning  This would m e, which is esse dcast when iter roadcastn? M emented efficie ta sizes. Well-k  de flat-tree, mi aining[3]. It?s tiple Map and  duce Framewor ts MR-MB nat odel, where the  MR-MB. Twiste oop variant dat  effectively m bine, which is s performs an ad fixed point ev  this MapRed sk. Data broad utation to join  on and commun bine?Shuffle? bine?Shuffle? Broadcast ather  ather Combine educe (commun  o the MapRedu pplications. It i ch executes af summarization  pReduce iterati p-test? that eva MapReduce p  outputs and the inputs. W  Reduce compu  rge Broadcast e Merge task.
+
+uts, > dynamicData)  op variant data intensive iterat ers of magnitu oadcast operat Merge tasks to  this can also g of the iterat make the mo entially similar rations are pres  MRn+1? Merge ently based on known algorith inimum spann possible to sh  d/or Reduce ta  rks and MR-MB ively. Twister e Combine step er [4] MapRedu ta products at  making the mo semantically sim dditional MapR  valuation for ea duce computat dcast is achiev n the loop vari  nication flow Sort?Reduce Sort?Reduce  Communica-  ication & com-  uce is a fter n or ion.
+
+alu- pro-  the With uta-  a to tive ude tion the be  tive odel r to sent  n+1 the  hms ning hare asks  MB [4]  p is uce the  odel mi- Re- ach tion ved iant  III.
+
+Whi using th mon exe Some o Merge t implem patterns order to primitiv inspired  The terns th tions by tion. As can be framew tions lea  This Map-Al MB as a  A. Req Map  duce da which s tion var should model should m lent fau  B. Adv 1) P  Intro types of duce ap the com  Framewo Hadoop, Twist  Twister, HaLo  - H-Collectives,  - H-Collectives,  COLLECTIVE ITE  ile implement he MR-MB mo ecution flow p of these appli tasks while ot  ment using the M s being slightly o solve such  ves to the itera d by the MPI co  Figure 1  se primitives s hat occur freque y substituting s depicted in Fi thought of as  work-defined co ading to the ne s paper propo llGather and M another collect  uirements p-Collective ar ata model and support multip riations and inh retain scalabi simple and e maintain the sa  ult tolerance sup  vantages Performance im oduction of M f performance pplications. M mputations by  orks ter, Twister4Azu  oop, Twister4Azu  , Twister4Azure  , Twister4Azure  E COMMUNICA ERATIVE MAPR ting iterative M odel, we starte  patterns across t ications had v ther application MR-MB mode y different than  issues, we in ative MapRedu ollective comm  1.  Map-Collectiv  upport higher- ently in data-in certain steps o igure 1, these M  a Map phase ommunication ext iteration.
+
+oses two Ma Map-AllReduc tive communica  rchitecture sho the MapRedu  ple Map task w homogeneous t ility while ke easy to under ame type of fra pported by Map  mprovement Map-Collective  improvements ap-Collectives skipping or o  Sample a ure WordCou  ure K-meansC  MDS-BC PageRank K-meansC StressCal  ATIONS PRIMITI REDUCE  MapReduce a ed to notice se the different ap very trivial R ns needed extr el owing to the n the MR-MB ntroduce Map uce programm  munications prim  ve primitives  level communi ntensive iterativ of the MR-MB Map-Collective followed by and computat  ap-Collective e. We can cla ation primitive  ould fit with th uce computatio waves, signific tasks. Also the  eeping the pro rstand. These amework-mana pReduce.
+
+e primitives p s to the iterativ  reduce the ov overlapping ce  applications unt, Grep, etc.
+
+Clustering, Page  CCalc (matrix X k (matrix X vect Clustering, lc  VES FOR  applications everal com- pplications.
+
+Reduce and ra effort to e execution pattern. In -Collective  ming model, mitives[6].
+
+ication pat- ve applica-  B computa- e primitives a series of tion opera-  primitives: assify MR- e as well.
+
+he MapRe- onal model, cant execu- e primitives ogramming  primitives aged excel-  provides 3 ve MapRe- verhead of  ertain steps  eRank,  X matrix), or)  MDS-     ( c n h  c ti M f b tu d  ti lo a a d th r  th c  f f d p R s  a p th d u o  s w to  C  c g w f f p m R v o  D  d  (e.g. shuffle, r computational naturally with heads of unnece  Map-Collec ceive the data a ion of Map-C  Map results are fects of task he barriers of mul ually helps in  data transfers an Another adv  imize these op owing the po  algorithm) for ample, a comm data sizes may he Map-Collec  rithm implemen Map-Collec  he computatio chical reduction  2) Ease of u Map-Collec  fit more natura fies the porting duce model. In plement, test an Reduce and M side hacks to br  3) Scheduli In addition  ations, Map-Co propagate the s he worker nod  data. This allow ule the tasks of overhead.
+
+For exampl successfully em with minimal o o perform spec  C. Programmi Map-Collec  configuration o gramming mod with Map-Col frameworks tha for developers programming t means Clusteri Reduce and Me vice versa with or Merge functi  D. Implementa Map-Collec  duce framewor  reduce, merge flow. Map-Co the applicatio  essary trivial st ctives enable th across iteration ollectives can e produced. Th eterogeneity by ltiple processin  this case by nd overlaps com vantage is the a perations transp ossibility of different use c munication alg not be the bes  ctive operation ntations to be u ctives also mak ons in the data n in Map-AllRe use ctive operations ally with real w g of new appli n addition, the nd optimize ce  Merge tasks, and roadcast the da ing with iterati to providing sy  ollective primit scheduling info des along with ws the framew f a new iterati  le, as mentione mploys this stra overhead, while culative schedu  ing model ctive primitives option without del. This perm llectives to b at don?t suppor  who are alre to use Map-C ing MapRedu erge tasks can b hout making an ion implementa  ation considera ctives can be ad rks. The simple  e) of the itera ollective patter on patterns, av teps.
+
+he applications ns much faster,  be started as his helps to mi y not having t ng steps. Task reducing the c mmunication w ability of the fr parently for th different opti  cases and envir gorithm that?s st for larger on s can opt to ha  used for differe ke it possible to a transfer layer educe primitive  s present patter world applicati cations to the developers do  ertain steps of d can avoid M  ata.
+
+ive primitives ynchronization tives also give  ormation for the h the collectiv  works to synchr on or applicati  ed in section V ategy to schedu e H-Collectives uling of tasks.
+
+s can be specif changing the  mits the applic be backward rt them. This a eady familiar w Collectives. Fo uce implement be used with M ny changes to ations.
+
+ations dd-on improve est implementa  ative MapRedu rns also fit m voiding the ov  s to send and , since the exe soon as the f  itigate the bad to wait for glo heterogeneity congestion of with computatio frameworks to o he users, even mizations (po ronments. For  best for smal nes. In such cas ave multiple alg nt data sizes.
+
+o perform some r, like the hier e.
+
+rns and APIs t ions. This simp iterative MapR  o not have to i MR-MB, such  MapReduce dri  n between the it e us the ability e next iteration e communicat ronize and sch ion with minim  VI, Twister4Az ule new iteratio s use this strate  fied as an outs MapReduce p  cations develop compatible w  also makes it ea with MapRedu r example, a ation with M  Map-AllReduce the Map, Redu  ements to MapR ation would be  uce more ver-  re- cu-  first ef-  obal ac- the on.
+
+op- al-  oly- ex- ller ses, go-  e of rar-  that pli- Re- im-  h as ver  ter- y to n to tion hed- mal  zure ons egy  side pro- ped  with asy uce K-  Map, e or uce  Re- e to  implem tation m MapRed by prov es the ap  Mor tives as library) on envi municat  Map level fa execute the iter checkpo tively fi  AllG tion tha gathered noticed where t that sim order, fo the asse be a ma puts pa would u together  Data Gather matrix m trix (ma  A. Mod We  primitiv nication manner.
+
+1) E  Map puts to the com recipien will del once the  ment the Map-C models as a duce APIs. Th  viding a unified pplication patte re optimized im s part of the M  with the abili ironment and u tion algorithms p-Collectives c fault tolerance es the iteration i ration results ointed. This is iner grained.
+
+
+
+IV. MA Gather is an all at gathers data d data right bac in data-intens  the ?reduce? s mply aligns the followed by ?m embled output atrix-vector mu art of the resu use the Reduce r and then broa a-intensive ite pattern includ multiplication)  atrix-vector mu  del developed a  ve similar to th n primitive to s r.
+
+Execution mod  Figure 2  p-AllGather pr all computatio  mputation, and nt nodes as de liver its result t e Map task is c  Collectives com user level lib  his will achieve d programming erns.
+
+mplementations MapReduce fram  ity to optimize use case, usin s in the backgro  can support iter e. Iteration le in case of any f (smaller loop preferred whe  AP-ALLGATHER l-to-all collectiv from all the w ck to them [7].
+
+sive iterative step is a simp e outputs of th  merge? and bro to all the wor  ultiplication, w ultant vector.
+
+e and Merge tas adcast the assem erative applicat de Multi-Dime ) [8] and Page ultiplication).
+
+Map-AllGath he MPI AllGath support applica  del  2.  Map-AllGathe  rimitive broadc onal nodes (all- d then assembl epicted in Figu to all other wo  completed.
+
+mmunication a brary using t  e ease of use fo g model that be  s can present th mework (or as e the data trans ng optimized g ound.
+
+ration level as w evel fault tol failures. In this  p variable data en the iteration  R COLLECTIVE ve communica  workers and dist . AllGather pat MapReduce a  ple aggregation he Map Tasks adcast steps th rkers. An exam  where each Ma In this compu  sks to assemble mbled vector to tions that hav  ensional Scalin eRank using in  her iterative M her [7] collectiv ations in a mo  er Collective  casts the Map -to-all commun les them toget ure 2. Each M orkers of the co  and compu- the current or the users etter match-  hese primi- a separate sfers based  group com-  well as task erance re- s case, only a) will be ns are rela-   ation opera- tributes the ttern can be applications n operation together in  hat transmit mple would ap task out- utation we e the vector o workers.
+
+ve the All- ng (matrix- n-links ma-  MapReduce ve commu- re efficient    p Task out- nication) of ther in the  Map worker omputation     lo A p s b s  te a s v o k th u  im b a f th w  c ia b w v p u  w th p A  a e in th n  c v n  B  e b p d p  M  The flow of owed by AllGa  AllGather comb put processing sort, reduce, w broadcast, and single powerful  2) Data Mo For Map-Al  eger specifying ant gathered da sets of vectors value of the M of Map output keys. The resu he Map tasks  using the APIs The final as  mplementing a biner. A custom assembling fun function is a li he key. This  worker node aft The default  cases, as the co al process. The  be in <int, dou would represen value would co puts with dupli ues) are not sup  Users can u with the Map-A he collective o  phases of Map AllGather comm  3) Cost Mo Using an op  a bi-directional estimate the co ng the Hockne he transmissio  number of Map  ???  It?s possible cal aggregation variation of M network conges  B. Fault tolera All-Gather p  er nodes can f breakdowns. W possible for the data from the p perform the All  The fault MapReduce en  f a Map-AllGat ather all-to-all bine. Map-AllG (collect, spill,  write), Merge t the barriers ass l and optimized odel llGather, the M g the location o ata product. Ma (partial matrix  Map-AllGather o t values in the  ult of AllGathe of the next ite and mechanism  ssembly of AllG a custom comb  m combiner allo nction. In this c st of Map outp assembling fu  fter all the data t combiner sho mbining of All e default comb uble[]> format nt the row inde ontain the corre icate keys (sam pported and the utilize their Map AllGather prim operation, after pReduce would munication and  odel ptimized imple l exchange-bas  ost of the AllG ey model[3, 9], n time per dat  p tasks and nv is  ?????? ? ???  e to further red n of Map outpu  Map task compl stion in these im  ance partial data tra  fail due to com When task leve e workers to re persistent stora l-Gather compu tolerance and nable possible  ther operation communicatio Gather substitu , merge), Redu task (shuffle, sociated with th d AllGather ope  Map output key of the output v ap output value x) or single val operation is an e order of the  er-Combine wi eration as the ms suggested in Gather data can biner or using ows the user to case, the input t put key-value unction gets e is received.
+
+ould work for lGather data is  biner expects th . In a matrix e ex of the outpu esponding row me key for mu erefore ignored p function imp  mitive. They onl r which the sh d get substitut d computations  mentation of A sed implement ather compone , where ? is the ta item (1/band s the size of Al  ???? ? ? ? ?  ? duce this cost b ut data in the w letion times al mplementation  ansfers from M mmunication m l fault toleranc etrieve any mis age (e.g. HDFS utation.
+
+the speculati duplicate exe  is Map phase f n followed by utes the Map o uce task (shuf barrier, execut hese steps, wit eration.
+
+y should be an alue in the resu es can be vecto lues. Final out  n assembled ar eir correspond ill be provided loop variant d  n Section 2.2.1 n be performed  the default co o specify a cust to the assembl pairs, ordered  executed in ea  most of the u oftentimes a tr  he Map outputs example, the k ut matrix and vector. Map o  ultiple output v d.
+
+lementations a ly need to spec huffle and redu ted by the M s.
+
+AllGather, such tation[7], we c ent as follows e latency and ? dwidth)), m is lGather data.
+
+? ???  by performing worker nodes. T lso help to av  ns.
+
+Map tasks to wo mishaps and ot ce is enabled, ssing Map out S) to successfu  ive execution ecution of tas  fol- the  out- ffle, te), th a  in- ult- ors, tput rray ding d to data .
+
+d by om- tom ing by  ach  use riv- s to key the  out- val-  s is cify uce ap-  h as can us-  ? is the  lo- The oid  ork- ther it?s  tput ully  of sks.
+
+Map-Al fore the handle a  C. Ben Use  computa broadca smaller- tive orig able to lithic br  Ofte neous[1 tions of Map tas pleted.
+
+broadca cution, r tion. Th multiple  In a also enh plement can be next app  AllR values e and ma pattern processi plication means computa  A. Mod We  tive, sim tion ope of the M  1) E The  AllRedu AllRedu depicted shuffle? with Al  llGather can p e final assembl any duplicate e  efits of the Map- ation eliminat  asting steps in -sized multiple ginating from m use the networ roadcast origin entimes the Ma 10] in typical M f Map-AllGath sk result value This mechani  asted by the tim resulting in ov  he benefit will b e waves of Map addition to imp hances usabilit ting reduce an used to efficie plication of the
+
+V. MA Reduce is a col emitted by all t akes the results can be seen in ing algorithms ns that have t Clustering, M  ation and Page  del propose Map-  milar to the MP eration, to effic  Map Tasks.
+
+Figure 3  Execution Mod computation uce computati uce communic d in Figure 3.
+
+?sort?reduce llReduce comm  erform the dup ly of the data executions.
+
+-AllGather in tes the need  n that particula e broadcasts o multiple server rk more effecti ating from a si ap task execut  MapReduce co her primitive c es as soon as th sm ensures th me the last Ma erlap of compu be even more s p tasks.
+
+proving the pe ty, as it elimin nd/or merge fu ently schedule e computationa  AP-ALLREDUCE llective pattern the workers ba s available to n many iterativ s. Example da the Map-AllRe Multi-Dimensi eRank using ou  -AllReduce iter PI AllReduce [7 ciently aggrega  3.  Map-AllReduc  del and communic  ion is a Map cation and com This model al  e?merge?bro munication in t  plicate data de at the recipien  an iterative M for reduce, m  ar computation of Map-AllGat rs of the cluste ively than a sin ngle server.
+
+tion times are  omputations. Im can start broad he first Map ta  hat almost all t ap task comple utations with co significant whe  rformance, thi nates the overh functions. Map  the next itera al flow as well.
+
+E COLLECTIVE n which combin ased on a given all the worker  ve data mining ata-intensive it educe pattern ional-Scaling ut links matrix.
+
+rative MapRed 7] collective co ate and reduce  ce collective  cation pattern phase follow  mputation (red llows us to sub  oadcast steps o the communica  etection be- nt nodes to  MapReduce merge and n. Also the ther primi-  er would be ngle mono-  inhomoge- mplementa- dcasting the ask is com- the data is tes its exe- ommunica- en we have  s primitive head of im- p-AllGather ation or the  nes a set of n operation rs [7]. This g and graph erative ap- include K- StressCalc  duce primi- ommunica- the results  of a Map- wed by the duction), as bstitute the of MR-MB ation layer.
+
+T a a  lo ta o  v e r i M M k A p r ty  c a o u ( a A s A ti  f T th n a  a d  lo th s ta  The AllReduce algorithms such archical tree-ba  Map-AllRed ocal aggregatio asks and to pe  outputs while c 2) Data Mo  Figure 4.
+
+For Map-A vectors or singl each distinct M reduction opera s a list of key/  Map output key Map output val key. As shown AllReduce outp put keys. For e result in 10 co ype should be  In addition ciative operatio ample operation operations. Ope using the Sum (dimension) to associative and AllReduce has soon as the firs AllReduce imp ional exchange  It is also po function that e This function c he Map-AllRe  nation conditio after all the Ma  list<Key, IOp  3) Cost Mo An optimize  a bi-directional duce the cost of  ????? It?s also pos  ocal aggregatio he cost of AllR  substitutes the ask and broadc  e phase can be h as bidirection ased reduction.
+
+duce allows th on on the wor  erform hierarch ommunicating  odel  Example Map-A  AllReduce, the le values of nu  Map output key ation. Output o /value pairs w y and the valu lues that were a in Figure 4, the  put is equal to example, 10 d  ombined vector a number.
+
+to the summat  on can be perfo ns include sum erations such a operation toge count the num  d commutative the ability to  st Map task com lementations to  es to optimize t ossible to allow executes after can be used to duce result or n. It would be  ap-AllReduce d pRedValue> post  list<Key, IOp odel ed implementa l exchange-bas f the AllReduce ???	 ? ?????? ssible to further on and reductio Reduce compu Map output p  cast overheads.
+
+e implemented nal exchange (B  he implementa rker nodes acro hical reduction  them to all the  AllReduce with Su  Map output v umbers. The va  are processed of the Map-AllR here each key  ue is the comb associated with e number of re the number of  distinct Map ou rs or values. M  ion, any comm formed using th m, max, min, co as average can ether with an a  mber of data pro nature of the start combini mpletes. It also o use reduction the operation.
+
+w users to speci the AllReduce perform a sim  to check for th e executed in e data has been re tOpRedProcess( pRedValue> opR  ation of Map-A sed implement e component to ????? ? ??? ?  r reduce this co on in the Map  utation is small processing, Red   d efficiently us BDE) [7] or hi  ations to perfo oss multiple M of the Map Ta  e workers.
+
+um operation  values should alues belonging as a separate d Reduce operat corresponds t  ined value of h that Map out cords in the M  f unique Map o utput keys wo Map output va  mutative and as his primitive. E ount, and prod be performed  additional elem oducts. Due to operations, M  ing the values o allows the M n trees or bidir  ify a post proc e communicati mple operation he iteration term each worker no eceived.
+
+( RedResult);  AllReduce, such tation[7], will o: ??????  ost by perform worker nodes,  l. Map-AllRedu duce task, Me  ing ier-  orm Map ask  be g to data tion o a the  tput ap-  out- uld  alue  sso- Ex-  duct by  ment the ap- as ap-  rec-  cess ion.
+
+on mi- ode  h as re-  ing , as uce  erge  Othe municat binary t  B. Fau If th  son, it?s from the tation.
+
+The model o cution o Map-Al the outp ance mo anism, Map ou case dup done by data pro richer f duplicat  C. Ben Map  form in moves computa bine ope  Map optimiz tions, re commun as many tion and in mapp el, etc.
+
+operatio can com in a sin can be p  In th Collecti tive Ma all-to-al casted t neous ru implem  We mentatio ciencies plement timize t nication executin shown i ability  er efficient alg tion include ? tree, and k-chai  ult Tolerance he AllReduce c s possible for th e persistent sto  fault toleranc of MapReduce of tasks. Dupli llReduce result put of the same odel for Map-A where Map-A  utput results fro plicate results y maintaining oduct. It?s pos fault tolerance ted values in lo  efits p-AllReduce re n implementing the overhead ations and allo eration in the c p-AllReduce se ze the computa educing the nu nications. Hier y levels as nee d the scale of th pers, second lev The mapper le  on of vanilla M mbine the value ngle physical performed in re  VI.
+
+his section we ives for Hadoo apReduce. Map ll communicati to all the work running times t  mented using hie present suffici ons of the pri s that can be g tation of these these implemen n algorithms b ng, the scale of in MPI collect to improve th  gorithms to imp ?at-tree/linear, in trees [3].
+
+communication he workers to  orage to perform  ce model and t make it possib  icate execution ts due to the p e task twice. Th AllReduce wou  AllReduce woul om the persiste are detected. D a set of Map sible for the fr  e mechanisms, ocalized areas o  educes the wo g Reduce and of Reduce an  ows the framew communication emantics allow ation by perfor umber and the rarchical reduc eded based on he environmen vel in the node evel would be  MapReduce. Th es emitted by m node. All-Red eal time when t  IMPLEMENT e present two i op MapReduce p-AllGather is ions, where ea  kers taking adv to avoid conge erarchical redu iently optimal imitives to sho gained through e primitives. It ntations using  based on the e f the computati tive communic he primitive i  plement AllRe pipeline, bino  n step fails for read the Map o m the All-Redu  the speculative ble to have dup ns can result in possibility of a he most trivial uld be a best-ef ld fall back to nt storage (e.g  Duplicate detec IDs with each  frameworks to such as iden  of the reduction  ork each user h Merge tasks.
+
+nd Merge tasks work to perform n layer itself.
+
+w the impleme rming hierarch size of interm  ction can be pe the size of the  nt. For example e and nth level i similar to the  he local node a multiple mappe duce combine the data is rece  TATIONS implementation and Twister4A implemented u  ach Map outpu vantage of the estion. Map-Al uction trees.
+
+proof-of-conc ow the perform using even a m ?s possible to more advance  environment th ions, and the d cations literatur implementation  educe com- omial tree,  r some rea- output data uce compu-  e execution plicate exe- n incorrect  aggregating fault toler-  ffort mech- o using the . HDFS) in tion can be  h combined implement  ntifying the n tree.
+
+has to per- It also re-  s from the m the com-  entations to hical reduc-  mediate data erformed in e computa- e, first level in rack lev- ?combine?  aggregation ers running processing  eived.
+
+ns of Map- Azure itera- using linear ut is broad- inhomoge- llReduce is  cept imple- mance effi- modest im- further op- ed commu- hey will be ata sizes as re [7]. The ns without     changing the user application makes it possible to optimize them as a future work.
+
+It is not our objective to find the most optimal implemen- tations for each of the environments, especially for Clouds since that might end up being a moving target due to the rap- idly evolving and black box nature of Cloud environments.
+
+This presents an opportunity for Cloud providers to offer optimized implementations of these primitives as cloud infra- structure services that can be utilized by the frameworks.
+
+A. H-Collectives: Map-Collectives for Apache Hadoop H-Collectives is the Map-Collectives implementation for  Apache Hadoop that can be used as a drop-in library with the Hadoop distributions. H-Collectives uses the Netty NIO li- brary, node-level data aggregations and caching to efficiently implement the collective communications and computations.
+
+Existing Hadoop Mapper implementations can be used with these primitives with only very minimal changes. These primitives work seamlessly with Hadoop dynamic scheduling of tasks, support for multiple Map task waves, and other de- sirable features of Hadoop while supporting the typical Ha- doop fault tolerance and speculative executions as well.
+
+A single Hadoop node may run several Map workers and many more Map tasks belonging to a single computation. The H-Collectives implementation maintains a single node-level cache to store and serve the collective results to all the tasks executing in a worker node.
+
+H-Collectives speculatively schedules the tasks for the next iteration, and the tasks are waiting to start as soon as all the AllGather data is received, getting rid of most of the Ha- doop job startup/cleanup and task scheduling overheads.
+
+Task level fault tolerance checkpoints Map task output data to HDFS using a background daemon, avoiding over- head to the computation. In case this checkpointing fails for some reason, failed Map tasks or even the whole iteration can be re-executed.
+
+1) H-Collectives Map-AllGather This performs TCP-based best effort broadcasts for each  Map task output. Task output data is transmitted as soon as a task is completed, taking advantage of the inhomogeneous Map task completion times. Final aggregation of these data products is done at the destination nodes only once per node.
+
+If an AllGather data product is not received through the TCP broadcasts, then it will be fetched from the HDFS.
+
+2) H-Collectives Map-AllReduce H-Collectives Map-AllReduce use n'ary tree-based hier-  archical reductions, where Map task level and node level reductions would be followed by broadcasting of the locally aggregated values to the other worker nodes. The final reduce operation is performed in each of the worker nodes and is done after all the Map tasks are completed and the data is transferred.
+
+B. Map-Collectives for Twister4Azure iterative MapReduce Twister4Azure Map-Collectives are implemented using  the Windows Communication Foundation (WCF)-based Az- ure TCP inter-role communication mechanism, while em- ploying the Azure table storage as a persistent backup.
+
+Twister4Azure collective implementations maintain a worker node-level cache to store and serve the collective re-  sult values to all the tasks executing in that node. Twist- er4Azure utilizes the collectives to perform synchronization at the end of each iteration. It also uses the collective opera- tions to communicate the new iteration information to the workers to aid in the decentralized scheduling of the tasks for the next iteration.
+
+1) Map-AllGather Map-AllGather performs simple TCP-based broadcasts  for each Map task output. Workers start transmitting the data as soon as a task is completed. The final aggregation of the data is performed in the destination nodes and is done only once per node.
+
+2) Map-AllReduce Map-AllReduce uses a hierarchical processing approach  where the results are first aggregated in the local node and then final assembly is performed in the destination nodes.
+
+The iteration check happens in the destination nodes and can be specified as a custom function or as a limit on the number of iterations.
+
+
+
+VII. EVALUATION In this section we evaluate and compare the performance  of Map-Collectives with plain MapReduce using two real world applications, Multi-Dimensional Scaling and K-means clustering. The performance results are presented by breaking down the total execution time into the different phases of the MapReduce or Map-Collectives computations, providing a more finely detailed performance model. This provides a better view of various overheads in MapReduce and the op- timizations provided by Map-Collectives to reduce some of those overheads.
+
+In the following figures, ?Scheduling? is the per iteration (per MapReduce job) startup and task scheduling time.
+
+?Cleanup? is the per iteration overhead from Reduce task exe- cution completion to the iteration end. ?Map overhead? is the start and cleanup overhead for each Map task. ?Map varia- tion? is the overhead due to variation of data load, compute and Map overhead times. ?Comm+Red+Merge? is the time for shuffle, reduce execution, merge and broadcast. ?Com- pute? and ?Data load? times are calculated using the average compute only and data load times across all the tasks of the computation. The common components (data load, compute) are plotted at the bottom to highlight variable components.
+
+Hadoop and H-Collectives experiments were conducted in the FutureGrid Alamo cluster, which has Dual Intel Xeon X5550 (8 total cores) per node, 12 GB RAM per node and a 1Gbps network. Twister4Azure tests were performed in Win- dows Azure cloud, using Azure extra-large instances. Azure extra-large instances provide 8 compute cores and 14 GB memory per instance.
+
+A. Multi-Dimensional Scaling (MDS) using Map-AllGather The objective of MDS is to map a dataset in high-  dimensional space to a lower dimensional space, with respect to the pairwise proximity of the data points [8]. In this paper, we use parallel SMACOF [11, 12] MDS, which is an iterative majorization algorithm. The input for MDS is an N*N matrix of pairwise proximity values. The resultant lower dimension- al mapping in D dimensions, called the X values, is an N*D matrix.
+
+e e M w in b th ti d h c b  F  M V tr F h ti e th a  g in c ta M in s v h k  A in o r s s A m  Unweighted eration, BCCalc erates a portion MDS BCCalc which simply a n order. This X  by the StressCa he BCCalc ste ively smaller  data. Hence MD head. Usage of computation e broadcasting ste  1) H-Collec  Figure 5.  MDS H iteration to hig  We implem MapReduce an Vanilla MapRe ributedCache t  Figure 5 shows highlighting the ion. We used  each iteration a her highlight th  a 51200*51200 As seen in  gets rid of the ng and job c  computation. H ask overhead a  Map-AllReduce ncreases are du  successive itera vanilla MapRe have few secon keeping tasks.
+
+2) Twister4 We implem  AllGather prim ng. Twister4A  over simple MR rithm to perform shows the MD strong scaling AllGather base mentation. The  d MDS results c and StressCa n of the total  computation assembles the o X value matrix alc step of the ep of the next i amount of co DS has larger  f the Map-AllG liminates the eps in that part  ctives MDS Ma  Hadoop using only ghlight the overhea  mented the M nd H-Collecti educe impleme to broadcast loo s the MDS stro e overhead of d only the BC C and skipped th he AllGather c  0 matrix into a 5 Figure 5, the  communicatio leanup overhe  However, we n and Map variat e-based imple ue to the rapid ations in H-Col educe the Map nds between th  4Azure MDS M mented MDS f mitive and MR- Azure optimized R-MB as it use m TCP broadca  DS (with both performance  ed implementa e number of M  in two MapRe alc. Each BCCa  X matrix. Th is an aggreg  output of the M x is then broad current iteratio iteration. MDS mputations for data loading an  Gather primitive need for red  ticular computa  ap-AllGather  the BC Calculatio ad. 20 iterations, 5  DS for Hado ives Map-AllG entation uses t op variant data ong scaling per different phases Calculation ste he stress calcul component. Th 51200*3 matrix e H-Collectives n, reduce, mer  ead of the van notice a slight tion in the case ementation. W scheduling of  llectives, wher p tasks of suc he scheduling t  Map-AllGather for Twister4Az -MB with opti d broadcast is es an optimized asts of in-memo BCCalc and results comp  ation with the Map tasks pe  educe jobs per alc Map task g he reduce step gation operati  Map tasks toget dcasted to be u ons, as well as S performs a re r a unit of in nd memory ov  e in MDS BCC duce, merge a ation.
+
+on MapReduce job 1,200 data points.
+
+op using van Gather primiti the Hadoop D to the Map tas  rformance resu s on the compu p of the MDS lation step to f  his test case sca x.
+
+s implementat rge, task sched nilla MapRedu increase of M  e of H-Collectiv We believe th  Map tasks acr reas in the case cessive iteratio to perform hou  zure using M imized broadca  an improvem d tree-based alg ory data. Figur StressCalc ste  paring the M MR-MB imp  r computation  r it- en- of  ion, ther sed by  ela- put  ver- Calc and   b per  nilla ive.
+
+Dis- sks.
+
+ults, uta- S in fur- ales  tion dul- uce  Map ves  hese ross e of ons  use-  ap- ast-  ment go- re 6 eps) ap-  ple- n is  equal to Map-Al mance o with opt  Figur  3) D This  the Had duce job points, 6 tion. Th 51200*3 per Map 1.5 seco  Fi  Figu Figure plement tasks at mately r ter at th tion of t the time includes age. Th ing over  In F sents th tween t Map-Al  o the number llGather-based of Twister4Az timized broadc  re 6.  MDS applic iteration  Detailed analys s section prese doop MDS co b is used. MD 6 iterations on he total AllGa 3 data points. A p task. Averag onds per Map t  Figure 7.  Hadoo  igure 8.   H-Colle  ure 7 presents 8 presents MD tation. These p t a given mom represents the a hat given mom the computatio e spent by Map s input data lo  he space betwe rheads of the c  Figure 8, the s he data loading the iterations v llGather primit  of total cores d implementati zure MDS by 1 cast in the curre  cation implemente ns. 51,200 data poi  sis of overhead ents a detailed omputation. On S computation  n 64 cores using ather data size Average data lo  ge actual MDS task.
+
+op MapReduce MD  ectives AllGather M  the MDS usi DS using H-C plot the total n ent of the com amount of usef  ment. Each blue on. The width o ap tasks in that ading, calculat  een the blue ba computation.
+
+striped section  time. As can b virtually disapp tive.
+
+of the comput on improves t  13-42% over M ent test cases.
+
+ed using Twister4A ints (~5GB).
+
+d d analysis of o nly the BCCal  ns use 51200 * g 64 Map task e of this comp oad time is 10.
+
+BCCalc comp  DS-BCCalc histog   MDS-BCCalc hist  ing Hadoop M Collectives AllG number of exec mputation, whic ful work done e bar represen of each blue ba t particular iter tion and outpu ars represents t  on each blue be seen, the ov pears with the  tation. The the perfor-  MapReduce   Azure. 20  overhead in lc MapRe- 51200 data  ks per itera- putation is 61 seconds  pute time is   gram  ogram  MapReduce.
+
+Gather im- cuting Map ch approxi- in the clus- ts an itera- ar indicates ration. This ut data stor- the remain-  bar repre- verhead be-  use of the     d d te e ti b to to d  B  e tw u a s th  c to c ( n lo ti  M  F  H T  4) Perform Twister4Az  duce[2] and co data communi erms of the o  er4Azure can b ive computatio  by using Map- o H-Collective o the data loa  data caching an  B. K-means Cl K-means Cl  erative refinem wo main steps  update step. In assignment step step in the Red he beginning o  K-means Cl computation. In o a certain ce  combined inde (new centroids next iteration. K oading and me ions compared  1) H-Collec   Figure 9.  Hado Map-AllReduce W  Figure 10.  Hadoop AllReduce Stron  We implem Hadoop using The MapReduc  ance differenc ure is already  ontains very low cation overhe overheads and  be considered a ons. Hence the collectives is l  es. A major com ading, which T nd cache-aware  lustering using lustering[13] is  ment technique, : the cluster as n a typical M p is performed  duce task, while or end of each i lustering centro n this step all t entroid) belong ependently and ) are distribut K-means Clust emory overhea  d to the MDS ap ctives K-means  oop K-means Clust Weak scaling. 500 C  p MapReduce K-m ng scaling. 500 Ce  mented the K-m the Map-AllR  ce implementa  e of Twister4A optimized for w scheduling, ads compared  d comparison as a near ideal  overhead redu low in Twister mponent of Ha Twister4Azure e scheduling.
+
+g Map-AllRedu s often implem , where each i ssignment step  MapReduce imp in the Map tas  e centroid data iteration.
+
+oid update step the values (dat ging to each k d the resultant ed to all the M ering has relati ad vs. the num pplication discu s Clustering-Al  tering comparison Centroids, 20 Dime  means Clustering & ntroids, 20 Dimen  means Clusterin Reduce and pl ation uses in-m  Azure vs. Hadoo iterative MapR data loading a  d to Hadoop.
+
+purposes, Tw Hadoop for ite  uction we achie r4Azurecompa doop MDS is d avoids by us  uce mented using an  teration perfor and the centro  plementation, sk and the upd  a is broadcasted  p is an AllRedu ta points assign key (centroid) t key-value pa Map tasks of ively smaller d  mber of compu ussed above.
+
+llReduce  with H-Collective ensions, 10 iteratio  & H-Collectives M nsions,10 iterations  ng application lain MapRedu  map combiners  op Re- and  In wist- era- eve  ared due ing  n it- rms oids the  date d at  uce ned are airs the  data uta-   es ons.
+
+Map- s.
+
+for uce.
+
+s to  perform map-to-  Figu perform the wor means scaled t Strong s more M municat computa  As w of the c job clea A sligh can be mentatio MDS se  2) T  Figure 11 Centro  Figu Cen  We Twister4 MapRed in-map values t Figure formanc keeping the K-m we scal constan implem merge o  m aggregation -reduce interme ure 9 illustrates  mance where w rkload per cor Clustering str  the computatio scaling test cas  Map task waves tion, resulting ation we can see, the communication  anup overhead ht increase of M  noticed in the on, similar to t ection 7.a.1.
+
+Twister4Azure  1.  Twister4Azure K oids, 20 Dimension  ure 12.  Twister4Az ntroids, 20 Dimens  implemented t 4Azure using duce-MergeBr combiners to p to minimize th 11 shows the ce results, wh g the workload means Clusteri led the numbe  nt. As can be se mentation gets overheads of th  of the values ediate data tran s the K-means  we scaled the co re constant. Fi rong scaling  on while keepin ses with a sma s optimizing th  in relatively s  e H-Collective n, reduce, mer of the vanilla M Map task over  e case of Map- the behavior o  K-means Clus  K-means weak sca ns. 10 iterations. 3  zure K-means Clu sions, 10 iterations  the K-means C g the Map-A roadcast. MR-M perform local a  he size of map K-means Clus  here we scale d per core con ing strong sca er of cores wh een in these fig rid of the com  he MR-MB com  to minimize t nsfers.
+
+s Clustering we omputation wh igure 10 prese performance, ng the data siz aller number of he intermediate smaller overhe  s implementati rge, task sche MapReduce co rhead and Map -AllReduce ba  observed and ex  stering-AllRedu  aling with Map-Al 2 to 256 Million d  ustering strong scal s. 128 million data  Clustering appl llReduce prim MB implemen aggregation of  p-to-reduce data stering weak s  the computat nstant. Figure 1 aling performan ile keeping th  gures, the Map- mmunication, r mputation.
+
+the size of  eak scaling ile keeping  ents the K- where we  ze constant.
+
+f nodes use e data com- ead for the  ion gets rid duling and  omputation.
+
+p variation  ased imple- xplained in  uce   llReduce. 500 data points.
+
+ling. 500 a points.
+
+lication for mitive and ntation uses f the output a transfers.
+
+caling per-  tions while 12 presents nce, where e data size -AllReduce reduce and
+
+VIII. BACKGROUND AND RELATED WORKS  A. Collective Communication Primitives Collective communication operations[6] facilitate opti-  mized communication and coordination between groups of nodes of a distributed computation, and are used heavily in the MPI type of HPC applications. These powerful operations make it much easier and efficient to perform complex data communications and coordination inside the distributed par- allel applications. Collective communication also implicitly provides some form of synchronization across the participat- ing tasks. There exist many different implementations of HPC collective communication primitives supporting numer- ous algorithms and topologies suited to different environ- ments and use cases. The best implementation for a given scenario depends on many factors, including message size, number of workers, topology of the system, the computation- al capabilities/capacity of the nodes, etc. Oftentimes collec- tive communication implementations follow a poly-algorithm approach to automatically select the best algorithm and to- pology for the given scenario.
+
+Data redistribution communication primitives can be used to distribute and share data across the worker processors.
+
+Examples of these include broadcast, scatter, gather, and all- gather operations. Data consolidation communication primi- tives can be used to collect and consolidate data contributions from different workers. Examples of these include reduce, reduce-scatter and allreduce. We can further categorize col- lective communication primitives based on the communica- tion patterns as well, such as All-to-One (gather, reduce), One-to-All (broadcast, scatter), All-to-All (allgather, allre- duce, reduce-scatter) and Synchronization (barrier).
+
+The MapReduce model supports the All-to-One opera- tions through the Reduce step. The broadcast operation of MR-MB model (section II) serves as an alternative to the One-to-All type operations. The MapReduce model contains a barrier between the Map and Reduce phases and the itera- tive MapReduce has a barrier between the iterations. The solutions presented in this paper focus on introducing All-to- All type collective communication operations to the MapRe- duce model.
+
+We can implement All-to-All communications using pairs of existing All-to-One and One-to-All type operations present in the MR-MB model. For example, the AllGather operation can be implemented as Reduce-Merge followed by Broad- cast. However, these types of implementations would be inef- ficient and harder to use compared to dedicated optimized implementations of All-to-All operations.
+
+B. MapReduce and Apache Hadoop MapReduce, introduced by Google [14], consists of a  programming model, storage architecture and an associated execution framework for distributed processing of very large datasets. MapReduce frameworks take care of data partition- ing, task parallelization, task scheduling, fault tolerance, in- termediate data communication, and many other aspects of these computations for the users. MapReduce provides an easy to use programming model, allowing users to utilize the distributed infrastructures to easily process large volumes of data.
+
+MapReduce frameworks are typically not optimized for the best performance or parallel efficiency of small-scale applications. The main goals of MapReduce frameworks in- clude framework-managed fault tolerance, ability to run on commodity hardware, ability to process very large amounts of data, and horizontal scalability of compute resources.
+
+Apache Hadoop[15], together with Hadoop distributed parallel file system (HDFS) [16], provides a widely used open source implementation of MapReduce. Hadoop sup- ports data locality-based scheduling and reduces the data transfer overhead by overlapping intermediate data commu- nication with computation. Hadoop performs duplicate exe- cutions of slower tasks and handles failures by rerunning the failed tasks using different workers. MapReduce frameworks like Hadoop trade off costs such as large startup overhead, task scheduling overhead and intermediate data persistence overhead for better scalability and reliability  C. Iterative MapReduce and Twister4Azure Data-intensive iterative MapReduce computations are a  subset of iterative computations, where individual iterations can be specified as MapReduce computations. Examples of applications that can be implemented using iterative MapRe- duce include PageRank, Multi-Dimensional Scaling [1, 17], K-means Clustering, Descendent query [5], LDA, and Col- laborative Filtering with ALS-WR.
+
+These data-intensive iterative computations can be per- formed using traditional MapReduce frameworks like Ha- doop by manually scheduling the iterations from the job cli- ent driver, albeit in an un-optimized manner. However, there exist many possible optimizations and programming model improvements to enhance the performance and usability of the iterative MapReduce programs. Such optimization oppor- tunities are highlighted by the development of many iterative MapReduce frameworks such as Twister [4], HaLoop [5], Twister4Azure [1], Daytona [18] and Spark [19]. Optimiza- tions exploited by these frameworks include caching of loop- invariant data, cache-aware scheduling of tasks, iterative- aware programming models, direct memory streaming of intermediate data, iteration-aware fault tolerance, caching of intermediate data (HaLoop reducer input cache), dynamic modifications to cached data (e.g. genetic algorithm), and caching of output data (in HaLoop).
+
+Twister4Azure is a distributed decentralized iterative MapReduce runtime for Windows Azure Cloud that was de- veloped utilizing Azure cloud infrastructure services. Twist- er4Azure optimizes the iterative MapReduce computations by multi-level caching of loop invariant data, performing cache-aware scheduling, optimizing intermediate data trans- fers, optimizing data broadcasts and many other optimiza- tions described in Gunarathne et al [1].
+
+
+
+IX. FUTURE WORKS ? MAP-REDUCESCATTER There are iterative MapReduce applications where only a  small subset of loop invariant data product is needed to pro- cess the subset of input data in a Map task. In such cases, it?s inefficient to make all the loop invariant data available to such computations. In some of these applications, the size of loop variant data is too large to fit into the memory and intro- duce communication and scalability bottlenecks as well. An     example of such a computation is PageRank. The Map- ReduceScatter primitive, modeled after MPI ReduceScatter, is aimed to support such use cases in an optimized manner.
+
+Map-ReduceScatter gets rid of the inefficiency of simple broadcast ofing all the data to all the workers. Another alter- native approach is to perform a join of loop invariant input data and loop variant data using an additional MapReduce step. However, this requires all the data to be transported over the network from Map tasks to Reduce tasks, making the computation highly inefficient.
+
+Map-ReduceScatter primitive is still a work in progress and we are planning on including more information about it in our future publications.
+
+
+
+X. CONCLUSIONS We introduced Map-Collectives, collective communica-  tion operations for MapReduce inspired by MPI collectives, as a set of high level primitives that encapsulate some of the common iterative MapReduce application patterns. Map- Collectives improve the communication and computation performance of the applications by enabling highly optimized group communication across the workers, getting rid of un- necessary/redundant steps, and by enabling the frameworks to use a poly-algorithm approach based on the use case. Map- Collectives also improve the usability of the MapReduce frameworks by providing abstractions that closely resemble the natural application patterns. They also decrease the im- plementation burden on the developers by providing opti- mized substitutions for certain steps of the MapReduce mod- el. We envision a future where many MapReduce and itera- tive MapReduce frameworks support a common set of porta- ble Map-Collectives and consider this work as a step in that direction.
+
+In this paper, we defined Map-AllGather and Map- AllReduce Map-Collectives and implemented Multi- Dimensional Scaling and K-means Clustering applications using these operations. We also presented the H-Collectives library for Hadoop, which is a drop-in Map-Collectives li- brary that can be used with existing MapReduce applications with only minimal modification. We also presented a Map- Collectives implementation for Twister4Azure iterative MapReduce framework as well. MDS and K-means applica- tions were used to evaluate the performance of Map- Collectives on Hadoop and on Twister4Azure, depicting up to 33% and 50% speedups over the non-collectives implementa- tions by getting rid of the communication and coordination overheads.
+

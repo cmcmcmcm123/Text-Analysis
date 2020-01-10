@@ -1,0 +1,234 @@
+2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+Abstract?Over the past years, frameworks such as MapReduce and Spark have been introduced to ease the task of developing big data programs and applications. However, the jobs in these frameworks are roughly defined and packaged as executable jars without any functionality being exposed or described. This means that deployed jobs are not natively composable and reusable for subsequent development. Besides, it also hampers the ability for applying optimizations on the data flow of job sequences and pipelines. In this paper, we present the Hierarchically Distributed Data Matrix (HDM) which is a functional, strongly-typed data representation for writing composable big data applications. Along with HDM, a runtime framework is provided to support the execution, integration and management of HDM applications on distributed infrastructures. Based on the functional data dependency graph of HDM, multiple optimizations are applied to improve the performance of executing HDM jobs. The experimental results show that our optimizations can achieve improvements between 10% to 40% of the Job-Completion-Time for different types of applications when compared with the current state of art, Apache Spark.
+
+Index Terms?big data processing, parallel programming, functional programming, distributed systems, system architecture.
+
+F  1 INTRODUCTION  Big Data has become a popular term which is used to describe the exponential growth and availability of data.
+
+The growing demand for large-scale data processing and data analysis applications spurred the development of novel solutions to tackle this challenge [10]. For about a decade, the MapReduce framework has represented the defacto standard of big data technologies and has been widely utilized as a popular mechanism to harness the power of large clusters of computers. In general, the fundamental principle of the MapReduce framework is to move analysis to the data, rather than moving the data to a system that can analyze it. It allows programmers to think in a data-centric fashion where they can focus on applying transformations to sets of data records while the details of distributed exe- cution and fault tolerance are transparently managed by the framework. However, in recent years, with the increasing applications? requirements in the data analytics domain, various limitations of the Hadoop framework have been recognized and thus we have witnessed an unprecedented interest to tackle these challenges with new solutions which constituted a new wave of mostly domain-specific, opti- mized big data processing platforms [11].
+
+In recent years, several frameworks (e.g. Spark [16], Flink, Pregel [7], Storm) have been presented to tackle the ever larger datasets on using distributed clusters of commodity machines. These frameworks significantly reduce the complexity of developing big data programs and applications. However, in reality, many real-world scenarios require pipelining and integration of multiple big data jobs. There are more challenges when applying big data technology in practice. For example, consider  a typical online machine learning pipeline as shown in Fig. 1, the pipeline consists of three main parts (Fig. 1): the data parser/cleaner, feature extractor and classification trainer. In the pipeline, components like feature extractor and classification trainer are normally commonly-used algorithms for many machine learning applications. However, in current big data platform such as MapReduce and Spark, there is no proper way to share and expose a deployed and well-tuned online component to other developers. Therefore, there are massive and even unseen redundant development in big data applications. In addition, as the pipeline evolves, each of the online components might be updated and re-developed, new components can also be added in the pipeline. As a result, it is very hard to track and check the effects during the evolving process. Google?s recent report [12] shows the challenges and problems that they have encountered in managing and evolving large scale data analytic applications. Furthermore, as the pipeline become more and more complicated, it is almost impossible to manually optimize the performance for each component not mentioning the whole pipeline. To address the auto- optimization problem, Tez [9] and FlumeJava [3] were introduced to optimize the DAG of MapReduce-based jobs while Spark relies on Catalyst to optimize the execution plan of SparkSQL [2].
+
+To sum up, the main challenges for current complicated analytic applications can be listed below:  ? Many real-world applications require a chain of opera- tions or even a pipeline of data processing programs.
+
+2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   Figure 1. A simple image classification pipeline.
+
+Optimizing a complicated job is difficult and opti- mizing pipelined ones are even harder. Additionally, manual optimizations are time-consuming and error- prone and it is almost impossible to manually optimize every program.
+
+? Integration, composition and interaction with big data programs/jobs are not natively supported: Many prac- tical data analytics and machine learning algorithms re- quire combination of multiple processing components each of which is responsible for a certain analytical functionality. A key limitation for existing frameworks such as MapReduce and Spark is that jobs are roughly defined and packaged as binary jars and executed as black-boxes without exposing any information about the functionalities. As a result of this, deployed jobs are not natively composable and reusable for subsequent development and integration.
+
+? Maintenance and management of evolving big data applications are complex and tedious. In a realistic data analytic process, data scientists need to explore the datasets and tune the algorithms back and force to find out a more optimal solution. Mechanisms such as history tracking and reproducibility of old-version programs are of great significance for helping data scientist not be lost during exploring and evolving their data analytic programs.
+
+In order to tackle the above challenges, we believe that by improving the basic data and task models, these problems could be addressed to a great extent at the big data execution engine level. In particular, we present the Hierarchically Distributed Data Matrix (HDM) [14] along with the sys- tem implementation to support the writing and execution of composable and integrable big data applications. HDM is a light-weight, functional and strongly-typed meta-data abstraction which contains complete information (such as data format, locations, dependencies and functions between input and output) to support parallel execution of data- driven applications. Exploiting the functional nature of HDM enables deployed applications of HDM to be natively integrable and reusable by other programs and applica- tions. In addition, by analyzing the execution graph and functional semantics of HDMs, multiple optimizations are provided to automatically improve the execution perfor- mance of HDM data flows. Moreover, by drawing on the comprehensive information maintained by HDM graphs, the runtime execution engine of HDM is also able to provide provenance and history management for submitted applica- tions. In particular, the main contributions of this paper can be summarized as follows:  ? HDM, a lightweight, functional, strongly-typed data abstraction for developing and describing data-parallel applications.
+
+? Based on the functional data dependency graph, op- timizations include function fusion, local aggregation, operation reordering and caching are introduced to  TABLE 1. ATTRIBUTES OF HDM  Attribute Description ID The identifier of a HDM. It must be unique  within each HDM context.
+
+inType The input data type of computing this HDM.
+
+outType The output data type of computing this HDM.
+
+category The node type of this HDM. It refers to either  DFM or DDM.
+
+children The source HDMs of a HDM. It describes from  where this HDM can be computed.
+
+distribution The distribution relation of children blocks,  including horizontal and vertical.
+
+dependency The data dependency for computing this  HDM from its children. There are four types of data dependencies as 1:1, 1:N, N:1, N:N.
+
+function The function applied on input to calculate the output. This function can be a composed one and must have the same input and output type as this HDM.
+
+blocks The data blocks of this HDM. For DFM it can be an array of IDs for children DDM; This field is only available after all children of this HDM are computed.
+
+location It refers to the URL address of this HDM on local or remote nodes. For DDM, the actual data are loaded according to the protocol in the URL such as hdfs, file, mysql and hdm.
+
+state Current state of this HDM. A HDM can exist in different phases such as Declared, Com- puted and Removed.
+
+improve the performance of HDM jobs.
+
+? A HDM system implementation provisioning that sup-  ports the execution, integration, history and depen- dency management of HDMs applications on dis- tributed environments.
+
+? Comprehensive benchmarks including: basic primi- tives, pipelined operations, SQL queries and iterative jobs (ML algorithms) are tested to evaluate the perfor- mance of HDM compared with the current state-of-art big data processing framework - Apache Spark.
+
+The remainder of this paper are organized as follows. Sec- tion 2 introduces the representation and basic features of HDM. Section 3 describes the programming model of HDM.
+
+Section 4 presents the major optimizations applied to the HDM data flow. Section 5 presents the system architecture and implementations of the HDM runtime system. Section 6 describes the dependency and history management of HDM applications. In Section 7 presents a case study of writing pipelined applications in HDM and compares the perfor- mance of HDM with Apache Spark. In Section 8, we discuss the related work before we conclude the paper in Section 9.
+
+2 REPRESENTATION OF HDM Programming abstraction is the core of our framework, therefore, we first introduce our Hierarchically Distributed Data Matrix (HDM) which is a functional, strongly-typed meta-data abstraction for writing data-parallel programs.
+
+2.1 Attributes of HDM Basically, a HDM is represented as HDM[T, R], in which T and R are data types for input and output, respectively.
+
+The HDM itself represents the function that transforms data from input to output. Apart from these core attributes, HDM also contains information like data dependencies,    2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   Figure 2. Data Model of HDM.
+
+location, distribution to support optimization and execu- tion. The attributes of a HDM are listed in TABLE I. Those attributes are chosen based on the design requirements of HDM. ?inType? and ?outType? is used to guarantee the type correctness during optimization and composition. ?category? is used to differentiate DFM and DDM during job planing, optimization and execution. ?children? and ?dependency? are used to reconstruct the HDM DAG during job planing and optimization. The attribute ?function? is the core function of the HDM, it illustrates the how to compute the output of this HDM. Attribute ?blocks? are used to specify the location of output for this HDM and it can be used as the input of a subsequent HDM computation. ?location? represents that in which context or where the HDM is declared and managed.
+
+?state? is used to manage and check the runtime status of HDMs. Based on these attributes above, HDM supports the following basic features:  ? Functional : A HDM is essentially a structured repre- sentation of a function that computes the output from some input. The computation of a HDM is focused on the evaluation of the contained function on the input data set (as children in HDM). During the computation of a HDM, no side effects are involved.
+
+? Strongly-typed : HDM contains at least two explicit data types, the input type and output type, which are derived from the formats of the input and output based on the enclosed function. Note that strongly-typed in HDM means type information is explicitly included in HDM job interpreting, optimization and composition to guarantee the compatibility of data types.
+
+? Portable : A HDM is an independent object that contains complete information for a computation task. There- fore, a HDM task is portable and can be moved to any nodes within the HDM context for execution.
+
+? Location-aware : HDMs contains the information of the location (represented as formatted URL) of the inputs and outputs. Although, some location information is only available during runtime, it facilitates the ability to apply some optimizations for data localizations during the planning phases.
+
+2.2 Categorization of HDM As shown in Fig. 2, HDM is a tree-based structure which consists of the following two types of nodes:  ? Distributed Data Matrix (DDM): The leaf-nodes in a HDM hierarchy hold the references of actual data and  are responsible for performing atomic operations on data blocks. A DDM maintains the actual information such as: ID, size, location and status of one data block.
+
+? Distributed Functional Matrix (DFM): The non-leaf nodes hold both the operational and distribution of relations for children HDMs; DFMs hold the specific functions about how to compute its output from the children HDM(can be either DFM or DDM). During execution, it is also responsible for collecting and aggre- gating the results from children nodes when necessary.
+
+From the functional perspective, a DDM can be considered as a function which maps a path to an actual data set.
+
+Essentially, a DDM can be represented as HDM [Path, T].
+
+During execution, data parsers are wrapped to load data from the data path according to their protocols and then transform the input to the expected outgoing formats of the DDM. A DFM is considered as a higher-level representation which focuses on the functional dependency for HDMs to serve the planning phases. Before execution, DFMs will be further explained as DDM dependencies according to data locations and the expected parallelism.
+
+The separation of DFM and DDM provides different levels of views to support different levels of planning and optimization. In addition, the hierarchy of DFM and DDM also ensures that the local computation on data node is not concerned about data movement and coordination between siblings, thus leaving the parent nodes free to apply the aggregation steps.
+
+2.3 Data Dependencies of HDM In principle, data dependencies between HDMs affect when and how to compute HDMs from their children or prede- cessors. In particular, by performing operations on HDM, data dependencies are implicitly added between pre and post HDM nodes in the data flow. Basically, there are four types of dependencies in HDM (as shown in Fig. 3):  ? One-To-One (1:1): one partition of input is only used to compute one partition of the output; Therefore, different partitions of the HDM can be executed in parallel without any intercommunication. Operations such as Map, Filter, Find would introduce a One-To-One dependency in the dataflow.
+
+? One-To-N (1:N): one partition of input is used to com- pute multiple partitions of the output while one out- put partition only requires the input from one par- tition; Depending on the partition function, a Parti- tion/Repartition operations would introduce a One-To-N dependency in the dataflow.
+
+? N-To-One (N:1): one partition of input is only used to compute one partition of the output while one output partition requires multiple input partitions; Operations such as Join, Reduce, ReduceByKey would introduce a N- To-One dependency in the dataflow.
+
+? N-To-N (N:N): Any other dependencies are considered as N-To-N dependency where one partition of input are used to compute multiple output partitions while one output partition also requires multiple input partitions.
+
+GroupBy, CoGroup and some specific Partition operation introduces N-to-N dependencies to the dataflow.
+
+In practice, data dependency information represent a crucial aspect during both execution and optimization in    2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   Figure 3. Data Dependencies of HDM.
+
+TABLE 2. SEMANTICS OF BASIC FUNCTIONS  Function Semantics Null Do nothing but return the input.
+
+Map Fp: List[T ].map(f) f : T ? R Fa: List1[R] += List2[T ].map(f)  Fc: List1[R] + List2[R] GroupBy Fp: List[T ].groupBy(f) f : T ? K Fa: List1[K,T ]  ? List2[T ].groupBy(f)  Fc: List1[K,T ] ?  List2[K,T ] Reduce Fp: List[T ].reduce(f) f : (T, T )? T Fa: List2[T ].foldBy(zero = T1)(f)  Fc: f(T1, T2) Filter Fp: List[T ].filterBy(f) f : T ? Bool Fa: List1[T ] += List2[T ].filterBy(f)  Fc: List1[T ] + List2[T ]  order to decide how a HDM is computed, and which opti- mizations can be applied on the data flow, if at all.
+
+3 PROGRAMMING ON HDM One major target of contemporary big data processing frameworks is to ease the complexity for developing data- parallel programs and applications. In HDM, functions and operations are defined separately to balance between per- formance and programming flexibility.
+
+3.1 HDM Functions In HDM, a function specifies how input data are trans- formed as the output. Functions in HDM have different se- mantics targeting different execution context. Basically, one HDM function may have three possible semantics, indicated as Fp, Fa, Fc:  Fp : List[T ] ? List[R] (1) Fa : (List[T ], List[R]) ? List[R] (2) Fc : (List[R], List[R]) ? List[R] (3)  Fp is the basic semantics of a function which specifies how to process one data block. The basic semantics of HDM function assume that the input data is organized as a sequence of records with type T . Similarly, the output of all the functions are also considered as a sequence of records.
+
+Based on the type compatibility, multiple functions can be directly pipelined.
+
+Fa is the aggregation semantics of a function which spec- ifies how to incrementally aggregate a new input partition to the existing results of this function. Functions are required  to be performed on multiple data partitions when the input is too large to be fit into one task. The aggregation semantics are very useful under the situations in which accumulative processing could get better performance. Aggregation se- mantics exist for a function only when it is capable to be represented and calculated in an accumulative manner.
+
+Fc is the combination semantics for merging multiple intermediate results from a series of sub-functions to obtain the final global output. It is also a complement for the aggregation semantics when a function is decomposable using the divide-combine pattern.
+
+During the explanation of HDM jobs, different semantics are automatically chosen by planers to hide users from func- tional level optimizations. An illustration of the semantics of some basic HDM functions are listed in TABLE 2. During programming, operations in HDM are exposed as functional interfaces for users to use. Due to the declarative and intense manner offered by functional interfaces, users are able to write a WordCount program in HDM as shown in Fig. 4.
+
+wordcount = HDM.string(?path1?,?path2?).map( .split(?,?)) .flatMap( w? (w, 1) .groupBy(t? t. 1).reduceByKey( + )  Figure 4. Example of writing a word-count program in HDM  3.2 HDM Composition In functional composition, one function f : X ? Y can be composed with another function g : Y ? Z to produce a high-order function h : X ? Z which maps X to g(f(X)) in Z . HDM inherits the idea of functional composition to support two basic types of composition:  HDM [T,R] compose HDM [I, T ] ? HDM [I,R] (4) HDM [T,R] andThen HDM [R,U ] ? HDM [T,U ] (5)  ? compose: A HDM with input type T and output type R can accept a HDM with input type I and output type T as an input HDM to produce a HDM with input I and output R.
+
+? andThen: A HDM with input type T and output type R can be followed by a HDM with input type any R and output type U as the post-operation to produce a new HDM with input T and output U.
+
+These two patterns are commonly used in functional pro- gramming and can be recursively used in HDM sequences to achieve complicated composition requirements. In our system, composition operations are implemented as the basic primitives for HDM compositions and data flow opti- mizations.
+
+3.3 Interaction with HDM  TABLE 3. ACTIONS AND RESPONSES FOR INTEGRATION  Action Response compute References of computed HDMs.
+
+sample Iterator of a sampled sub-set for computed  records.
+
+count Length of computed results.
+
+traverse Iterator of all computed records.
+
+trace Iterator of task information for last execution.
+
+2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   HDM applications are designed to be interactive during runtime in an asynchronous manner. In particular, HDM programs can be written and embedded into other programs as normal code segments. Then, by triggering the action in- terfaces (listed in TABLE 3), jobs are dynamically submitted to the related execution context which can be either a multi- core threading pool or a cluster of workers. Fig. 5 shows how to interact with the WordCount job and print out the output on the client side.
+
+wordcount.traverse(context = ?10.10.0.100:8999?) onComplete {  case Success(resp)? resp.foreach(println) case Failure(exception)? println(exception)}  Figure 5. Print output of HDM on the client side  4 DATA FLOW OPTIMIZATIONS ON HDM  During runtime, HDM jobs are represented as functional DAG graphs, on which multiple optimizations could be applied to get better performance. Before execution, HDM optimizer traverses the DAG of HDM in a deep-first manner as shown in Fig. 6. During traversing, the optimizer checks each node scope (each scope contains the information of: current node, parent and its children and their data de- pendencies and functions) matches any of the optimization rules then reconstruct the scope based on the matched rule.
+
+In the current implementation of HDM optimizer, there are four basic optimization rules: Local Aggregation, Re- ordering, Function Fusion and HDM Caching. In the re- maining of this section, we will take the WordCount pro- gram (Fig. 4) as an example to explain each optimization rule and how they are applied to a HDM job.
+
+4.1 Local Aggregation  Local aggregation is a very useful approach to reduce the communication cost for shuffle operations with aggregation semantics. For this kind of operations (such as ReduceBy and FoldBy), an aggregation operation can be applied before the shuffle phase, so that the amount of data can be significantly reduced for shuffling. Then, in the following step, a global aggregation is performed to compute the final results. The local aggregation rule in HDM can be specified as:  Local Aggregation Rule: Given a HDM [T,R] with func- tion f : T ? R, if HDM has N-to-One or N-to-N dependency and f has the semantics of aggregation then HDM can be split as multiple parallel HDMp[T,R] (with function f and one-to-one dependency) that is followed by HDMg[R,R] with the aggregation semantics Fa and original shuffle dependency.
+
+For the example of WordCount program (in Fig. 4), the data flow of the job is initially explained as Fig. 7(a).
+
+By detecting the aggregation operation ReduceByKey after GroupBy, parallel branches are added to aggregate the data before the shuffling step. During the shuffle reading phase, the aggregate semantics of ReduceByKey function is applied to get the correct results from two sub-aggregating func- tions. The optimized data flow is shown in Fig. 7(b).
+
+Figure 6. Traversing on the Data flow of HDM during Opti- mization.
+
+4.2 Function Fusion In HDM, we define fusible HDMs as a sequence of HDMs that start with One-To-One or N-To-One data dependency and end with One-To-One or One-To-N data dependency.
+
+This sequence of HDMs could be combined into one HDM rather than being computed in separate ones. During the fu- sion process, functions associated within the fusible HDMs, such as Map, Find, filter, local reduce/group will be directly appended to the parent nodes until it reaches the root or encounter an N-to-N and One-To-N dependency. The rule of function fusion in HDM can be specified as:  Function Fusion Rule: Given two connected HDMs: HDM1[T,R] with function f : T ? R followed by HDM2[R,U ] with function g : R ? U , if the dependency between them are one-to-one then they can be combined as HDMc[T,U ] with function f(g) : T ? U .
+
+This rule can be applied recursively on a sequence of fusible operations to get the final combined HDM. For example, after performing the function fusion, the data flow of WordCount can be simplified as shown in Fig. 7(c).
+
+Fusible operations such as Map and FlatMap are both fused into top DDMs and inherit the data dependency as One- To-N. During execution, the combined function is directly executed on every input block of data within one task.
+
+4.3 Re-ordering/Re-construction Operations  TABLE 4. REWRITING PATTERNS IN HDM  Pattern Re-written map(m : T ? R) filter(f(m) : T ? Bool) .filter(f : R? Bool) .map(m) union().filter(f : T ? Bool) filter(f : T ? Bool).union() intersection().filter(f : T ? Bool) filter(f : T ? Bool)  .intersection() distinct().filter(f : T ? Bool) filter(f : T ? Bool)  .distinct() sort().filter(f : T ? Bool) filter(f : T ? Bool).sort() groupBy(g : T ? K) filter(f(g) : T ? Bool) .filterByKey(f : K ? Bool) .groupBy(g) reduceByKey() filterByKey(f : K ? Bool) .filterByKey(f : K ? Bool) .reduceByKey()  Apart from aggregation operations, there is another set of operations (like Filter or FindBy) that can reduce the total communication cost by extracting only a subset of data from previous input. These operations are considered as pruning- operations during execution. The basic principle is that    2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   (a) Initial Data Flow (b) Datta Flow after Local Aggregation (c) Data flow after local aggregation and function fusion  (d) Data flow Reconstruction  Figure 7. Data Flow Optimizations on WordCount  the optimizer attempts to lift these pruning-operations to reduce the data size in advance while sinking the operations which involves global aggregations (such as global Reducer and Grouper) to delay intensive communication.
+
+During the optimizing phase, operation re-ordering and re-construction are achieved through re-writing of opera- tion patterns. The optimizer keeps checking the operation flow and detect possible patterns and re-writes them in optimized formats. Basic patterns and re-written formats in optimizers are listed in TABLE IV. The operation re- writing process can be recursively performed for multiple iterations to obtain an optimal operation flow. As an ex- ample, consider a extended WordCount program, in which the developer wants to find out the number of words that start with the letter ?a?. The extended program has two ad- ditional functions: FindByKey and ReduceByValue, as shown in Fig. 7(d). During optimization, as indicated in Fig. 7(d), the FindByKey function is categorized as one of the pruning- functions that can reduce the total data amount. Thus, it is lifted before the aggregation ReduceByKey. When it meets the shuffle operation GroupBy, applying the same rule, it continues to be lifted until it reaches the parallel operation FlatMap and Map.
+
+4.4 HDM Cache For many complicated applications (such as iterative al- gorithms), input data might be repetitively used in the iterations. Therefore, it is necessary to cache this part of data to avoid redundant computation. In HDM, data caching can be triggered through two ways:  ? Developers can explicitly specify which HDMs need to be cached for repetitive computation.
+
+? Cache operation can be automatically added by doing reference counting in the logical planning phase, in which HDMs directly referenced by multiple subse- quent operations will be labeled. The output of these HDMs will be cached for subsequent execution;  For example, as shown in Fig. 8, the sort operation contains four functions: map, sample, partition and sort. The sample function and partition function share the same input that is calculated from the map?s output. In the logical planning phase, the planner can detect that the output of map has multiple references (with value of ?2?) thus the planner can  add a cache tag on it. Then, during execution phase, all the output with this tag will be cached in the memory of workers to avoid redundant computations.
+
+Figure 8. Cache Detecting by Reference Counting.
+
+Once a HDM is labeled and cached by a previous job, in the next planning phase, the cache optimizer will check and replace all the references of this HDM in the data flow with the cached DDM addresses. During execution, there are two types of caching policies: eager caching and lazy caching. The former actively computes the caching data before it is required by subsequent operations; the latter will only starts computing the caching data until the first reading operations is invoked. By default, lazy caching is used during HDM computation.
+
+4.5 Comparison with Optimizations in Other Frame- works  The optimization mechanisms introduced in this sections are not newly invented by us it is derived from some optimizations in other frameworks in combination with functional wrapping.
+
+? In MapReduce, users can manually define Combina- tors for each Mappers to apply map-side merge in a MapReduce job In Spark, users can use Aggregator API rather than normal groupBy and reduce operations to define the aggregation operation before shuffling data across the cluster. Those are all derivations of the local aggregation optimizations.
+
+? Tez combines the chained map-only jobs into one Map- per to reduce the complexity and consumption for executing multiple ones. Spark scheduler schedule a sequence of arrow dependency operations into one task to reduce the redundant cost for scheduling and gener- ation of intermediate data. These optimizations achieve    2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   similar effects as our function fusion optimization yet in a task-oriented perspective.
+
+? Support of operation re-ordering and re-construction are not natively provided in current frameworks such as MapReduce and Spark. In practice, it is required for the job developers to have certain expertise for optimiz- ing the sequence of operations in their programs.
+
+? Both Spark and Flink provide operations for developers to explicitly cache datasets into memory to improve the performance of iterative jobs. However, for many complicated programs it is hard to manually decide when and where to cache the datasets if it is repeatedly used in subsequent operations in a implicit manner.
+
+In contrast to manually applying most of those optimiza- tions in existing frameworks, HDM utilizes the information and understanding of functional semantics to be able to automatically perform the optimization mechanisms in the data flow of the HDM jobs. More importantly, the automa- tion of optimizations also make them easier and feasible to be applied to complicated jobs and data pipelines.
+
+5 SYSTEM IMPLEMENTATION The kernel of the HDM runtime system is designed to support the execution, coordination and management of HDM programs. For the current version, only memory- based execution is supported in order to achieve better performance.
+
+5.1 Architecture Overview  Figure 9. System Architecture of HDM Runtime System.
+
+Fig. 9 illustrates the system architecture of HDM runtime environment which is composed of three major components:  ? Runtime Engine: is responsible for the management of HDM jobs such as explaining, optimization, scheduling and execution. Within the runtime engine, App Man- ager manages the information of all deployed jobs. It maintains the job description, logical plans and data types of HDM jobs to support composition and mon- itoring of applications; Task Manager maintains the activated tasks for runtime scheduling in Schedulers; Planers and Optimizers interpret and optimize the exe- cution plan of HDMs in the explanation phases; HDM Manager maintains the HDM information and states in each node of the cluster and they are coordinated together as an in-memory cache of HDM blocks; Execu- tor Context is an abstraction component to support the execution of scheduled tasks on either local or remote nodes.
+
+? Coordination Service: is composed of three types of coor- dination: cluster coordination, HDM block coordination and executor coordination. They are responsible for  Figure 10. Process of executing HDM jobs.
+
+coordination and management of node resources, dis- tributed HDM blocks and distributed executions within the cluster context, respectively.
+
+? IO interface: is a wrapped interface layer for data trans- fer, communication and persistence. IO interfaces are categorized as transportation interfaces and storage interfaces in implementation. The former is responsible for communications and data transportation between distributed nodes while the latter is mainly responsible for reading and writing data on storage systems.
+
+In the following parts of this section, additional details about the major components are presented.
+
+5.2 Runtime Engine  The main responsibility of the components in the runtime engine is the coordination and cooperation of tasks so that the jobs specified as HDMs can be completed successfully.
+
+Fig. 10 shows the main process of executing HDM jobs in the runtime system. As shown, the main phases for executing HDM jobs include logical planning, optimization, physical planning, scheduling and execution. Before execu- tion, HDMs need to be explained as executable tasks for executors. The explanation process is mainly divided into two sub-steps: logical planning and physical planning.
+
+5.2.1 Logical Planning  Algorithm 1: LogicalPlan Data: a HDM h for computation Result: a list of HDM Listh sorted by dependency begin  if children of h is not empty then for each c in children of h do  Listh+ = LogicalP lan(c); end Listh+ = h;  else return h;  end return Listh;  end  In the logical planning step, a HDM program will be represented as a data flow in which every node is a HDM object that keeps the information about data dependencies, transformation functions and input output formats. The logical planning algorithm is presented in Algorithm 1.
+
+Basically, the planner traverses the HDM tree from the root node in a depth-first manner and extracts all the nodes into the resulting HDM list which contains all the nodes for a logical data flow. After the construction of the data flow, all the necessary HDMs will be declared and registered into the HDM Block Manager. In next step, optimizations will be performed on the logical data flow based on the rules    2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   discussed in Section 4. So far, the logical data flow is still an intermediate format for execution. In order to make the job fully understandable and executable for executors, further explanation is required in the physical planning phase.
+
+Figure 11. Physical execution graph of HDM (parallelism = 4).
+
+5.2.2 Physical Planning  Algorithm 2: PhysicalPlan Data: the root HDM h and the parallelism p expected for  execution Result: a list of HDM Listh sorted by dependency begin  if children of h is empty then ls ? block locations of h; gs ? clustering ls as p groups according to distance; for each g in gs do  d? create a new DFM with input g and function of h; Listh+ = d;  end else  for each c in children of h do Listh+ = PhysicalP lan(c);  end ds ? split h as p branches of DFM; listh+ = ds;  end return Listh;  end  In the physical planning phase, given the logical data flow, the planner explains it further as a DAG task graph according to the parallelism on which the job is expected to be executed. The pseudo code of physical planning is presented in Algorithm 2. Essentially, physical planning is a low-level explanation which splits the global HDM operations into parallel ones according to the parallelism and data locations. As presented in Fig. 11, the physical planning phase contains three main steps:  ? First, the data source is grouped/clustered based on location distance and data size.
+
+? Second, the following operations are divided as multi- ple phases based on the boundary of shuffle dependen- cies.
+
+? Last, parallel operations in each phase are split into multiple branches according to the expected execution parallelism (p=4). Then every branch in each phase of the graph is assigned as a task for follow-up scheduling and execution.
+
+6 DEPENDENCY AND HISTORY MANAGEMENT OF HDM During continuous development and deployment of big data analytic applications, it is normally tedious and com- plicated to maintain and manage applications that are con- stantly evolving. In HDM, by drawing on comprehensive information maintained by HDM models, the runtime en- gine is able to provided more sophisticated dependency and history management for submitted jobs.
+
+6.1 History Traces Management  In HDM, once a application is submitted to the server, it will be assigned with an application ID( if it is not specified) and version number. Then, any future submissions and updates for the same application (identified the application ID) will obtain a new and unique auto-increased version number. In addition, execution dependencies (e.g. binary jars of the libs) are decoupled from execution programs for HDM. Before executing of a HDM application, all the dependent libraries that are associated with the specific application ID and version number that are required to be submitted to the server. Subsequently, the application can be execute at any time at any location within the cluster without re-submitting the dependencies. This facilitates the dependency management for applications and also makes the application re-producible and portable across develop- ers and locations. Moreover, during execution of HDM jobs, all the meta data of the applications, such as the logical plan, optimized plan, physical plan and timestamp of tasks will be automatically recorded by the server. This information of jobs are very helpful for users to profile, debug and analyze their deployed applications and jobs in their life cycles. In the HDM server, it provides two basic data structures to maintain the meta data of HDM:  ? Dependency Trace, which records the dependent libs required for execution of each version of the submitted applications.
+
+? Execution Trace, which records information related to the runtime execution process of each task of HDM, in- cluding HDM ID/TaskID, createTime, scheduledTime, completionTime, input/output DDMs and input/out- put types.
+
+All of these meta data that has been collected for HDM jobs are maintained as a tree-based history in the HDM server. Based on the two traces information stored on the server, users can apply queries to explore and analyze the historical information in which they are interested. Basically, users can query history information by sending two types of messages:  ? AppHistoryMsg, which specifies the application Name and a version duration. The response contains the matched history information from the dependency trace trees.
+
+? ExecutionHistoryMsg, which specifies the execution in- stance ID. The response contains execution DAG with all the task information that are related to the execution instances.
+
+A concrete example about the historical trees maintained in HDM manager is shown in Fig. 12. Basically, after an ap- plication (e.g. WordCount) is submitted to HDM server, the    2332-7790 (c) 2016 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission. See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for publication in a future issue of this journal, but has not been fully edited. Content may change prior to final publication. Citation information: DOI 10.1109/TBDATA.2017.2690906, IEEE Transactions on Big Data   Figure 12. Dependency and Execution Traces of HDM.
+
+dependency information such as (application ID, version, dependent libs and the original logical plan) are recorded in the dependency tree. In addition, every new version of the same application creates a new branch under the application root and is differentiated by the version number.
+

@@ -1,0 +1,210 @@
+Accelerating Read Atomic Multi-partition Transaction with Remote Direct Memory Access
+
+Abstract?Many applications these days require data process- ing that is both efficient and reliable. Distributed databases are one way to meet these requirements, but must be updated using distributed transactions. To manage foreign key constraints, secondary indices, and materialized views in distributed en- vironments, read atomic multi-partition (RAMP) transactions demonstrate high efficiency. RAMP transactions achieved high performance distributed transaction processing by relaxing the isolation level. However, the use of fast interconnect to accelerate performance has not yet been considered. This paper proposes the acceleration of RAMP transactions by exploiting remote direct memory access (RDMA) on the InfiniBand interconnect.
+
+We first present GET+ and PUT+ operations that accelerate the RAMP transaction by exploiting RDMA write operations.
+
+We then present the GET* operation, which further accelerates GET+ operations exploiting RDMA read operations. To evaluate the proposed methods, we implemented a prototype distributed in-memory key-value store in C/C++. The results of the ex- periments show that compared with RAMP transactions on IP over InfiniBand, GET* and PUT+ achieve a 2.67x performance improvement on the Yahoo! Cloud Serving Benchmark. All of our code is publicly available.
+
+Keywords-RAMP Transaction; RDMA; Distributed Transac- tion
+
+I. INTRODUCTION  The acceleration of data processing without the loss of resilience is important in many current applications. To simul- taneously provide high efficiency and reliability, distributed database solutions have been studied [1], [2], [3], [4]. A distributed database is constituted of multiple nodes, and each node manages a part of the data in its local database.
+
+To manage foreign key constraints, secondary indices, and materialized views in a distributed database, the multiple data objects distributed among multiple nodes in a distributed database should be updated using distributed transactions.
+
+To conduct these distributed transactions, two phase locking (2PL) protocol over two phase commit protocol (2PC) is the simplest and strongest way. However, this method has been experimentally demonstrated not to perform efficiently for dis- tributed transactions because 2PL needs an expensive locking protocol [5], [6] and 2PC needs two phases of communications for both read and write operations [7].
+
+Bailis et al. [7] hence introduced a read atomic isolation level that is more strict than the read committed one [8].
+
+The read atomic isolation level is suitable for addressing three issues: foreign key constraints, secondary indices, and materialized views. Read atomic transactions were shown to useful for practical applications that use distributed databases.
+
+They also proposed read atomic multi-partition (RAMP) transaction algorithms to cope with the inefficiency of 2PL and 2PC [7]. A RAMP transaction requires only a single phase for the read operation in the best case, which provides high efficiency. Its concurrency control scheme is based on optimistic concurrency control, which does not need any locking protocols.
+
+The fast network system InfiniBand [9] is used to accelerate system software in supercomputing [10], [11]. In recent years, InfiniBand has also been widely adopted for database accelera- tion technologies such as distributed joins [12], distributed key value stores [13], [14], [15], distributed transaction processing [16], [17], and remote data access [18], [19]. We believe that InfiniBand [9] can also be exploited to accelerate RAMP transactions. To our knowledge, this combination has not yet been addressed so far.
+
+It is clear that simply applying the InfiniBand socket inter- face to RAMP transactions would accelerate its performance.
+
+Beyond that, the exploitation of remote direct memory access (RDMA) should provide more efficiency, although its usage is not straightforward. This efficiency would be gained because RDMA does not use the remote CPU when accessing data on remote nodes. This reduces remote CPU consumption and provides more CPU resources for other tasks, enabling high efficiency computation for applications. Clearly, the exploita- tion of RDMA requires the design of communication methods that precisely and efficiently execute data processing logic.
+
+When designing a RDMA communication protocol for RAMP transactions, the rich design space of RDMA becomes a research issue. Because RDMA does not need remote CPU intervention, an appropriate communication protocol should be designed for transaction processing. For example, locking protocols are inappropriate for RDMA, while optimistic con- currency control performs naturally and effectively, as shown in [7].
+
+In this paper, we propose new communication methods for the GET and PUT operations of RAMP transactions that exploit RDMA. We first present the GET+ and PUT+            0  20  40  60  80  100  T hr  ou gh  pu t (  tr an  s/ se  c)  Read Ratio (%)  Proposed (GET*, PUT+) Conventional (RAMP(GET, PUT))  Fig. 1. Contribution  operations. In GET+ and PUT+, to send requests, a client writes a request into the memory on the server using the write operation of RDMA (RDMA-Write). The server then checks the requests using its CPU, processes the requests, and sends the result of processing to the memory on the client node using RDMA-Write. Finally, the client node checks the result on its local memory using the CPU and obtains the result.
+
+This approach accelerates RAMP transactions. However, the disadvantage of this method is high CPU consumption because it needs to continuously monitor RDMA messages.
+
+To reduce the remote CPU cost, we further present the GET* operation. GET* exploits the read operations of RDMA (RDMA-Read) and directly reads data from memory on the server node without using the CPU on the server node. This is more efficient than GET+, but it can cause inconsistent reads because the data obtained by RDMA-Read may be accessed by other update transactions. To avoid such inconsistency, we add an invalid bit mechanism to each tuple.
+
+When a client finds that the tuple is invalid, then the client obtains the data using GET+. Another problem with GET* is data addresses. To execute GET*, a client needs to know the location of data beforehand. We provide these locations in the form of the address table. In our scheme, the address table is provided at the initialization phase and updated by GET+ operations issued to revise the inconsistent results of GET*.
+
+Note that the acceleration of GET operations is important because the ratio of get to read operations in some practical workloads is quite high [20].
+
+We evaluated the proposed methods using a prototype distributed in-memory key-value store. In the evaluation, we compare 2PL, RAMP, and the proposed methods. For the workload, we used a micro benchmark tailored for this work and the Yahoo! cloud serving benchmark(YCSB) [21]. We show that the proposed method achieves 2.67? performance improvement compared with original one on the YCSB bench- mark when the read ratio is 100%, as illustrated in Figure 1.
+
+1 The code used in this study is available on GitHub [22].
+
+The rest of this paper is organized as follows. Section 2 describes the background, Section 3 describes the proposed  1The same result is also shown as Figure 8 in Section V, where the experimental settings are given.
+
+methods, and Section 4 presents the design of the system.
+
+Section 5 describes the evaluation of the methods, and Section 6 reviews related work. Finally, Section 7 concludes this paper.
+
+
+
+II. BACKGROUND  In this section, we review RAMP transactions as well as InfiniBand and RDMA in more detail.
+
+A. RAMP Transactions  In a distributed database environment, to manage foreign key constraints, secondary indices, and materialized views, multiple objects distributed in multiple nodes should be up- dated using distributed transactions. For instance, if a trans- action updates both x and y from null to 1, then the values should be observed as x = 1, y = 1 or x = null, y = null. If the result becomes x = 1, y = null or x = null, y = 1, then such reads are inconsistent and are not accepted by clients.
+
+This is referred to as the fractured read anomaly, and to detect and deal with this anomaly, the read atomic isolation level has been defined [7]. If the read atomic isolation level is correctly maintained, foreign key constraints, secondary indices, and materialized views can be legally updated.
+
+To preserve read atomic isolation, locking is the most straightforward way. Because the use of a lock is expensive, RAMP (Read Atomic Multi-Partition) was introduced [7].
+
+RAMP transactions do not need to use locking to preserve read atomic isolation and provide high throughput and scalability.
+
+Usually, distributed transactions are executed in two phases [23], while a RAMP transaction requires only a single phase for the read operation in the best case. We explain the write and read executions, known as PUT and GET, as follows.
+
+The PUT operation, the write execution of RAMP, is conducted in two phases, prepare and commit, which is similar to a typical two phase commit protocol. In the prepare phase, a client sends a new version of data item and the list of other data items updated by the transaction. Each server node adds the sent data items to its local table. In the commit phase, a client sends the timestamp to the servers. Each server node executes commit processing by checking the consistency of data using the timestamp.
+
+The GET operation, the read execution of RAMP, is con- ducted in one phase in the best case. A client reads the latest version of data items already committed. If the data item is not in conflict with other transactions, then the read operation finishes. Otherwise, unfortunately, a fractured read anomaly occurs. The anomaly is detected using the list of other items updated by the transaction. This list enables the client to detect the anomaly. On detection, the client again executes GET operation.
+
+Three algorithm variations are introduced in RAMP trans- actions: RAMP-Fast, RAMP-Small, and RAMP-Hybrid. We focus on RAMP-Fast, which was designed to be the most efficient [7]. The RDMA read operation can be naturally applied to the RAMP-Fast algorithm, and its details are explained in Section III.
+
+Server - Initiator  Application  Sockets  Transport Protocol  Driver  NIC Driver  Buffer  Buffer  Buffer  Buffer  RNICBuffer  Server - Target  Application  Sockets  Transport Protocol Driver  NIC Driver  Buffer  Buffer  Buffer  Buffer  RNIC Buffer  Fig. 2. RDMA Zero-Copy Interconnect (From [25])  B. InfiniBand and RDMA  InfiniBand is a high speed interconnect and has been widely used in supercomputing, as shown in a TOP500 list of the most powerful commercial computer systems [24]. InfiniBand provides not only efficient hardware, but also an efficient data communication scheme called zero-copy communication.
+
+It transfers data without copying data to the kernel buffer.
+
+The scheme that combines zero-copy communication with InfiniBand is illustrated in Figure 2. An initiator server first specifies the address of the data to be sent, and a target server specifies the address of the data for receiving. Communication data is directly copied to the buffer in the NIC at the initiator server without copying it to the kernel buffer. The data is then transferred to the buffer in the NIC at the target server and it is routed to the destination application, bypassing kernel space.
+
+To conduct zero-copy communication, a NIC needs to access the virtual address space of a user program. Thus, to prepare for zero-copy communication, the virtual space needs to be registered with the kernel beforehand, and a table to translate virtual memory addresses to physical addresses should be provided to the NIC.
+
+There are two methods for using zero-copy communication on InfiniBand. The first method is Send/Recv-Verbs, which provides zero-copy communication. When a sender uses the APIs, data are transferred without accessing the kernel. There- fore, the communication is more efficient than socket interface.
+
+However, to detect the existence of transferred data, a remote CPU should be used, which can degrade performance. The second method is RDMA-Write/Read. This provides zero- copy communication without using the remote CPUs. Data are transferred without accessing the kernel with RDMA, and transferred data are not detected using the APIs on a remote node. This means the remote CPU is not used for the com- munication, and this is more efficient than Send/Recv-Verbs.
+
+Aside from zero-copy communication, IP over InfiniBand (IPoIB) is provided by InfiniBand. This provides an IP net- work layer on InfiniBand. Using IPoIB, a conventional socket program can exploit InfiniBand. However, its performance improvement is limited because IPoIB does not use the zero- copy communication method.
+
+
+
+III. PROPOSAL: RAMP WITH RDMA  RAMP provides fast distributed transaction processing by providing efficient protocols for the read atomic isolation level.
+
+To the best of our knowledge, InfiniBand with RDMA has not yet been applied to RAMP in the literature. Thus, we propose the scheme in this paper.
+
+The simplest way to exploit InfiniBand is the adoption of IPoIB. Using IPoIB, a program can use InfiniBand with the socket interface. However, the use of IPoIB does not provide zero-copy communication, and all the communications are conducted via a kernel, so its efficiency is similar to that of Ethernet [13]. Another basic communication interface is the Send/Recv-Verbs interface. This interface provides zero-copy and thus its performance is more efficient than that of IPoIB.
+
+To maximize the performance of InfiniBand, however, Send/Recv-Verbs still has room for improvement because it uses the remote CPU. RDMA is the most suitable approach to efficient communication over InfiniBand. We propose to exploit RDMA to accelerate RAMP transactions as follows.
+
+We first exploit RDMA-Write and propose GET+ and PUT+ operations to accelerate the usual GET and PUT operations.
+
+Because these protocols are similar, we omit detailed ex- planations of GET+ because of space limitations. Second, we exploit RDMA-Read and propose the GET* operation, which is more efficient than GET+. This protocol is relatively complex because it reduces the CPU interference.
+
+In this study, we only consider RAMP-Fast because GET+ and PUT+ can be applied to RAMP-Small, and RAMP- Hybrid, while GET* can be applied only to RAMP-Fast. The GET operation in RAMP-Fast obtains only the last version of the committed items with a specified key, while that of RAMP- Small and RAMP-Hybrid need to obtain the timestamps of all versions with the key. To obtain multiple timestamps, a search operation at the server is necessary, which is difficult using only RDMA-Read because it only scans remote memory without using the remote CPU.
+
+A. GET+ and PUT+  Both GET+ and PUT+ exploit RDMA-Write for all the requests and result transfers from the server to the client.
+
+Each client and server pair maintains a message buffer. The client transfers request messages to the message buffers in the servers. Each server then detects the request messages in its message buffer by polling with the CPU. For detection, the ?RDMA Write with Immediate? method can be used; however, Wang et al. found it to be less efficient than polling [15], and thus, we adopt polling instead in this work.
+
+To correctly send and receive messages using RDMA, we borrow the request message format from [15]. This format is illustrated in Figure 3. Note that this message is dominated by a communication link that connects a client thread and its corresponding server thread. Thus, concurrency control is not necessary.
+
+Polling is conducted at the server as follows. A client sends a message once to convey its request to the server. A message consists of a header and body. To detect a message, the     Message Size Message Body Low bit High bit  Indicator of new incoming message  Indicator of transferring completion  8 bytes Message Size bytes  Fig. 3. Format of Message Buffer (cited from [15])  server checks the message buffer twice. The server thread first checks for the new incoming message indicator. If this place is updated, then the server detects that a message is written from the client using RDMA-Write. The message body should then be updated. The size of the message body is listed in the message header, and thus this information is used by the server to read the message body. However, the server needs to detect whether the transfer of the message body is complete. Hence, a second indicator called the transfer complete indicator is used.
+
+The update of this field means the data transfer is complete so the server may read the message body. The server then processes the request, reinitializes this message buffer, and writes the result of the request to the message buffer at the client. The client obtains the result by polling in a similar way. Both PUT+ and GET+ operations are performed in this manner.
+
+The PUT+ procedures are illustrated in Algorithms 1 and 2. The procedure CLIENT PUT+ in Algorithm 1 expresses how the PUT+ operation is invoked. It sends PREPARE and COMMIT request messages to servers using RDMA-Write in parallel (Algorithm 1, lines 6?9 and 10?12). On receiving the request, the server works as described in Algorithm 2.
+
+The messages are detected by polling at the server. PRE- PARE PUT+ and COMMIT PUT+ are invoked by PREPARE and COMMIT messages, respectively. The PREPARE PUT+ procedure first adds a new version of the item and then invalidates its committed versions (Algorithm 2, lines 6? 9). The COMMIT PUT+ procedure updates the committed versions of items if the timestamp of the item is larger than that of largest preserved timestamp (Algorithm 2, lines 11?19).
+
+On GET+, a client sends requests and the result is returned via RDMA-Write and polling. Because this is a simple procedure and its extension GET* is presented in the following, we omit the details because of space limitations.
+
+B. GET*  1) Concept: GET* accelerates GET+ by omitting the polling operation that clearly exhausts CPU resources. Note that GET+ only places its request on a remote node and the CPU on the remote nodes needs to process it, which requires CPU processing. To avoid this undesirable CPU resource consumption, GET* directly reads the memory space at the server using RDMA-Read. However, the employment of RDMA-Read is not obvious because we need to manage the addresses of the data. Because RDMA-read directly reads data on the remote memory, it needs to know the address of the data beforehand. All the data can be updated on  Algorithm 1 PUT+ (Client-Side) 1: payload: message payload with attributes ?key, value,  timestamp, metadata? 2: 3: procedure CLIENT PUT+(W: a set of ?key, value?) 4: tstx ? generate a new timestamp 5: Ktx ? a set of keys in W 6: parallel-for ?k, v? ? W do 7: payload p ? ?key = k, value = v, timestamp =  tstx, metadata = (Ktx ? {k}) ? 8: RDMA-Write ?PREPARE, p? 9: end parallel-for  10: parallel-for server s that contains a key in W do 11: RDMA-Write ?COMMIT, tstx? to s 12: end parallel-for 13: end procedure  Algorithm 2 PUT+ (Server-Side) 1: payload: message payload with attributes ?key, value,  timestamp, metadata? 2: versions[k]: a set of message payload for key k with  version information 3: latestCommit[k]: lastly committed timestamp for key k 4: committedVersion[k]: committed version of key k 5: 6: procedure PREPARE PUT+(p: payload) 7: versions[p.key].add(p) 8: committedVersions[p.key].invalidate 9: end procedure  10: 11: procedure COMMIT PUT+(tsc: timestamp) 12: Kts ? {w.key | w ? versions[w.key] ? w.timestamp =  tsc} 13: for k ? Kts do 14: if latestCommit[k] < tsc then 15: latestCommit[k] ? tsc 16: committedVersion[k] ? w ? versions[w.key] ?  w.timestamp = tsc 17: end if 18: end for 19: end procedure  database, and an update operation creates a new version. The GET operation needs to find the appropriate version from all available versions. Therefore, the result of a GET* operation can be inconsistent because the RDMA-Read can read an old and inappropriate version that conflicts with other transactions.
+
+When such a conflict is detected, an invalid bit is set on the data object. If the invalid bit is set to true on the result of a GET* operation, then a client sends a GET+ request with RDMA-Write to the server to obtain the correct result.
+
+2) Details: We present the GET* method in Algorithm 3 and 4. In GET*, each client needs to obtain the address of items on the server node at the initialization phase. The     Algorithm 3 GET* (Server-Side) 1: procedure SERVER GET*(k: key, tsreq: timestamp) 2: if tsreq = ? then 3: v ? versions[k] ? v.timestamp = latestCommit[k] 4: RDMA-Write ?v, address of v? 5: else 6: v ? versions[k] ? v.timestamp = tsreq 7: RDMA-Write ?v, ?? 8: end if 9: end procedure  addresses are managed by the address cache table (Algorithm 4, line 4). On reading the data, GET* first checks whether the item exists on in address cache or not (Algorithm 4, line 11). If it exists, then the client reads the item located there using RDMA-Read (Algorithm 4, line 12). Otherwise, the client sends a GET request with RDMA-Write (Algorithm 4, line 14), and then the server returns the item and its address with RDMA-Write (Algorithm 3, line 3-4). The client obtains the item and its address by employing the polling method. Al- though the server can employ RDMA-with-immediate, polling is more efficient and thus we adopt it. After receiving the data, the client updates the address cache because the wrong address would invoke an expensive GET operation (Algorithm 4, lines 15?17).
+
+When the result of an RDMA-Read is conflicted, then the invalid bit is set to true. The client then sends a GET+ request using RDMA-Write to the server (Algorithm 4, lines 13?18).
+
+This procedure is similar to the detection of a fractured read (Algorithm 4, lines 28?40), and the logic is the same as that of Bailis (Algorithm 1) [7] except for the use of the RDMA- Write (Algorithm 4, lines 36?38).
+
+
+
+IV. SYSTEM DESIGN  To demonstrate the methods proposed in this study, this section describes a prototype in-memory key value store (KVS). For the implementation, the g++ (ver. 4.9.3) compiler was used, and the code length is 3,355 lines in C/C++. In addition, the RDMA Communication Manager, MessagePack, Intel TBB, Boost libraries were used. The code is available on GitHub [22]. The KVS has a client module and server module.
+
+The architecture is shown in Figure 4. The server module has a table, request executor, and communicator. The table contains the set of key-value pairs, the request executor conducts read or write requests, and the communication manager plays a key role in RDMA communications.
+
+A. Common Modules  The Item module manages key-value pairs. In this KVS, all data items are managed in a multi-version manner, and therefore, each key-value pair involves timestamp information.
+
+Further, it manages a list of keys. The key list is treated as metadata, and it is written along with other item lists written by other transactions.
+
+Algorithm 4 GET* (Client-Side) 1: payload: message payload with attributes ?key, value,  timestamp, metadata? 2: return[k]: a set of returned payload for key k 3: buffer[k]: a set of returned payload and its address for key  k 4: addressCache[k] : remote address for key k 5: latestTS[k] : latest timestamp for key k 6: 7: procedure CLIENT GET*(K: a set of keys) 8: return ? {?} 9: buffer ? {?}  10: parallel-for k ? K do 11: if addressCache.contains(k) then 12: return[k] ? RDMA-Read ?addressCache[k]? 13: if return[k] is invalid then 14: RDMA-Write ?GET, k, ? ? 15: buffer[k] ? Poll response of  SERVER GET+ 16: return[k] ? buffer[k].payload 17: addressCache[k] ? buffer[k].address 18: end if 19: else 20: RDMA-Write ?GET, k, ? ? 21: buffer[k] ? Poll response of SERVER GET+ 22: return[k] ? buffer[k].payload 23: addressCache[k] ? buffer[k].address 24: end if 25: end parallel-for 26: 27: # Following is for detecting fractured read 28: latestTS ? {?} 29: for response r ? return do 30: for ktx ? r.metadata do 31: latestTS[ktx] ? max(latestTS[ktx],  r.timestamp) 32: end for 33: end for 34: parallel-for k ? K do 35: if latestTS[k] > return[k].timestamp then 36: RDMA-Write ?GET, k, latestTS[k]? 37: buffer[k] ? Poll response of SERVER GET+ 38: return[k] ? buffer[k].payload 39: end if 40: end parallel-for 41: end procedure  The Config module manages a variety of parameters that control system behavior. These parameters include commu- nication and transaction execution methods. This module is implemented using the singleton pattern.
+
+The Communicator module provides the communication interface. The prototype in this study implements several communication methods: TCP/IP, IPoIB, Send/Recv-Verbs,     Connection Pool  Transaction Handler  Client  Transaction Queue  Communicator  Table  Server 1  Request Executor  Communicator  Table  Server N  Request Executor  ????  Fig. 4. Architecture of the KVS  and RDMA. Clearly, each communication method has its own interface. Hence, this module provides a common interface for the methods by concealing the different interfaces. This module uses the MessagePack library for the serializer and uses the RDMA communication manager library for the In- finiBand communication. For use by Send/Recv-Verbs and RDMA, memory space for data transfer should be reserved by the OS before data communication. For buffer management, we use the circular buffer provided by the Boost library.
+
+B. Client The Transaction handler module fetches transactions from  the transaction queue and executes them. For the management of the concurrency control protocols such as 2-phase lock and RAMP, a parameter is provided according to its interface. The module fetches a connection corresponding to each operation from the connection pool (described below). To implement the multi-threading, we use the Intel TBB library.
+
+The Connection pool module manages connections be- tween clients and servers. This module is important because the establishment of a connection is quite expensive for RDMA. This module establishes all the connections between clients and servers at the initialization phase and maintains them using the connection pooling during transaction process- ing.
+
+The Transaction queue module keeps transactions to be processed in a queue. This module is accessed by multiple transaction handlers, and to avoid overhead, we use the lock- free queue provided by the Boost library.
+
+C. Server The Request executor module processes requests sent from  clients. This is invoked on a connection request from the transaction handler. The module receives a request from the communicator, processes it, and returns the result to the client with the communicator.
+
+The Table module manages data items in the form of a table.
+
+Each data item is constituted of key, value, timestamp, and key list. Because data items are accessed by multiple threads simultaneously, data items are implemented by the thread-safe container provided by the Intel TBB library.
+
+Eth IPoIB Verbs RDMA  T hr  ou gh  pu t (  tr an  s/ se  c)  Communication Type  Fig. 5. Communication Comparison (RAMP-Fast)
+
+V. EVALUATION  To evaluate the methods proposed in this paper, we set up a micro benchmark and Yahoo! Cloud Serving Benchmark (YCSB) [21], which is a commonly used benchmark for evaluating distributed transaction processing. All nodes had the same configuration. They consisted of an Intel(R) Xeon(R) CPU E5620 @ 2.40 GHz ? two sockets with 24 GB RAM and running CentOS release 6.7 (Final). We evaluated two networks. For the Ethernet, we used Broadcom Corporation NetXtreme II, BCM5709 Gigabit Ethernet (rev 20). For the InfiniBand, we used Mellanox Technologies MT26428 [Con- nectX VPI PCIe 2.0 5GT/s ? IB QDR / 10GigE] (rev b0).
+
+A. Comparing Communication Types  We compared the performance of RDMA with the follow- ing communication methods: 1) ?Eth,? which uses TCP/IP on Ethernet, 2) ?IPoIB,? which uses TCP/IP on InfiniBand, 3) ?Verbs,? which uses the Send/Recv-Verbs on InfiniBand, and 4) ?RDMA,? which uses RDMA-Write, including our proposed methods: GET+ and PUT+.
+
+For the workload, the read ratio was set to high (95% read and 5% write), number of transactions was 1,000,000, and number of operations in a transaction was eight. Four servers and eight clients were used. All transaction processing methods adopted a RAMP-Fast algorithm.
+
+The results of the experiments are illustrated in Figure 5, which shows that performance improvement obtained by IPoIB, Send/Redv, and RDMA-Write compared with Eth are 1.32?, 2.39?, and 2.53?, respectively. These results lead to two conclusions: (1) for socket interfaces, IPoIB should be preferred over Ethernet, and (2) for zero-copy communica- tion, RDMA should be adopted rather than Send/Recv-Verbs.
+
+Hence, we omit result of Ethernet and Send/Recv-Verbs in the following.
+
+B. Varying Transaction Size  Here, we evaluate the performance of the transaction processing. The following methods evaluated: 1) ?S2PL,? which is a strict two-phase locking protocol with IPoIB, 2) ?RAMP(GET, PUT),? which is RAMP transactions with IPoIB, 3) ?Proposed(GET+, PUT+),? which is a proposed                0  5  10  15  20  25  30  35  T hr  ou gh  pu t (  tr an  s/ se  c)  Transaction Size  Proposed(GET*, PUT+) Proposed(GET+, PUT+)  RAMP(GET, PUT) S2PL  Fig. 6. Varying Transaction Size  RAMP acceleration method, and 4) ?Proposed(GET*, PUT+),? which is also a proposed RAMP acceleration method.
+
+For the workload, the parameters were the same as those of the previous experiment. However, we change the number of operations in a transaction (transaction size) in this experi- ment.
+
+The results of the experiment are shown in Figure 6.
+
+Compared with RAMP(GET, PUT), Proposed(GET+, PUT+) and Proposed(GET*, PUT+) demonstrate 2.07 ? and 2.78 ? performance improvements, respectively, when the transaction size is four. This result also shows that Proposed(GET*, PUT+) obtains the most efficient performance.
+
+As the number of operations increases, throughput degrades.
+
+This is consistent with intuition and occurs because the higher number of operations incurs a higher workload.
+
+C. Varying Read Ratio with the Micro Benchmark  In the above experiments, we fixed the ratio of read to write as read 95% and write 5%. To see the effect of this ratio on performance, we vary this parameter in this experiment.
+
+The results of the experiment are shown in Figure 7. When the read ratio is 0% (write ratio 100%), Proposed(GET*, PUT+) is compatible with Proposed(GET+, PUT+). As the read ratio increases, Proposed(GET*, PUT+) becomes more efficient than Proposed(GET+, PUT+). With respect to RAMP(GET, PUT), Proposed(GET+, PUT+) and Pro- posed(GET*, PUT+) demonstrate 1.94? and 2.69? times performance improvement, respectively, when the read ratio is 100%.
+
+D. Varying Read Ratio with YCSB  We measured the performance of methods in the YCSB benchmark while varying the ratio of reads to writes. In this experiment, the data and table sizes were set to 1 KB and 1,000 KB, respectively. Because the YCSB benchmark is implemented in Java and our system is implemented in C++, we invoked the KVS interfaces with Java Native Interface (JNI) from YCSB for the evaluation.
+
+The results of the experiment are shown in Figure 8.
+
+These results are similar to those of the micro benchmark.
+
+Compared with RAMP(GET, PUT), Proposed(GET+, PUT+) and Proposed(GET*, PUT+) demonstrate 2.06? and 2.67?           0  20  40  60  80  100  T hr  ou gh  pu t (  tr an  s/ se  c)  Read Ratio (%)  Proposed(GET*, PUT+) Proposed(GET+, PUT+)  RAMP(GET, PUT) S2PL  Fig. 7. Varying Read Ratio (Micro Benchmark)           0  20  40  60  80  100  T hr  ou gh  pu t (  tr an  s/ se  c)  Read Ratio (%)  Proposed(GET*, PUT+) Proposed(GET+, PUT+)  RAMP(GET, PUT) S2PL  Fig. 8. Varying Read Ratio (YCSB)  performance improvement when the read ratio is 100%. This result is similar to that of our micro-benchmark.
+
+
+
+VI. RELATED WORK  In this section, we review work on RDMA and KVS, transactions, and distributed data processing.
+
+A. KVS with RDMA  Pilaf [13] proposed an efficient in-memory KVS. The GET operation was designed by RDMA-Read, and the PUT oper- ation was designed by Send/Recv-Verbs. The GET operation first reads out a hash entry using RDMA read, and the pointer to the data in the KVS is obtained. Using this pointer, a second RDMA Read is executed to obtain the requested key-value pair. This GET operation can conflict with write operations in KVS. To detect such conflicts, Pilaf attaches a check- sum information. HERD [14] is an efficient in-memory KVS using RDMA-Write and Send/Recv-Verbs. A client submits a request to a server using RDMA-Write. The server then detects the request by polling, and the result of the request processing is returned by Send-Verbs. Because HERD uses the unreliable datagram service in the transport layer, data loss and retransmission control are necessary at application level, while it is not necessary in this work. HydraDB [15] is an efficient in-memory KVS exploiting RDMA-Write and RDMA-Read for logging and replication. Our work uses two techniques from HydraDB. The first one is the message buffer     used in the polling scheme for GET+ and PUT+. The second one is the address cache used for GET*.
+
+These studies provide efficient KVSs, but do not address transaction processing. Thus, they also do not address the read- atomic isolation level that we focus on in this paper.
+
+B. Transactions with RDMA  FaRM [16] provides a fast remote memory service on a cluster of nodes. This service includes transactions with a serializable isolation level over replicated data items on the cluster. FaRM exploits sophisticated hardware including RDMA over InfiniBand and non-volatile memories that extend the OS kernel. DrTM [17] accelerates transaction processing by employing both RDMA and hardware transactional mem- ory.
+
+These studies provide efficient transaction processing, but again do not address the read-atomic isolation level that we focus on in this paper.
+
+C. Distributed Data Processing with RDMA  Cyclo join [12] accelerates distributed relational joins by ex- ploiting the fast data transfer mechanism provided by RDMA.
+
+Li et al. [18] accelerated buffer pool accesses by placing overfull data on remote memories rather than on the storage device. For remote data access, RDMA read/write operations are employed for high efficiency. DARE [19] exploits RDMA to accelerate consensus taking for a distributed environment based on the Raft protocol [26].
+
+These studies provide efficient data processing, but none of them support transactions.
+
+
+
+VII. CONCLUSIONS  This paper presented methods for the acceleration of RAMP-Fast transactions with RDMA over InfiniBand. We first presented GET+ and PUT+ operations that accelerate RAMP-Fast with RDMA-Write. In addition, we presented a GET* operation that further accelerates GET+ with RDMA- Read using an invalid bit and address cache. To evaluate the proposed methods, we implemented a prototype KVS in C++ and evaluated the methods on it [22]. The results of the ex- periments show that, compared with RAMP transaction using IPoIB, GET+/PUT+ and GET*/PUT+ demonstrate 2.06? and 2.67? performance improvement respectively on the YCSB benchmark. We conclude that both RDMA-Write and RDMA- Read are effective methods for accelerating RAMP-Fast trans- actions.
+

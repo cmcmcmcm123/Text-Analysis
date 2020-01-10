@@ -1,0 +1,212 @@
+Hysteresis Re-chunking Based Metadata Harnessing Deduplication of Disk Images
+
+Abstract?Metadata-related overhead can significantly impact the performance of data deduplication systems, including the real duplication elimination ratio and the deduplication throughput.
+
+The amount of metadata produced is mainly determined by the chunking mechanism for the input data stream. In this paper, we propose a metadata harnessing deduplication (MHD) algorithm utilizing a duplication-distribution-based hysteresis re-chunking strategy. MHD harnesses the metadata by dynamically merging multiple non-duplicate chunks into one big chunk represented by one hash value while dividing big chunks straddling duplicate and non-duplicate data regions into small chunks represented with multiple hashes. Experimental results show that the proposed algorithm achieves a lower metadata overhead and a higher deduplication throughput for a given duplication elimination ratio, as compared with other state-of-the-art algorithms such as the Bimodal, SubChunk and SparseIndexing algorithms.
+
+Keywords?Data Deduplication, Metadata Harnessing
+
+I. INTRODUCTION  Data deduplication refers to the process of optimizing a data storage system by dividing the data into chunks so as to identify and eliminate redundant storage of identical chunks.
+
+The performance of a data deduplication system is mainly measured in terms of the duplication elimination ratio, as well as the deduplication throughput. Generally the smaller the average chunk size, the more the redundancies that can be identified and removed, at a cost of higher metadata related overheads. Because fixed-sized chucking algorithms such as those used in the Venti [1] and OceanStore algorithms [2] are not able to handle the boundary-shifting problem [3], content- defined-chunking (CDC) techniques dividing a data stream into variable-sized chunks based on fingerprints computed using a sliding window were proposed in systems such as LBFS [4] and have become the basic chunking algorithm in virtually all state-of-the-art deduplication algorithms or systems, including [5] [6] [7] [8] [9] [10] [11].
+
+In a typical deduplication system, metadata are generated and used for two purposes, i.e. metadata for data storage man- agement (MS), and metadata for content description (MD), including the hash values, as well as the address and size of each chunk. The MD that can not fit into the main memory will be stored on disk. The related disk I/O and look-up operations would reduce deduplication speed, a.k.a the disk bottleneck.
+
+To address the disk bottleneck, the Data Domain [12] and  SparseIndexing [13] algorithms utilized inherent data locality to improve the throughput without explicitly addressing the issue of metadata generation. In the Data Domain algorithm, the amount of the metadata grows linearly with respect to the number of chunks. The rate of growth is even higher for the SparseIndexing algorithm, as the hash value of a chunk could be stored multiple times if the chunk is present in multiple segments.
+
+To reduce the size of the MS, Fingerdiff [14] coalesce contiguous non-duplicate chunks up to a maximal number into one big chunk stored on the disk. The Bimodal [15], FBC [16] and SubChunk [17] algorithms first search for duplications using a large chunk size, with the non-duplicate big chunks selectively processed again using a small chunk size. Although such algorithms are capable of reducing the MS, they do not necessarily reduce the MD or the overall amount of metadata and I/Os. In addition, in Fingerdiff, a database is needed to index each chunk. The assumption that the database can fit into the RAM might not be realistic in practical systems.
+
+In the Bimodal, FBC and Subchunk algorithms, before re- chunking a big chunk, a query for the non-duplicate big chunk is introduced.
+
+Metadata related overhead also greatly impacts the dedu- plication performance in distributed systems related applica- tions such as large scale data backup. To improve the trade- off between duplication elimination ratio and deduplication overhead including the storage space occupied by the extra metadata and the corresponding I/Os, in this paper, we propose a duplication-distribution-based metadata harnessing dedupli- cation (MHD) algorithm. It uses hysteresis re-chunking taking into account both data that have been processed, as well as in- coming data.
+
+As an illustrative example, consider the case in Fig. 1 with 3 files. When File-1 is the only file to be processed, the optimal chunk should be set to File-1. But when a second file File-2 that matches Slice-1 of the first file is present, the first file should be re-chunked into two chunks, namely Slice-1 and Slice-2. Similarly, if there is a third file File-3 which matches Slice-3 of the second file, the second file should be re-chunked into three chunks, Slice-3, Slice-4 and Slice-1. In this example, only 5 hash values are required.
+
+DOI 10.1109/ICPP.2013.48    DOI 10.1109/ICPP.2013.48    DOI 10.1109/ICPP.2013.48    DOI 10.1109/ICPP.2013.48    DOI 10.1109/ICPP.2013.48    DOI 10.1109/ICPP.2013.48     ??????  ??????  ?????  ???????  ??????  ??????	 ??????   ???????  ??????????????  Fig. 1. Illustration for Hysteresis Re-chunking.
+
+While utilizing tools such as manifests [18] and hooks as in the SparseIndexing algorithm, MHD differs from the Bimodal, FBC and SubChunk algorithm in the following two aspects:  ? MHD reduces unnecessary queries for non-duplicate big chunks by replacing the widely used big-chunk- first-small-chunk-second deduplication strategy with a bi-directional-match-extension mechanism. Using this mechanism, when a small duplicate chunk is detected, duplication detection is conducted using its neighboring data and a relatively large chunk size.
+
+? Big chunks would be re-chunked when and only when they straddle duplicate and non-duplicate data.
+
+The rest of this paper is organized as the following. Section II presents a brief overview of related work. The proposed algorithm is described in detail in Section III, followed by analysis in Section IV and experimental results obtained using real-world disk image data and the proposed algorithm as well as the Bimodal, SubChunk and SparseIndexing algorithms are given in Section V. Section VI contains the conclusions.
+
+
+
+II. RELATED WORK  The widely used Rabin Fingerprint [19] chunking algorithm uses a sliding window to scan the input data stream and calculate a fingerprint at each position. The current position is recorded as a cut point if either of the following is true: 1) the fingerprint matches with a pre-defined value and the length of the current data block is larger than a lower bound; or 2) when the length of the current data block is equal to or larger than a upper bound and no matching fingerprint is found. The data stream between two cut points are extracted as chunks.
+
+An improved chunking algorithm named TTTD was pro- posed in [3]. In TTTD, candidate cut points corresponding to chunk sizes between the lower and the upper bounds are recorded, and used as cut points only if no pre-defined fingerprints are detected when the corresponding chunk size reaches the upper bound.
+
+Nohhyun and David [20] evaluated the characteristics of a dataset using a metrics for the variation of data patterns in the dataset.
+
+Considering the processing overhead of CDC for mobile devices, Lee and Park [21] proposed a chunking method adaptively selecting the CDC and FSP algorithms based on the file type and the computational capabilities of the devices.
+
+???????????  ?????  ???????????  ?????  ????????????  ? ??!?  ? ??!??  "????  ?????????  ????? ?????#???#???  ???!? ??!? ?????  ???!? ??!? ???????? $??!?  ????????? ????  ?????????  %??????????????????? ???&???????????????????  ??????&?????? ?????? ??????????????  $?? ???'??????? ??????????????(?? ??? ????!? ??!
+
+????????????????(??? ??!?????????????????????  ????????????????!
+
+Fig. 2. System Architecure.
+
+Extreme Binning [22] uses one chunk from each file to represent the corresponding file. If the representative chunk is found to be a duplicate, data locality information of the corresponding file is loaded into the RAM. As only one disk access is needed per file, the throughput of the Extreme Binning algorithm is comparatively high.
+
+Data Domain uses the Bloom Filter [23] to avoid unneces- sary disk lookups. A stream-dependent segment layout is used to maintain high spatial locality [24], so that each retrieval from the disk is more fully utilized for multiple data chunks as opposed to requiring a separate disk access for each chunk.
+
+In SparseIndexing, instead of building a full index for every chunk, a small portion of chunks are extracted as hooks. Each hook was mapped to a few manifests or recipes [18], which preserve the data locality present in the original input chunks.
+
+When deduplicating, SparseIndexing divides the incoming stream into large segments, and processed each segment with reference to several most similar existing segments referenced by the hooks. By keeping only hooks in the RAM and by requiring only a few disk seeks per large segment, the disk look-up bottleneck is avoided.
+
+Meister et al. [25] proposed an entropy coding based post- process compression method for file recipes. It should be noted that file receipts is only one of many types of metadata generated during deduplication.
+
+The Bimodal, FBC and SubChunk algorithms first divide the input stream into big chunks for duplication detection.
+
+Bimodal then re-chunks the non-duplicate big chunks adjacent to duplicate chunks (termed ?transition points?) into smaller chunks, followed by the deduplication process on the smaller chunks. FBC performs selective re-chunking using several strategies based on the frequency information of chunks estimated from data that have been previously processed.
+
+SubChunk on the other hand, re-chunks every non-duplicate big chunk into small chunks for deduplication. The non- duplicate small chunks belonging to one big chunk would then be coalesced together.
+
+
+
+III. METADATA HARNESSING DEDUPLICATION  The MHD algorithm consists of two phases, 1) the sampling and hash merging phase, in which large chunks are formed by merging multiple smaller chunks and represented by a single     ?$)???$?? *?+??????,  ?????????? *-??????,  ???????.? *-??????,  $??!???& *??????,  ?$)???$?? *?+??????,  *?,?/ ??????????????? ??????? ??????!? ??!????????  *(,?/ ????????????? ???????? ???$??!
+
+?$)???$?? *?+??????,  ?????????? *-??????,  ???????.? *-??????,  *?,?/ ??????????????? ??????? ??????????????  Fig. 3. Formats of Metadata.
+
+#????0?1?? ? ??!
+
+2?????3  4???? ?? ? ??!?????? ??????  0?  2????????? ???3  0?  ?$?  5??  ??6  ?6  0????$$#3  0????$$#3  0?  $$# 5??  $$# 5??  5??  0?  Fig. 4. MHD process.
+
+hash value; and 2) the hysteresis hash re-chunking phase, in which large chunks at the boundary of duplicate and non- duplicate regions are adaptively divided into smaller chunks.
+
+Fig. 2 shows the architecture of the proposed system. The input to the system is the byte stream created by concatenating the content of the files in the unprocessed file system. This byte stream is divided into chunks by the chunker and sent to the deduplicator which are optimized (deduplicated) by the sys- tem. The outputs of the system include non-duplicate chunks saved in the DiskChunkStore, the DiskChunkManifests, the FileManifests used for reconstructing each of the files in the original system, and the Hooks. In the remainder of the paper, the DiskChunkManifest is referred to as simply the Manifest.
+
+The Manifest is a sequence of hash values representing the data blocks within the corresponding DiskChunk, while a Hook is a hash value sample extracted from the Manifest. Each DiskChunk, Manifest, or Hook is implemented as a separate hash addressable file and the formats of the metadata are shown in Figure 3. Each Hook (named using its hash value) is mapped to only one Manifest and each Manifest is mapped to one DiskChunk. The DiskChunk and the Hook files that have been written to disk will not be further modified. Each entry in the Manifests introduces a one-byte Hook flag to indicate whether this entry is a Hook. Re-chunking is only carried out for data blocks corresponding to the non-Hook hash values, with the original hash values replaced by multiple new values created from data blocks after re-chunking. The only files updated during the deduplcation process are the Manifest files.
+
+In terms of RAM access, besides the Manifest which might be reloaded into the RAM to take advantage of data locality, some data blocks from the DiskChunks might also be reloaded into the RAM during hysteresis hash re-chunking.
+
+The deduplication process of MHD is shown in Fig. 4.
+
+??? ?   ??? -   ??? ?   ???    ???   ???   ??? ?   ???     ??? ?+   ???  ???? ???  ???? ?  ???? ?  ???!? ??!
+
+????????  ???? ????$??!?  ???? ????  Fig. 5. Example for SHM.
+
+For each new chunk extracted from the input byte stream using the Rabin Fingerprint algorithm, a SHA-1 hash value h is calculated and used for duplication detection using an in- memory bloom filter and cache. The cache contains a number of Manifests, each of which is organized as a hash table. An incoming duplicate chunk is detected, if its hash h matches a Manifest in the cache. When no such hit has been found, h would be checked in the bloom filter to determine whether it is a new value. If the bloom filter indicates that the hash is probably duplicate, MHD continues to query whether there is a duplicate Hook on disk. When such a Hook is found, the Manifest it points to would be loaded into the RAM. If the cache becomes full during this process, one Manifest would be freed following the Least-Recently-Used (LRU) [26] policy.
+
+A Manifest that has been set dirty, is written back to the disk before it is freed.
+
+After the above steps, an incoming chunk detected as non- duplicate would be temporary buffered in the RAM until it is confirmed as a non-duplicate after backward direction match extension. Although the size of the DiskChunk can be arbitrarily large, we only merge the non-duplicate chunks belonging to one file into one DiskChunk and write it to the disk. Each DiskChunk has a corresponding Manifest, each of which with at least one Hook that serves as the entry point to the Manifest. The Hooks for a Manifest are selected by uniformly sub-sampling of the sequence of hash values in the Manifest. The period for the sub-sampling is called the Sample Distance (SD). Since the SD?1 hash values between two neighboring Hooks would not be directly accessed by the system, they are replaced by a single hash calculated over the corresponding SD?1 chunks of the SD?1 hash values, effectively merging these SD?1 hash values into one value representing a larger chunk. This process is termed Sampling and Hash Merging (SHM). In our implementation, we set an in-memory chunk buffer with the size of two times of SD.
+
+When the buffer is full, the first half of SD chunks which can not be backward extended as duplicates would be written to the DiskChunk with two hash values created, corresponding to the first and the last SD?1 chunks respectively. It should be noted other SHM strategies also exist, for example, SHM can be performed on the contiguous non-duplicate chunks of the original input stream, to guarantee each non-duplicate data slice of the input stream ?owns? at least one Hook.
+
+Fig. 5 shows an example for SHM using 10 non-duplicate chunks with SD = 5 hashes. The original Manifest of 10 hashes Hash 1 to Hash 10 (corresponding to Chunk 1 to Chunk      ???   ??? ?   ???     ???   ??? -   ???   ???  2??????&?? ??!? 2????????  ???? ???  ???? ?  ???? ?  ???? ????:???????????  ??6 ?6  ???? ???  ???? ?  ???? ?  ???? ???0?;?????????  ????   ???? ??  ???? ?  ???? ?  Fig. 6. Example for HHR.
+
+10) are converted to a new Manifest containing 4 hash values after the chunks between Chunk 2 and Chunk 5 as well as between Chunk 7 and Chunk 10 are merged into two big chunks, each with a single hash value.
+
+When an incoming chunk is detected as a duplicate, Bi- Directional Match Extension would be performed on the Manifest. We term the hash that has been hit on the Manifest as the HitHash and the incoming duplicate chunk as HitChunk.
+
+For Backward Match Extension (BME), new hash values are calculated for the buffered chunk bytes before the HitChunk and compared with the hash values for the corresponding byte before the HitHash in the Manifest until a mismatch is found. If the old chunk represented by the mismatched hash (which is not a Hook on the Manifest) covers an edge between the duplicate and non-duplicate chunks in the buffer, data from the old chunk would be loaded into the RAM from the disk for byte comparison, followed by the Hysteresis Hash Re-chunking (HHR) process. At least one hash named the EdgeHash representing the non-duplicate border chunk, one hash representing the duplicate chunk(s), and one hash representing the remaining bytes of the old chunk would be re-calculated after the HHR. In our system, the EdgeHash is created to prevent the same duplicate data slice from triggering identical and duplicate HHR in the future. We introduce byte comparisons to remove the duplicate data between two chunks with different sizes, as the exact boundary in the big chunk is not knowm. Each reloading of chunk bytes would one HHR process, with the Manifest on which HHR is performed set dirty, forcing it to be written back on to the disk as an update for the Manifest.
+
+After BME, a similar process called the Forward Match Extension (FME) is carried out in the forward direction. New chunks would be pre-fetched into the buffer to calculate new hashes for hash comparison with the hashes after HitHash on the Manifest until one mismatched hash is found, followed by the forward direction HHR. Chunks that have been pre- fetched but not extended as duplicates during the HHR, are again processed using the deduplication process as showed in Fig. 4. The duplicate chunks detected via Bi-Directional Match Extension and HHR are removed from the buffer.
+
+As shown in the example of Fig. 6, the BME process stops at Hash 2-5, as it is not a Hook and its byte size is larger than the total size of the three chunks before the HitChunk Chunk 6 in the buffer. The data of Chunk 2-5 represented by Hash 2-5 are then reloaded from the disk into the RAM  for byte comparison. The buffered Chunk 4 and Chunk 5 are detected duplicate while Chunk N3 is detected as non-duplicate after byte comparison. Then Hash 2-5 is re- chunked into a Hash 4-5 after duplicates in Chunk 4 and Chunk 5 are removed, an EdgeHash Hash 3 representing the boundary data block with the same size of Chunk N3, and a Hash 2 representing the remaining bytes in the old Chunk 2-5 are created. After the FME and HHR, Hash 7-10 is re-chunked into another three new hash values.
+
+In MHD, a new entry will only be written into the File- Manifest at the terminating point of neighboring chunks of duplicate or non-duplicate data slices within one file, or when a data slice reaches the end of the file.
+
+
+
+IV. ANALYSIS AND COMPARISON  In this section, we present an analysis of the trade-off between the duplication elimination ratio and the deduplica- tion overhead for the MHD, and CDC algorithms such as SubChunk, Bimodal, and SparseIndexing. In our comparison, widely used deduplication acceleration methods such as the bloom filter and data locality preservation are considered implemented in the algorithms.
+
+We consider the total amount of metadata generated and the disk access times required by different algorithms when the same duplication elimination ratio is achieved by all algorithms on the input data. The sampling distance used by SHM in MHD is denoted as SD, while the expected big chunk size in the Bimodal and SubChunk algorithms is assumed to be ECS?SD, where ECS is the basic expected chunk size, so as to keep the deduplication efficiency of different algorithms at the same granularity.
+
+Given an ECS, we use N and D to denote the final number of the non-duplicate and duplicate chunks respectively in all algorithms,regardless of how chunks are generated, processed and stored by different algorithms. The corresponding duplica- tion elimination ratio can be roughly calculated as (D+N)/N .
+
+We use L to denote the number of detected duplicate data slices, each of which is a sequence of continuous chunks in the input stream. Let F denote the final number of the input files which are not completely duplicate, which is also the number of Manifests.
+
+We assume further that each Hook contains a 20-byte SHA- 1 address to the Manifest it belongs to, each metadata file requires one inode for storage management, each inode costs 256 bytes and each entry in the Manifest costs 36 bytes including the hash value, byte start position and byte size of a chunk. Each input file which cannot be deduplicated completely would generate one DiskChunks with a corre- sponding Manifest pointed to by one or more Hooks in all the algorithms analyzed. In SubChunk, the non-duplicate small chunks generated by dividing the same big chunk would be coalesced into one DiskChunk stored on the disk, resulting in at least N/SD DiskChunks, each of which has the maximal expected size of SD?ECS. Since each Manifest containing the small-chunk-to-container-chunk mappings would cover     Algorithms MHD SubChunk Bimodal CDC Inodes for DiskChunks F N/SD F F  Inodes for Hooks N/SD F N/SD + 2L(SD ? 1) N Bytes for each Hook 20 20 20 20 Inodes for Manifests F F F F Bytes for Manifests 74N/SD + 148L 36N + 28N/SD 36N/SD + 72L(SD ? 1) 36N  summary 512F + 424N/SD 532F + 280N/SD + 36N 512F + 312N/SD + 624L(SD ? 1) 512F + 312N TABLE I  METADATA SIZE COMPARISON (SD>=2)  Algorithms MHD SubChunk Bimodal CDC Chunk Output Times F N/SD F F Chunk Input Times 2L 0 0 0 Hook Output Times N/SD F N/SD + 2(SD ? 1)L N Hook Input Times L L L L  Manifest Output Times F + L F F F Manifest Input Times L L L L  Big Chunk Query Times 0 (N +D)/SD N/SD 0 Small Chunk Query Times N + L N + L (2SD + 1)L N + L  Summary without Bloom Filter 2F + 6L+N + N SD  2F + 3L+N + 2N+D SD  2F + (4SD + 1)L+ 2N SD  2F + 3L+ 2N  Summary with Bloom Filter 2F + 6L+ N SD  2F + 3L+ N+D SD  2F + (2SD + 1)L+ N SD  2F + 3L+N  TABLE II DISK ACCESSING TIMES COMPARISON  multiple DiskChunks, the entries for the small chunks be- longing to the same DiskChunk in the Manifests need to share 28 bytes to indicate the address and the number of the chunks contained in the same DiskChunk. Each Manifest is conservatively allocated with one Hook. In Bimodal, the big chunks adjacent to the duplicate data slices would be divided into small chunks. Assuming all the resulting small chunks are non-duplicates, the numbers of the big and small chunks will be N/SD?2L and L?SD respectively. Bytes from non- duplicate chunks belonging to the same file are stored in one DiskChunk. Because each chunk, big or small, is represented by one entry in the Manifests as well as one Hook, the number of inodes for the Hooks is identical to the number of chunks while the size of the Manifests is the number of chunks multiplied by 36. On the other hand, the total size for metadata in the CDC algorithm can be calculated as 512F+312N bytes.
+
+In MHD, the number of inodes for the Hooks is N/SD and the number of entries in the Manifests is 2N/SD. Each entry each requires one more byte for the Hook flag, resulting in a total of 74N/SD bytes plus 148L bytes introduced by HHR. We ignore the metadata for the FileManifests in the analysis of different algorithms, as the amount is identical for all algorithms under our assumption. A detailed quantitative comparison between the metadata needed for different algo- rithms are given in TABLE I. From TABLE I, it can be easily calculated that when SD is set sufficiently high, the amount of metadata required by MHD becomes much smaller than those required by the other algorithms.
+
+The disk bottleneck is resulted from frequent disk accesses for duplication queries and metadata I/O during deduplication.
+
+When a new hash hits a Hook on the disk, the address of the Manifest will be read into the RAM, followed by the entire Manifest, which is also loaded into the RAM. During this  process, three disk accesses are required, triggered by every detection of duplicate data slice. As a result, the total number of disk accesses is 3L, on top of F disk accesses required for Manifest output, as required by all the algorithms. As shown in TABLE II, SubChunk has at least N/SD DiskChunks to be written and requires (N+D)/SD disk look-up for big chunk duplication queries. The Manifests in SubChunk record only the small-chunk-to-container-chunk mapping without pre- serving data locality between the big chunks. This loss of data locality lead to additional disk accesses for duplicate big chunks. We assume each duplicate data slice would also cause one Manifest loading in SubChunk in the worst case. In MHD, on the other hand, for each HHR operation, each duplicate data slice detected would produce at most three disk accesses, two for reloading chunk bytes in Bi-Directional Match Extension and one for writing the updated Manifest back to disk, for a total of 3L disk accesses in the worst case. TABLE II compares the disk accesses in detail. Assuming the bloom filter eliminates all queries for non-duplicate hash values, when 3L<D/SD, the number of disk accesses for MHD is lower than all other algorithms compared.
+
+In SparseIndexing, instead of being written onto the disk, all sampled Hooks are buffered in the sparse index. Different from the bloom filter, sparse index is another in-memory data structure used for checking if a hash value is a duplicate. If the sparse index indicates the hash is duplicate, no confirmation by disk look-up is needed. Since the Manifests in SparseIndexing preserve data locality within the backup byte stream, one hash may be recorded for multiple times if the corresponding chunk appears multiple times in the stream. Because the Hooks in SparseIndexing are also sampled based on the Manifests, each Hook may point to one or more Manifests. Compared with SparseIndexing, MHD generates fewer bytes for the Manifests.
+
+The Manifests will only retain the hash values for non- duplicate chunks and are utilized by SHM for deduplication.
+
+Because the number of the Hooks produced in SparseIndexing are larger than in MHD using the same sample distance, in the situation when a Hook stored in the spare index needs to be written to the disk, more disk I/Os are needed for the Hooks than in MHD. We don?t give the quantitative results for SparseIndexing in this paper.
+
+Comparing the duplication elimination ability of the algo- rithms, the maximal sizes of the data blocks represented by a single SHA-1 hash in the MHD, SubChunk, Bimodal and CDC algorithms are ECS?(SD?1), ECS?SD, ECS?SD and ECS respectively.
+
+The actual metadata and throughput comparisons using real- world disk image data are given in the next Section. In our analysis, the I/O overhead is compared on the basis of the number of I/Os required, without considering the amount of data accessed in each I/O.
+
+
+
+V. EXPERIMENTAL EVALUATION Experiments were designed to examine the following: ? Utilization of metadata by MHD ? The best deduplication efficiency achieved by the algo-  rithms compared ? The trade-off between deduplication efficiency and the  amount of metadata required by the algorithms ? The trade-off between deduplication efficiency and dedu-  plication throughput for the algorithms ? Whether the Hooks and Manifests generated by MHD fit  into the RAM ? Characteristics of the real-world disk images used in the  experiments In the experiments, MHD as well as the SubChunk, Bimodal  and SparseIndexing algorithms were implemented as prototype programs in the user space of the Ext3 file system. In our simulations, algorithms read data from and write the outputs to local directories.
+
+The test dataset were taken from the disk image backups of a group of 14 PCs running the Windows, Linux or Mac operating systems with NTFS, FAT, FAT32, Ext3, Ext4, or MFS file systems over a period of two weeks. The size of the dataset was 1.0 TB.
+
+The deduplication efficiency was measured using two num- bers. The real Duplication Elimination Ratio (DER) is defined as the size of input data divided by the size of output data from the perspective of the file system, including all metadata, whereas the data-only DER does not consider the metadata.
+
+To measure the metadata overhead and the deduplication speed, we define the MetaDataRatio as the ratio between the size of the total amount of metadata generated by the algorithm and the size of input data, and the ThroughputRatio as the time to pass the input data through the deduplication system without deduplication operation (e.g. by simply copying data) divided by the time taken for deduplication. A larger Through- putRatio means a higher deduplication speed. In this work, the deduplication throughput refers to the write throughput.
+
+In order to measure the the duplication distribution of the dataset, we define the Duplication Aggregation Degree (DAD) as the number of duplicate bytes divided by the number of the duplicate data slices. The larger the DAD, the more concentrated the duplicate data are.
+
+For more accurately evaluating the throughput improvement achieved by the proposed algorithm, we compared MHD with the improved bloom filter based Bimodal and SubChunk al- gorithms incorporating widely used deduplication acceleration methods, including the bloom filter and data locality.
+
+We note that the MHD algorithm can also be implemented in conjunction with the sparse index data structure in Spar- seIndexing. In order to distinguish a sparse index based MHD implementation, we denote the bloom filter based implemen- tation used in the experiments the BF-MHD algorithm.
+
+We set the parameters in accordance with those used in the analysis above for different algorithms so as to achieve similar granularities for deduplication by the different algorithms.
+
+Specifically, when the BF-MHD algorithm was configured by the parameters ECS and SD, the expected sizes of small and big chunks in the Bimodal and SubChunk algorithms were set as ECS and ECS?SD respectively. We used an in-memory bloom filter of 100 MB for the Bimodal, SubChunk and BF- MHD algorithms. In SparseIndexing, the sample distance for the Hooks is set as SD based on the input, the segment size was set to ECS?SD?5 and the maximal allowable number of champions for each segment was set as 10 as in [13]. The maximal number of the Manifests one Hook can point to was set to 5, following the LRU cache policy. The RAM used for spare index was not limited and reported in the experiments.
+
+A. Metadata Harnessing  Fig. 7 demonstrates the comparison for the amount of metadata required to achieve similar deduplication efficiency by the different algorithms, with SD = 1000 hashes, and ECS = 512, 1024, 2048, 4096, and 8192 bytes. The HHR process of BF-MHD only increases the sizes of the Manifests but does not introduce new inodes, whereas every time Bimodal performs re-chunking, new inodes are introduced along with new bytes in the Manifest.
+
+The number of inodes required per MB of input data v.s. the ECS is showed in Fig. 7(a), in which the curves for BF-MHD and SubChunk overlapped, while the curve of Bimodal was comparatively higher. Since SparseIndexing sampled the Hooks based only on the input chunks but not on the non-duplicate chunks, the curve for SparseIndexing was the highest.
+
+The relationship between the number of bytes contained in the Hook and Manifest files normalized by the input data size and the ECS is given in Fig. 7(b). As expected, SparseIndexing produced the most bytes for the Manifest and Hooks. SubChunk produced the second most bytes due to the small-chunk-to-container-chunk mappings which recorded information for all small chunks. The number of bytes for Bimodal was lower than SubChunk, while BF-MHD produced the least bytes. This is because the HHR process in MHD was     512 1024 2048 4096 8192     ECS (Bytes)  N um  be r  of In  od es  p er  M B  BF?MHD Bimodal SubChunk SparseIndexing  (a) Number of Inodes vs. ECS  512 1024 2048 4096 8192  ?4  ?3  ?2  ?1   ECS (Bytes)  M an  ife st  M et  ad at  aR at  io  BF?MHD Bimodal SubChunk SparseIndexing  (b) Manifest and Hook Size vs. ECS  512 1024 2048 4096 8192  ?4  ?3  ?2  ECS (Bytes)  F ile  M an  ife st  M et  ad at  aR at  io  BF?MHD Bimodal SubChunk SparseIndexing  (c) FileManifest Size vs. ECS  512 1024 2048 4096 8192  ?3  ?2  ?1  ECS (Bytes)  T ot  al M  et ad  at aR  at io  BF?MHD Bimodal SubChunk SparseIndexing  (d) Total Metadata size vs. ECS  Fig. 7. Metadata comparison (ECS in Bytes, SD=1000 hashes).
+
+performed only when duplicate data might be found in a big chunk, and with the corresponding hash value replaced by at most three new hash values. In contrast, in Bimodal, the big chunks at the transitional points were always broken up. In addition, the number of small chunks then generated, which was more or less equal to ratio between the expected big and small chunk sizes, was usually larger than 3. These two factors combined led to a much higher storage requirement for the Manifests.
+
+Fig. 7(c) shows the MetaDataRatio of the FileManifests as a function of the ECS. BF-MHD attempts to represent contiguous data block in the same DiskChunk with one entry in the FileManifest. therefore, as can be seen, BF-MHD generated the least bytes for the FileManifests.
+
+Fig. 7(d) depicts the overall MetaDataRatio combining bytes for the inodes, the bytes contained in the Hook and Manifest, and the FileManifest files. The overall performance of the BF- MHD algorithm was the best among the algorithms compared.
+
+B. Trade-Off between Deduplication Efficiency and Dedupli- cation Overhead  Fig. 8 shows the comparison of the trade-offs between the DER and the amount of metadata required as well as the reduced deduplication throughput. We can see from the  figure, that BF-MHD achieved the best real DER. For the other algorithms, the peak DERs were reached under various conditions. It can be more clearly observed in Fig. 8(a), which shows that the maximal metadata required by the SparseIndexing, SubChunk, Bimodal and BF-MHD algorithms were about 3.8%, 1.7%, 1%, and 0.2% of the size of the input respectively.
+
+Smaller ECS values usually lead to more duplicate. How- ever, the real DER taking into account the metadata generated will peak when the amount of metadata generated equals to the duplication in data found. Fig. 8(a) and Fig. 8(b) show the data-only DER and the real DER as a function of the Meta- DataRatio. As expected, more metadata lead to better data- only DER for all the algorithms. However, when the amount of metadata is considered, the rapid growth of metadata of the Bimodal, SubChunk and SparseIndexing algorithms negated the increase in data-only DER, resulting in decreasing real DER as the metadata continues to grow. The Bi-Directional Match Extension and HHR process in MHD on the other hand, contributed to elimination of duplicate data inside big chunks using less metadata, and with new metadata generated only when duplicate data were found, making the introduction of extra metadata more ?worthwhile?.
+
+Although SparseIndexing can find more duplicate chunks,     0 1 2 3 4 3.4  3.5  3.6  3.7  3.8  3.9   4.1  4.2  MetaDataRatio (%)  D at  a? on  ly D  E R  BF?MHD Bimodal SubChunk SparseIndexing  (a) Data-only DER vs. Metadata  0 1 2 3 4 3.4  3.5  3.6  3.7  3.8  3.9   MetaDataRatio (%)  R ea  l D E  R  BF?MHD Bimodal SubChunk SparseIndexing  (b) Real DER vs. Metadata  0.2 0.25 0.3 0.35 0.4 0.45 0.5 3.4  3.5  3.6  3.7  3.8  3.9   4.1  4.2  ThroughputRatio  D at  a? on  ly D  E R  BF?MHD Bimodal SubChunk SparseIndexing  (c) Data-only DER vs. Throughput  0.2 0.25 0.3 0.35 0.4 0.45 0.5 3.4  3.5  3.6  3.7  3.8  3.9   ThroughputRatio  R ea  l D E  R  BF?MHD Bimodal SubChunk SparseIndexing  (d) Real DER vs. Throughput  Fig. 8. The comparison of trade-off between deduplication efficiency and deduplication overhead (SD=1000 hashes).
+
+because it does not regulate the the size of the Manifests, as more Manifests need to be reloaded into the RAM, and as the computational complexity related to computing the champions for each segment increases, the real DER achieved became lower than BF-MHD, even though the data-only DER for the two were similar (Fig. 8(c) and Fig. 8(d)).
+
+For the Bimodal algorithm, duplicate data inside the dedu- plicated big chunks that were not at the transition points will be missed. Similarly in SubChunk, when one small-chunk-to- container-chunk mapping was not hit, the duplicate data inside the big chunks covered by the mapping would be missed.
+
+As a result, for a given ThroughputRatio, both the Bimodal and SubChunk algorithms provided the worst DER with and without taking the metadata into account.
+
+Fig. 9 shows the performance of BF-MHD for different SD values. The DER of BF-MHD is determined by the value of ECS?SD. From Fig. 9(a), we can see smaller SD led to bet- ter trade-offs between the real DER and MetaDataRatio. This is because the growth rate of the metadata became very small as SD decreased, while the size of the duplicate data detected rapidly increased. Although smaller value of ECS?SD also resulted in more disk I/Os , overall the tradeoff between the real DER and the ThroughputRatio improved as SD decreased due to the much improved real DER, as seen in Fig. 9(b).
+
+TABLE III RAM USED FOR SPARE INDEX IN SPARSEINDEXING (SD=1000 HASHES).
+
+ECS (Bytes) 1024 2048 4096 8192 RAM (KB) 106618 102638 101183 100132  C. RAM  TABLE III lists that the RAM space used for sparse index was about 0.01% of the input data size in our experiments, consistent with the results in the work of Lillibridge et al. [13].
+
+TABLE IV shows that the size for all the Hooks and Manifests in BF-MHD was between 0.007% to 0.02% of the input data size. If all Hooks and Manifests were stored in RAM, the RAM space for the bloom filter and the disk accessing time for reading the Manifest from disk into the RAM showed in TABLE V could be avoided. The BF-MHD algorithm requires less RAM, which also helps relieving the disk bottleneck.
+
+D. Characteristics of the test dataset  The characteristics of the test data affects the deduplication speeds of different algorithms. The maximal data-only DER of our dataset is about 4.15 as detected by SparseIndexing.
+
+For a comprehensive understanding of the dataset we used, the DAD detected by BF-MHD versus ECS is plotted in Fig.
+
+0.24 0.26 0.28 0.3 0.32 3.5  3.6  3.7  3.8  3.9   4.1  MetaDataRatio (%)  R ea  l D E  R  BF?MHD?SD?1000 BF?MHD?SD?500 BF?MHD?SD?250  (a) Real DER vs. Metadata  0.25 0.3 0.35 0.4 0.45 0.5 3.5  3.6  3.7  3.8  3.9   4.1  ThroughputRatio  R ea  l D E  R  BF?MHD?SD?1000 BF?MHD?SD?500 BF?MHD?SD?250  (b) Real DER vs. Throughput  Fig. 9. BF-MHD performance at different SD values (SD= 1000, 500, and 250 hashes respectively).
+
+512 768 1024 2048 4096 8192       ECS (Bytes)  D A  D (  K B  )  DAD  (a) DAD detected by BF-MHD vs. ECS (SD=1000 hashes).
+
+512 768 1024 2048 4096 8192      x 10   ECS (Bytes)  H H  R C  os t a  nd N  um be  r of  D up  . S lic  e HHR Cost Dup. Slice  (b) The extra disk accessing times caused by HHR vs. The number of detected duplicate data slice (SD=1000 hashes).
+
+Fig. 10. Dataset characteristics and HHR cost statistics.
+
+TABLE IV BYTE SIZE FOR ALL THE HOOKS AND MANIFESTS IN BF-MHD.
+
+ECS (Bytes, SD=1000) 1024 2048 4096 8192 Size (KB) 136512 98340 83940 72996  ECS (Bytes, SD=500) 1024 2048 4096 8192 Size (KB) 174883 112160 90199 75897  ECS (Bytes, SD=250) 1024 2048 4096 8192 Size (KB) 226151 139154 103162 82067  TABLE V DISK ACCESSING TIMES FOR MANIFESTS LOADING IN BF-MHD.
+
+ECS (Bytes, SD=1000) 1024 2048 4096 8192 Times (K) 4439 3289 3073 2985  ECS (Bytes, SD=500) 1024 2048 4096 8192 Times (K) 5024 3390 3094 2996  ECS (Bytes, SD=250) 1024 2048 4096 8192 Times (K) 5706 3530 3134 3009  10(a), from which we can see the DAD of the dataset was between 90 bytes to 220 bytes. Smaller ECS helped to find shorter duplicate data slices, resulting in a smaller detected DAD. As analyzed previously, the performance of BF-MHD is related to the distribution of the duplications. The more  concentrated the duplication distribution is, the fewer the disk accesses required by HHR. Even though the theoretical upper bound for the number of disk assesses brought by HHR in the worst case is 3L times, the actual disk accessing times caused by HHR for our test data as shown in Fig. 10(b) was much smaller than L, the number of duplicate data slices detected.
+
+
+
+VI. CONCLUSIONS  In this paper, we propose an in-line metadata harness- ing deduplication scheme named MHD using hysteresis re- chunking. The SHM, Bi-Directional Match Extension and the HHR modules of the algorithm lead to better overall real deduplication ratio with lower metadata and I/O related overheads and better throughputs, as compared with other algorithms such as Bimodal, SubChunk and SparseIndexing.
+

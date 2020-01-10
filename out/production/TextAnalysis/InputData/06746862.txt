@@ -1,0 +1,184 @@
+Efficient Execution of Conjunctive Complex Queries on Big Multimedia Databases
+
+Abstract?This paper proposes an approach to efficiently execute conjunctive queries on big complex data together with their related conventional data. The basic idea is to horizontally fragment the database according to criteria frequently used in query predicates. The collection of fragments is indexed to efficiently find the fragment(s) whose contents satisfy some query predicate(s). The contents of each fragment are then indexed as well, to support efficient filtering of the fragment data according to other query predicate(s) conjunctively connected to the former.
+
+This strategy has been applied to a collection of more than 106 million images together with their related conventional data.
+
+Experimental results show considerable performance gain of the proposed approach for queries with conventional and similarity- based predicates, compared to the use of a unique metric index for the entire database contents.
+
+
+
+I. INTRODUCTION  Large amounts of complex data [1] (e.g., image, sound, video) have been collected and organized in databases every day. These complex data can come in various formats and cannot be ordered by their content in the same way as it is done for conventional data (those represented as strings or numbers).
+
+This scenario, combined with the huge size and considerable growth of some complex data collections, pose new challenges for information retrieval (IR) [2]?[4].
+
+Complex data can be collected or enriched with conven- tional data (e.g., metadata such as tags, titles, upload time) that help to describe their contents. Huge collections of complex data with related conventional data have been gathered by a myriad of information systems (e.g., shared photo databases on the Web, medical databases). Such databases can be queried via their conventional data or/and by using some similarity measure of their complex data contents [5]?[7]. Nevertheless, neither of these strategies alone is enough to produce high- quality results in many situations. Thus, several techniques have been proposed to combine these strategies [7]?[12].
+
+Complex queries [13], [14] logically combine traditional predicates (e.g., equality, inequality) on conventional data with similarity-based predicates on conventional or unconventional data. However, current IR systems are not able to efficiently execute such queries on large complex databases [4].
+
+This paper proposes an approach to efficiently execute conjunctive complex queries on huge collections of complex data and related conventional data. The central idea is to  horizontally fragment the database according to criteria fre- quently used in query predicates (e.g., the tag values). The collection of database fragments is indexed to support efficient identification of the fragment(s) containing data that satisfy particular query predicates (e.g., tag = ?dog?). Then, the data of each fragment can be indexed according to another criteria (e.g., some similarity measure of the complex data contents) to support further efficient data filtering according to other predicate(s) of conjunctive queries.
+
+The database fragments can be built and indexed to sup- port efficient execution of queries with multiple conjunctive predicates. Multi-level indexing structures (e.g., B-trees whose entries for particular indexing values point to indexes based on other criteria) enable efficient processing of some conjunctive complex queries. The fragments and access methods are trans- parent to the user, who poses the queries to a database view that integrates the fragments. The following examples show some queries that can be executed with much better performance by using the proposed approach, based on the conjugation of access methods, instead of using a unique index for the whole database contents.
+
+A. Motivating Examples  Q1: Retrieve the k images more similar to q(im1).
+
+Assume that the image q(im1) is given as the query center and presents a human face. Using this information extracted from q(im1) itself (by using a face detection algorithm, for example), an IR system can imply that the user who posed this query is probably interested in retrieving data about people whose face is similar to the one present in q(im1). Generic image descriptors (e.g., color, texture) perform sub-optimally in this case. For retrieving images of similar human faces, it is better to use descriptors and similarity measures designed for this specific task, on horizontal fragment(s) of the database containing images of human faces.
+
+Q2: Retrieve the k images more similar to a given im- age q(im2), and annotated with the tag ?lost dog?.
+
+The contextual information in this query is the tag ?lost dog?. It can be used to find an appropriate fragment (whose tuples are tagged with ?lost dog?), and process the similarity-based predicate only for the contents of this frag- ment. If there is no fragment for this tag value, other predicates  2013 IEEE International Symposium on Multimedia  DOI 10.1109/ISM.2013.112     may be used (e.g., whose tuples are tagged just with ?dog?).
+
+In this case, precision is compromised in favor of recall.
+
+We believe that to divide the database into horizontal frag- ments, according to predicates typically used in conjunctive complex queries, have the following advantages: (i) speed up query execution; (ii) allow better scalability for processing conjunctive complex queries on very large databases; and (iii) improve the quality of results by using access methods tailored for the contents of specific database fragments and particular categories of IR predicates. In this paper, we show how to achieve the goals (i) and (ii), for a real world database with millions of images and related metadata, and conjunctive queries composed of a predicate based on tag values and another one based on content similarity.
+
+This paper is organized as follows. Section II presents some foundations and related work. Section III describes the proposed approach to efficiently execute conjunctive complex queries in horizontal fragments of databases with complex data and related conventional data. Section IV presents the system architecture and tools used to implement this approach in a prototype. Section V reports and discusses experimental results. Finally, Section VI finishes the paper, with conclusions and indications for future work.
+
+
+
+II. FOUNDATIONS AND RELATED WORK  This section presents some fundamentals used in this paper.
+
+It describes how complex data and their related conventional data can be stored in relational databases, how complex data contents can be compared by using similarity metrics, and how complex queries can be expressed as compositions of conventional and similarity-based predicates. It closes by discussing some related work.
+
+A. Complex Relation  A complex relation <(S,A) has a set of complex attributes S = {S1, S2, . . . Sm} and a set of conventional attributes A = {A1, A2, . . . An}. Each complex tuple t ? <(S,A) relates complex and conventional attribute values. For example, a complex tuple can relate an image or a series of images with conventional data, such as associated tags, title, description, upload time, and the geographic position where the image(s) has(have) been taken.
+
+Queries can be specified on a complex relation by using both conventional and similarity-based predicates. Conven- tional predicates are used to compare values of conventional attributes with constants and/or among themselves (e.g., to retrieve the tuples with a given tag value). Complex data (e.g., images), on the other hand, usually cannot be compared by equality (=, 6=), inequality (<, ?, ?, >) or even spatial containment predicates (e.g., INSIDE). Complex data are usually compared by similarity. The notion of similarity used for IR can vary with the kind of data and the application. Dif- ferent descriptors (e.g., color, texture, shape) can be extracted from complex data and represented as vectors of varying sizes.
+
+These descriptors or/and conventional data can be compared by using a variety of similarity or dissimilarity measures.
+
+B. Dissimilarity Metrics  Dissimilarity functions measure the distance between ob- jects. The greater the distance between two objects the less similar they are. Given a data domain D1, a dissimilarity function ? : D ? D ? R+ is called a metric iff it satisfies the following properties [5], ?x, y, z ? D:  1) Symmetry: ?(x, y) = ?(y, x), 2) Non-negativity: ?(x, y) ? 0, 3) Identity: ?(x, x) = 0, and 4) Triangular inequality: ?(x, z) ? ?(x, y) + ?(y, z).
+
+There are several distance metrics that can be used for information retrieval. Some of the simplest, fastest to calculate, and most used metrics to compare general complex data (e.g., collections of images of varied themes) are those from the Minkowski family (Lp) [5]. This set of metrics can be defined as stated in Equation 1.
+
+Lp(x, y) = p  ???? d? i=1  |xi ? yi|p (1)  where d is the dimension of the space and each value p = 1, 2, . . .? define a metric of this family, such as L1 (Manhattan) for p = 1, L2 (Euclidean) for p = 2 and L? (Chebychev) for p =?.
+
+Other examples of distance metrics useful for IR are Mahalanobis [5], Camberra [15] and Kullback-Leibler [16].
+
+Different metrics perform more or less accurately for different datasets, features extracted from the data, and categories of queries [17].
+
+A metric space [18], [19] is a pair M = (D, ?) where D denotes the universe of valid elements, and ? is a metric.
+
+The metric space (D, ?) allows comparing tuples of complex and/or conventional objects from the collection D by using the metric ?. When the compared objects are vectors of numeric values in a d-dimensional space, with a metric distance defined, we have a particular case of the metric space that is called a vector space. Vector and metric spaces can be indexed with multidimensional and metric data structures, respectively, to speed up the execution of queries based on spatial and/or similarity-based predicates [5], [20].
+
+C. Similarity-based Query Operators  In similarity-based IR, one provides a reference to a query object, named as the query center, to retrieve similar objects from the database. The most used operators to specify similarity-based queries are:  ? Range Query (Rangeq): Given a query center sq ? D and a maximum distance ? ? R+, the range query Rangeq(sq, ?) retrieves all objects s ? D, such that ?(s, sq) ? ?, i.e., all the objects of the database that are within a distance of at most ? from sq .
+
+1For comparing data of a complex relation <(S,A) consider D = ?X(dom(S)? dom(A)), where X ? (S ?A), and dom(S) and dom(A) are the domains of the sets of attributes S and A, respectively.
+
+? k-Nearest Neighbor Query (kNNq): Given a query center sq ? D and a natural number k, the kNN query kNNq(sq, k) retrieves the k objects from D that are the closest ones to sq , i.e., D? = {si ? D|?sj ? (D? D?), |D?| = k, ?(sq, si) ? ?(sq, sj)}.
+
+D. Conjunctive Complex Queries  Given a complex relation <(S,A), as described in Sec- tion II-A, a Conjunctive Complex Query on <(S,A) is ex- pressed as a conjunction of l predicates ?X1 ??X2 ? . . .??Xl .
+
+Each predicate ?Xi : <(S,A)? {TRUE,FALSE} receives a tuple t ? <(S,A) and returns TRUE or FALSE depending on the values t[X] of the attributes X ? S ?A in the tuple t.
+
+Such a predicate can use equalities, inequalities, spatial, and similarity-based query operators.
+
+In this paper, we only consider conjunctive complex queries with two atomic predicates: (i) an equality of conventional at- tributes with a constant (e.g., tag = ?lost dog?, tag = ?dog?), and (ii) a similarity-based query operator (e.g., Rangeq or kNNq). For instance, the following conjunctive complex query searches tuples of the complex relation PhotoSharingData associated with a tag "dog", and whose contents of the image attribute are at a distance of at most 5 of the given image img1.jpg. This query uses the extended SQL syntax proposed by [14] and the "ScalableColor" similarity, that is defined by the scalable color descriptor [21] and the L1 (Manhattan) metric.
+
+SELECT R.* FROM PhotoSharingData R NAT JOIN Tag WHERE Tag.value = "dog" AND  R.picture NEAR "D:/images/img1.jpg" BY ScalableColor RANGE 5;  E. Related Work  Several methods have been proposed for efficient IR by exploiting various properties of the datasets and posed queries [2]?[4], [7], [22], and investigating appropriate data descriptors and access methods for distinct situations [6], [7], [23]?[25].
+
+The combination of content and textual similarity has also been investigated to improve IR on complex data [26]?[28].
+
+In addition, some works use parallelism and techniques such as MapReduce to speed up IR on large datasets [29]?[31].
+
+Our proposal combines several ideas of these previous proposals to improve the performance of IR systems for big collections of complex data with their related conventional data. For the best of our knowledge, it is the first proposal to take advantage of horizontal fragments defined in conformance with typical query predicates to speed up query execution, and enable the customization of IR techniques according to the contents of each fragment of a possibly huge complex data collection with heterogeneous contents.
+
+
+
+III. PROCESSING CONJUNCTIVE COMPLEX QUERIES USING HORIZONTAL FRAGMENTS OF A DATABASE  Our proposal to speed up the execution of conjunctive, complex queries uses horizontal fragments of complex rela- tions. These fragments are built in accordance with predicates that are common in queries. For example, consider a database  with photos of different sources and mixed themes (such as cities, homes, offices, landscapes, flowers, trees, animals, people, food, etc.). These photos can be organized in groups, so that to perform a search for some specific photo, it is not necessary to consider all the elements in the database.
+
+Instead, a more efficient approach is to identify the appropriate group(s) to solve some query predicate(s) and process the search considering only the contents of that group(s).
+
+Figure 1 illustrates the proposed approach. Suppose that a database is divided in four fragments, according to the subjects Human Faces, Cars, Dogs, and Cats. Considering the examples presented in Section I-A, query Q1 can be solved by just checking the contents of the fragment of Human Faces, while query Q2 can be solved in the fragment of Dogs.
+
+Conjunctive complex queries on big databases can be solved much more efficiently by accessing only fragments having data that satisfy some of their predicates, instead of searching the whole database. Furthermore, the data in each fragment can be examined by using a distinct access method, tailored for the contents of the respective fragment. It can help us to obtain more accurate query results too.
+
+Fig. 1. Query execution strategies for queries Q1 and Q2.
+
+The major challenges to implement the proposed strategy are: (i) partition the database in suitable horizontal fragments to support query executions; (ii) devise efficient ways to identify suitable fragments to solve particular query predicates; (iii) properly index the contents of each fragment whose size requires efficient access methods to support the verification of further query predicates; (iv) develop smart strategies for opti- mized query processing by identifying and searching appropri- ate horizontal database fragments. The following subsections describe each one of these sub-problems in detail.
+
+A. Creating Horizontal Fragments  The tuples of a complex relation <(S,A) can be frag- mented for information retrieval purposes by using a wide va- riety of methods. The proposed approach allows any complex relation fragmentation function of the form:  H : <(S,A)? 2(2 <(S,A)??)     The fragmentation function H takes as input a complex relation <(S,A) and outputs a set H(<(S,A)) of horizontal fragments, i.e., subsets of the tuples in <(S,A), such that:  1) |H(<(S,A))| ? 1, i.e., H(<(S,A)) has at least one horizontal fragment.
+
+2) ?=(S,A) ? H(<(S,A)) : |=(S,A)| ? 1, i.e., each horizontal fragment =(S,A) has at least one tuple.
+
+3) Each fragment =(S,A) ? H(<(S,A)) has the same schema as <(S,A) and contains a subset of its tuples.
+
+Fragmentation functions can also be related to subsets of attributes only. For example, a complex relation fragmentation function HX(<(S,A)) generates subsets of <(S,A) by check- ing only the values of the projection ?X(<(S,A)). If X ? A then we say that HX(<(S,A)) is based on the projection of conventional attributes, and if X ? S we say that it is based on the projection of complex attributes.
+
+Notice that we allow one tuple t ? <(S,A) to appear in more than one fragment =(S,A) ? H(<(S,A)). It is allowed because the contents of any tuple may be of interest for different IR purposes. In other words, even when two fragments =, =? ? H(<(S,A)) refer to distinct data groups, sometimes they overlap, i.e., there are some tuples t ? < such that t ? = and t ? =?, enabling its retrieval according to different points of view. For instance, pictures of beaches may be relevant to different kinds of people (fishermen, surfers, travelers, geologists, oceanographers, etc.). These communities can have distinct interests and use different notions of simi- larity, which use different features to compare data contents, as the same tuple may be of interest to people from different communities, though for distinct reasons (e.g., the fishermen may be interested in a particular texture caused by fish close to the water surface, the surfers may be looking for waves with a particular shape, while some ordinary travelers may just wonder pristine water).
+
+Conversely, the fragmentation process can leave some tuples t ? < out of any fragment = ? H(<), i.e., ?t ? < : (?= ? H(<) : t /? =). It may happen, for example, if t is an outlier with respect to the criteria considered in H to fragment < and/or if t is not of interest to the IR focus of any = ? H.
+
+B. Indexing the Fragments Collection  When the number of horizontal fragments |H(<(S,A))| created to support IR from a complex relation <(S,A) is large, it may be necessary to index the collection of fragments H(<(S,A)) (e.g., a collection with a fragment per tag value, for a large number of tag values) to efficiently find the fragment(s) suitable to solve particular query predicates. The indexing method for this purpose may vary with the nature of the predicates that define the fragments. For example, collections of horizontal fragments defined by tag values can be indexed by a conventional index (e.g., a B-tree) or by an inverted file.
+
+C. Intra-Fragment Indexing  The contents of each fragment may have to be indexed as well, to accelerate additional filtering of the fragment data according to other predicates. For instance, to support efficient processing of a similarity-based query operator (e.g.,  Rangeq , kNNq) on the contents of large fragments, a Metric Access Method (MAM) [5] can be used. A MAM indexes the fragment contents in a metric space, defined by a descriptor extracted from the contents of some attribute(s) and a metric to compare the data descriptors by similarity. Several MAMs have been proposed in the literature [5], [20], and many of them are available in well-known DBMS and IR tools [32]. The appropriate descriptor, similarity metric, and MAM to support efficient access to the contents of a fragment depends on the nature of the data contents and on the query predicates to be processed in that fragment [7], [17], [25].
+
+D. Query Execution  Algorithm 1 describes our approach to efficiently process conjunctive complex queries on a big complex database, by using horizontal fragments of that database and multi-level indexing. The user, who is unaware of the database fragmenta- tion and access methods, poses the query referring to the whole database. This query is received in the parameter c query on line 1. First, the IR system extracts the predicates from the query, by calling the function EXTRACT PREDICATES (line 2). Then, the system chooses suitable fragments to pro- cess the query, i.e., fragments whose tuples satisfy some query predicate(s), by calling the function SELECT FRAGMENTS (line 3). An index built over the fragments collection may speed up the fragment selection. The next step is to filter tuples of the chosen fragment(s), according to the query predicates, by calling the function FILTER DATA (line 6). This function receives in its second parameter all the query predicates to verify the other query predicates on the fragment data.
+
+Each chosen fragment is expected to be smaller than the whole database. If the fragment size is still large, its contents can be indexed and/or more fragmented to allow efficient processing of particular query predicates. Finally, if the query processing has used more than one fragment, the IR system combine the results obtained for each fragment, by using the APPEND RESULTS function (line 7). The combination of results may use unions or intersections, depending on the way the query is structured and the criteria used to choose the fragments to process the query.
+
+Algorithm 1 Query execution using horizontal fragments 1: function EXECUTE QUERY(c query) 2: predicates = EXTRACT PREDICATES(c query) 3: fragments = SELECT FRAGMENTS(predicates) 4: results = ? 5: for each f in fragments do 6: f results = FILTER DATA(f , predicates) 7: results.APPEND RESULTS(f results) 8: end for 9: return results  10: end function  The proposed approach is general in terms of the number, nature and logical connections of predicates in a complex query. Nevertheless, for simplicity and lack of space, in our current implementation and experiments we only consider queries with a conventional predicate of the form tag = value conjunctively connected to a similarity-based query operator (i.e., Rangeq or kNNq). We believe that it is enough to show some potential benefits of the proposed approach.
+
+
+
+IV. IMPLEMENTATION  We have implemented a prototype to validate our approach using FMI-SiRO (user-defined Features, Metrics and Indexes for Similarity Retrieval) [32], a module coupled to Oracle to solve queries having similarity-based predicates. This module supports the two kinds of similarity-base query operators mentioned in section II-C (Rangeq and kNNq), and uses MAMs to efficiently execute these predicates on large data volumes. In our implementation, FMI-SiRO has been changed to read complex objects? feature vectors from tables.
+
+A. Architecture  Figure 2 illustrates the implemented architecture. The module Extract Predicates parses the complex conjunctive query written in SQL in the way accepted by FMI-SiRO. The predicates supported by our current implementation fall in two categories: (i) comparison of a conventional attribute with a constant (e.g., tag = ?dog?) or (ii) similarity-based predicates on complex or conventional data (Rangeq or kNNq).
+
+Fig. 2. Prototype architecture  A B-tree index allows the Select Fragments module to efficiently find fragments whose tuples satisfy predicates of the first category, when the cardinality of the compared attribute is high, and there are many horizontal fragments for the different attribute values. Once the suitable fragment(s) (i.e. whose tuples satisfy some predicate(s) of the first category) has been selected, the Oracle Query Processor solves the remaining predicates of the conjunctive query on the contents of such fragment(s). FMI-SiRO solves the similarity-based predicates on the fragments contents, using the Arboretum2 [33] MAM library to improve the performance of these operations for large databases. In our experiments, we have used the Slim- tree [34] as the MAM for efficient similarity-based IR from the horizontal fragments of the database. The Slim-tree is dynamic, height-balanced and bottom-up constructed.
+
+2http://www.gbdi.icmc.usp.br/arboretum
+
+V. EXPERIMENTS  This section reports the experiments done to demonstrate the benefits of the proposed approach for executing complex conjunctive queries on big complex databases. The primary goal is to show that the queries have better performance when executed in the fragments instead of using the entire database.
+
+A. Experiment Setup  Our experiments were performed on CoPhIR3 (Content- based Photo Image Retrieval) [35], a multimedia metadata collection that serves as a basis for experiments with content- based image retrieval techniques. It contains image descrip- tors (MPEG-7 feature vectors) and textual information (tags, title, description, upload time, location) regarding 106 million images uploaded in FLICKR4. CoPhIR does not include the images themselves, but just their MPEG-7 feature vectors, and URLs pointing to the original images in FLICKR and to their thumbnails in the CoPhIR Web site. The images presented in the following results were obtained via their FLICKR URL.
+
+We have converted each CoPhIR XML file, containing data describing an image, into a tuple related with some other tuples (e.g., with associated tag values). The resulting relational database was loaded in Oracle, to allow the execution of queries with conventional and similarity-based predicates.
+
+The efficient execution of the former is supported by Oracle itself (using conventional access methods) and the latter by FMI-SiRO (using Slim-trees).
+
+The experiments were performed in a server equipped with an Intel R?CoreTMi7 3.8Ghz processor and 8GB of memory.
+
+This machine was running Oracle Database 11g on the Debian 7.0 ?wheezy? operating system (Kernel 3.2.0 x86-64).
+
+B. Fragments Creation  The horizontal fragments of the database were created according to the tag values associated to the images. The total number of tag instances used to annotate the CoPhIR images is 334,254,683, employing a set of 4,666,256 distinct tag values [35]. A tag value can be associated with various images, and an image can be annotated with several tag values.
+
+The strategy used to generate the fragments for the exper- iment was the following. First, the data collection was filtered to eliminate the tag values used to annotate only one image, leaving 2,111,554 distinct tag values, i.e. 46.86% of the total.
+
+Then, a filter based on the WordNet was applied to keep only the tag values of the English language. It left 68,767 tag values, i.e. just 2.87% of the total number of tag values in CoPhIR.
+
+Figure 3 shows the frequency distribution of the selected tag values among the CoPhIR image descriptions. The most frequent tag values are ?wedding? (used to annotate 1,678,711 images), ?party? (1,334,741 images), and ?travel? (1,154,688 images). On the other extreme of our selection, the tag values ?algonkin?, ?precognitive?, and ?chamberlains? are used to annotate just 2 images each one. We divided this distribution in quartiles yielding four regions (labeled with R1, R2, R3, and R4). We used the 5 tag values on the limits of each region  3http://cophir.isti.cnr.it 4http://www.flickr.com     (dashed vertical lines), making 10 fragments on each region limits. In addition, we have randomly chosen 10 distinct tag values inside each region, to build further fragments for our experiments. It gave a total of 80 horizontal fragments of the CoPhIR database, each one for the images annotated with one of the chosen tag values.
+
+Fig. 3. Frequency distribution of tag values in CoPhIR image annotations  C. Contents Indexing with MAMs  The contents of the whole database (all the 106 million images) and of each fragment whose size is above a certain threshold (more than 1 thousand tuples in these experiments) have been indexed with Slim-trees [34] for efficient content- based image retrieval.
+
+Among the various MPEG-7 feature vectors available for describing images available in CoPhIR, we have used the scalable color [21]. This descriptor is derived from a color histogram, defined in HSV (Hue-Saturation-Value). The values extracted from the histogram are normalized and mapped to a non-linear representation with four bits. After that, a Haar transformation was applied. Several distance functions can be used to retrieve the images described by MPEG-7 features vectors [36]. In these experiments, we used the L1 metric (Manhattan), because it usually provides more precise results than other simple metrics, such as those of the Minkowski family, as reported in the literature [37]. This behavior was observed in our preliminary experiments.
+
+D. Queries  The next step was to pose queries with equality predicates on tag values and similarity-based predicates on the image contents. The tag values used in the equality predicates were the same used to build the fragments for the experiments (Section V-B). A randomly chosen image of each fragment serve as the query center of the similarity-based predicate.
+
+Thereafter, we compare the average time to execute queries on fragments of each chosen size with that to execute the same similarity queries on the entire database. Figure 4 shows an example of complex conjunctive query that looks for images similar to a given one in the fragment with descriptors and metadata of images that are tagged with ?puppy?. It uses the FMI-SiRO Oracle syntax [32].
+
+SELECT frag_name INTO fragment FROM cophir_frag_catalog WHERE tag=?puppy?; EXECUTE IMMEDIATE ?SELECT * FROM ? || fragment || ? WHERE MANHATTAN_DIST(coeff,  (SELECT coeff FROM ? || fragment || ? WHERE PHOTO_ID=123456)) <= 50?;  Fig. 4. An example of complex query on Oracle with FMI-SiRO  E. Experimental Results  Figure 5 shows the sizes of fragment indexes in disk and the time spent to create horizontal fragments of a relation with image metadata and descriptors taken from CoPhIR.
+
+Each fragment is defined by a tag value. Fragment sizes vary with the number of tag values occurrences. The creation of a fragment includes selecting the tuples that refer to images annotated with the respective tag value, and the construction of the Slim-tree index to support efficient image retrieval by contents similarity in that fragment.
+
+Fig. 5. Fragment indexes sizes and time spent to create the fragments  Figure 6 presents the number of disk accesses and the num- ber of similarity calculations done to execute queries analogous to the one of Figure 4 in database fragments. The total elapsed time encompass (i) searching a B-tree to find the fragment containing tuples annotated with the tag value appearing in the conventional predicate, and (ii) solving the similarity-based predicate in a Slim-tree that indexes only the contents of that fragment. Unfortunately, the image descriptor, similarity function, indexes and fragments used in these experiments did not ensure sub-linear growing of the time spent to execute the similarity-based predicates for growing fragment sizes.
+
+The query execution using the Slim-tree that indexes the contents of a fragment is around an order of magnitude faster than using the Slim-tree that indexes the entire database, for most fragments. It is still more than 10 times faster to solve the queries in the biggest fragments than in the entire database. For example, the execution of a query to retrieve images annotated with the tag value ?wedding? (1,334,741 images) and within     Fig. 6. Number of Disk Accesses and number of similarity calculation on query execution on database fragments of different sizes  a distance radius equal to 50 of a given image takes around 1,200 seconds using the Slim-tree for the respective fragment, and 18,577 seconds using the Slim-tree for the entire database.
+
+On the other hand the query to retrieve images annotated with the tag value ?chamberlains? (just 2 images) and within the same distance radius of 50 from a given image takes less than 1 second using the respective fragment, and 12,514 seconds using the Slim-tree index for the entire database.
+
+Finally, Figure 7 presents the results of a conjunctive complex query with the equality predicate tag = ?puppy? and a kNNq predicate with the center in the image presented in the top left corner (highlighted by the red square). These 4 images are ranked in the results from left to right and from top to bottom. The execution of this query using the fragment referring to the tag ?puppy?, which contains the descriptions of 105,570 images, took 108 seconds using a B-tree to find the fragment and a Slim-tree to process the similarity-based predicate in the contents of this fragment. As the kNN predicate is not commutative with other predicates for data filtering [22] we show in Figure 8 the results of a query by a Rangeq predicate with radius 50 and center in the image on the top left corner. These results were produced by using a Slim-tree that indexes the entire database. This query took 13,176 seconds to execute. Filtering these results for the tag value ?puppy? to produce the result showed in Figure 7 would require further processing, but the time to solve the Rangeq predicate on the Slim-tree that indexes the entire database contents is dominant.
+
+
+
+VI. CONCLUSIONS AND FUTURE WORK  This paper introduces an approach for efficiently processing queries on big complex databases, by using horizontal frag- ments of the database and multi-level indexing. This approach has three steps: (i) find fragments with data satisfying some query predicate(s); (ii) filter the data in the chosen fragment(s) according to other predicate(s) conjunctively connected to the former; (iii) compose the results obtained from each fragment.
+
+The experimental results demonstrate that this proposal drastically improve query execution speed. They show that it is not viable to run the similarity-based predicates over the  Fig. 7. Results of a conjunctive query executed by using the fragment that describes only images tagged with ?puppy?  Fig. 8. Results of a Rangeq predicate on the entire database, that took almost 100 times longer to produce than those in Figure 7  entire CoPhIR database (that describes around 106 million images), even using the Slim-tree metric index to speedup the execution of similarity-based predicates on image content descriptors. In fact, even big fragments (describing more than a 100 thousand images, approximately), need to be further fragmented to ensure acceptable response time.
+
+Though the case study presented in this paper only con- siders conjunctive queries with an equality predicate and a similarity-based predicate, the proposed approach can be em- ployed for efficient execution of queries with arbitrary numbers of predicates, of various kinds, and logically connected in different ways. In fact, our approach opens new research paths towards efficient query execution on big complex data.
+
+Among the challenges involved in the full exploitation of the proposed approach, we mention the following ones for future work: (i) develop automatic techniques to create appropriate horizontal fragments of large databases for efficient query execution; (ii) index fragment collections to efficiently find fragments suitable to solve different kinds of predicates; (iii) devise and validate queries optimization techniques that exploit appropriate database fragments and access methods.
+
+
+
+VII. ACKNOWLEDGMENTS  Thanks to CNPq, CAPES, FEESC, and FAPESP for their financial support.
+

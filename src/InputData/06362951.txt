@@ -1,0 +1,198 @@
+Large-scale Mining of Co-occurrences: Challenges and Solutions
+
+Abstract?The ability to extract frequent pairs from a set of baskets (or frequent word co-occurrences from a set of documents) is one of the fundamental building blocks of data mining. When the number of items in a given basket is relatively small the problem is trivial. Even when dealing with millions of baskets it is still trivial providing that the number of unique items in the basket set is small. The problem becomes much more challenging when we deal with millions of baskets, each containing hundreds of items that are part of a set of millions of potential items. Especially when we are looking for highly correlated results at extremely low support levels. A particularly difficult case is when "items" are words and "baskets" are long documents in a very large text corpus.
+
+For 17 years the Direct Hashing and Pruning Park Chen Yu (PCY) Algorithm has been the principal technique used when there are billions of potential pairs that need to be counted. In this paper we show new approaches that allow us to take full advantage of both multi-core and multi-CPU setups for cases where PCY fails and Map-Reduce struggles, offering excellent performance scaling when the number of processors, unique items and items per transaction are at their highest.
+
+We believe that our approaches have much broader applicability in the field of co-occurrence counting, and can be used to generate much more interesting results when mining very large data sets.
+
+Keywords-component; frequent pairs; co-occurrence mining; support  level; PCY Algorithm; Map-Reduce.
+
+
+
+I.  INTRODUCTION An effective way to illustrate our counting problem is to  consider a basket of products being purchased at a supermarket checkout counter. As they are scanned the products (items) are recorded in a unique transaction for that specific customer. Each supermarket stocks tens of thousands of unique items, each of which has a unique SKU.
+
+These transactions can be mined to determine which pairs of items are likely to be purchased together both at that store, or any other store in the chain. Some pairings such as bread and butter happen so often that they are obvious.
+
+Others such as caviar and crackers occur much less frequently, but when they do occur they are highly correlated, making them much more interesting. It is these cases that we are trying to discover.
+
+Generating the pairs of items from a transaction is extremely fast. Doing so billions of times counting the pairs takes only a few minutes for a typical processor if the same few thousand unique pairs are incremented millions of times.
+
+The reason why this sometimes takes days is because it  requires a huge amount of effort to access and update the counters once they no longer conveniently fit into memory.
+
+To illustrate the problems that arise, and to make the discussion very concrete, we selected the Webdocs data set from FIMI 04. This dataset is derived from real-world data, and is reasonably representative of the sort of data that needs to be mined. We chose it primarily because many published papers on frequent item mining have used this data set, and we wanted our results to be comparable.
+
+Papers on efficiently mining frequent patterns such as [7], [8] and [9] imply that this dataset is no longer the challenge it was when it was first used. But in all cases that we looked at, the support level was set so high (7.5% or more) that it meant that very few pairs were actually generated. Webdocs contains 2.5 million transactions, 5.25 million unique items, and many items in the longest transaction. This is a lot of information.
+
+Mining with a 10% support level means we are only interested in those items that appear at least 250,000 times in the data. Using this support level reveals that only 122 unique items are frequent enough to be used for counting pairs. (See Table II). And none of the frequent pairs that can be generated from these 122 items are even moderately correlated. (See Table IX).
+
+We are interested in doing better. Webdocs is an ideal vehicle for demonstrating the algorithms and techniques that are needed to extract highly correlated information from this type of raw data. It has the following characteristics:  TABLE I.  WEBDOCS STATISTICS  Number of transactions  2,482,485 Number of unique items   5,267,656 Maximum items/transaction  281  TABLE II.  SURVIVING K=1 CANDIDATES  Support Support %  Surviving k=1  250,000 10.0 122 25,000 1.0  2,047 2,500 0.1 9,919  250 0.01 47,286 25 0.001 223,282   For example, Table II shows that when the support level  is set to 0.01%, we need to examine all items that appear at   DOI 10.1109/3PGCIC.2012.38     least 250 times in the data set. In this case the number of unique items that exceed this support level is 47,286.
+
+We set ourselves the task of using a support level of 0.001%. This increases the number of surviving frequent items to 223,282. This allows us to discover the highly correlated pairs that are missed when the support level is set at a much higher level. It also guarantees that we will hit the performance bottlenecks we are interested in exploring.
+
+We analyzed the underlying performance characteristics and performance bottlenecks associated with this problem and devised two of techniques that make it easy to discover highly correlated pairs that seldom occur. Our techniques work even when PCY fails and Map-Reduce falters.
+
+Furthermore we are able to generate these results quickly with good scalability. We believe that these techniques have a wide applicability to the field of data mining.
+
+During our analysis we discovered that much of the information in the literature about mining very large datasets does not clarify the relationships between raw data size, support, relevance and the generated output. As stated earlier, none of the frequent pairs mined from this dataset at a 10% support level are even moderately correlated.
+
+Our techniques are completely scalable. They work equally well with single computers, multi-core computers and networked computers. They also deliver results in time frames that can be predicted with a reasonable degree of accuracy.
+
+
+
+II. PRELIMINARIES Problem Definition: Given a support level s, determine  all the interesting pairs that occur in at least s transactions. A given pair (i, j) is considered to be interesting if the support for that pair is a reasonable percentage of the support for either i or j.
+
+A. The Apriori Principle Each transaction of n items generates approximately n2/2  possible pairs. So, for large data sets we can end up with hundreds of billions of pairs that need to be examined. The Apriori [4] principle allows us to eliminate as many items as possible from the input data before starting to count pairs because a pair will only be frequent if both its constituent items are also frequent.
+
+If the support level is set too high very few items survive, and all the interesting ones are filtered out. If it is set too low too many pairs will be generated, making the problem unmanageable. Using our market basket analogy, we are interested in discovering relationships like caviar/crackers.
+
+To do so we have to mine the data at a support level that is no higher than the total number of times that caviar was purchased. In many real-world cases this is lower than 1%.
+
+B. High Confidence Pairs We want to find the high-confidence pairs like caviar/  crackers that only exist at low support levels. This means that we need to mine with a suitably low support level and then eliminate almost all of the results, rather than just  generating those few results that we can probably guess if we are familiar with the information we are analyzing. Working with large datasets and low support levels produces enormous numbers of results. When we used a support level of 0.001% on Webdocs Table IV shows that we had to generate and count more than 24 billion pairs to discover that there are more than 950 million non-zero pairs; with more than 50 million of those pairs being frequent. For our results to be usable we need to distinguish which of these 50 million pairs are interesting and eliminate the rest. Eliminating those results that have a confidence of less than 95% reduces this 50 million to about 90K highly correlated pairs.
+
+C. The Park Chen Yu (PCY) Algorithm PCY [1] is the most common method used to compute  frequent pairs from very large datasets. It was first proposed in 1995, and is still the method of choice appearing in current textbooks [2]. The item pairs are hashed to (counting) buckets that are each represented by a single counter (say of 32 bits). A given counter serves several item-pairs, namely all those that hash to that particular bucket. In the end, such a counter will hold the sum of frequency counts of all the item pairs that hashed to this bucket. The set of all counters is assumed to fit in main memory. Once all the pairs have been processed, each counter is represented as a single bit that is true if the counter is higher than the specified support level.
+
+This shrinks the memory required to represent this information by a factor of 32. A subsequent pass through the data only counts those pairs whose hash bit is set.
+
+PCY works well if most of the counters are below the support level once all the pairs have been counted. If too many pairs hash to the same bucket causing a lot of false positives, this algorithm uses a second and possibly a third pass with a different hash function to try to eliminate false positives. It fails when most of the counters exceed the support level no matter what hash functions are used. We argue that this is exactly case for Webdocs (see Section 3.5).
+
+D. Map-Reduce Map-Reduce [3] is a technique for working on computing  problems that can be solved by distributing subsets of that problem to a large number of clustered computers and then combining the results from these subsets. The number of computers (or nodes) in a cluster varies greatly, ranging from tens to tens of thousands.
+
+There are two main steps required to solve a problem using the Map-Reduce framework. Map processes each take a subset of the data (in our case a unique subset of the transactions) and process that data outputting key-value (KV) pairs. In our case a given map process would take each individual transaction and generate all the potential KV pairs that can be constructed from that transaction. The key of each KV would be the item pair (such as bread/butter or beer/diapers) and the value would be a 1.
+
+Once the map processes have all finished, the Map- Reduce framework groups all of these generated KVs and delivers them to a set of reduce processes that generate the final results. In this case the reduce processes sum all the output KVs that have the same key (bread/butter) and     outputs a single KV as bread/butter:1234 (assuming that the key occurred 1234 times). Despite looking simple and attractive Map-Reduce does not work well for our problem because it unnecessarily generates hundreds of gigabytes of intermediary data.
+
+E. Eliminating Performance Bottlenecks Disk IO is a major problem for data mining algorithms.
+
+Sequential disk IO is extremely fast. It is often faster than random main memory access (cf. [13]). In some circumstances it can even be faster than writing randomly to memory. On the other hand a single random disk IO usually takes about 10 milliseconds to complete, during which time the process often has to stall. During that same amount of time the computer?s CPU can perform one random disk IO it can perform about 10 million instructions, so minimizing random disk IO must be a very successful strategy no matter how expensive that strategy is in terms of cpu cycles.
+
+Disk IO happens for two reasons. The first is when the application explicitly reads or writes data. The other is when the program?s memory usage exceeds the amount of real memory available causing it (or some other process) to be swapped out to disk to free up memory. Explicit reads and writes are easy to recognize and can often be minimized or eliminated by careful coding. The implicit reads and writes caused by paging are much harder to handle. They are almost always the difference between algorithms running at the expected speed or thousands of times slower. Both of our counting techniques eliminate all explicit and implicit random disk IO associated with the counting process, making run times both scalable and predictable.
+
+Another performance issue is the effect of CPU caches on the way that a computation performs. Storing counters in a hash-tree structure (as documented in various text books including [12]) causes the program to jump around in memory as it follows the tree structure to reach the appropriate counter. It also causes new counters to be added to the tree at random intervals and on a random basis. This is not good for memory cache utilization. The difference between efficient and inefficient cache utilization is typically about one order of magnitude. Practical confirmation of this estimate can be found in [8] which shows a performance improvement by a factor of 5:1.
+
+
+
+III. THE CHALLENGE To eliminate the implicit random disk IO associated with  counting we first need to know how much memory will be needed to store the required counters. Table II shows that when the support level is set to 0.01% for Webdocs, the number of unique items that exceed this support level is 47,286. Table III shows the number of potential pairs exceeds 1 billion; and the minimum amount of memory needed to count these pairs would be 2.25GB if we use 4 bytes per cell to count these pairs. When the support level is set to 0.001%, this increases the number of frequent items to 223,282 and the memory requirement to 50GB.
+
+The easiest way to reduce the memory requirement is to rely on the Apriori principle and perform an initial pass through the data to eliminate all items whose count fails to  meet a predefined minimum support level. Comparing the different support levels against the bottom row of Table III where no Apriori reduction is used clearly demonstrates its effectiveness.
+
+After using Apriori to prune the candidates, a second inexpensive strategy is to renumber the surviving items such that the most frequent item is renumbered to 1, the next most frequent to 2 and so on. This makes it possible for the data to be written back to disk without the infrequent items. It also allows the counts to be stored in a much more compact two- dimensional array.
+
+A. Counting In A Memory Resident Table Table III shows the memory size needed to count pairs in  memory, assuming we use Apriori to eliminate infrequent items, and 4 bytes of memory per counter for each possible frequent pair. The table also assumes that the counters are stored in a triangular array of size [F1]2/2, where [F1] is the number of surviving singletons.
+
+TABLE III.  ALL POSSIBLE K=2 CANDIDATES  Support Support %  Surviving k=1  Possible k=2  GB  0,000 10.0 122 7,442 ~0 25,000 1.0  2,047 2,095,105 0.01 2,500 0.1 9,919 49,193,281 0.79  250 0.01 47,286 1,117,982,898 2.25 25 0.001 223,282 24,927,425,762 50  1  5,267,656 ~13.9*1012  The hardware used was an IBM blade server operating as  25 separate computers. Each computer had 4 Xeon cores sharing 6GB of local memory. This allowed us to have three distinct processing configurations. 4 processes per computer each using 1.5GB memory. 2 processes using 3GB memory.
+
+And a single process using 6GB memory. The entire memory space could not be used for counters. Allowances had to be made for the operating system etc. This reduced the amount of memory for storing counters to 1.25 GB per core.
+
+If we want to use all 4 cores simultaneously we need to limit memory use per process to be 1.25GB to avoid implicit disk paging. This means that we can count all the possible ~50 million pairs for the 0.1% support level in memory because that only needs 0.2GB. We can also see that this method fails with a support level of 0.01% because 1.12 billion possible pairs require 2.25GB memory. It does work if we use only 2 processes. We can also see that using 2 byte counters instead of 4 byte counters would have just allowed us to once again use all 4 cores.
+
+B. Counting In A Hash Tree Rather than creating an in-memory table that has one  counter for each potential pair, the other possibility is to only store and increment each unique pair that is generated from the data set. This uses less counters because some combinations will not exist in the input data. It requires using some sort of hash-tree to store the results. It is the underling counting technique that has been used over the years by most     data mining algorithms, and is very fast when the number of non-zero pairs that have to be counted will fit in memory.
+
+With this approach we have an unpredictable situation.
+
+We have a fixed amount of memory for storing results and no real knowledge of how many unique pairs will produce at least one hit. So we have a process that runs quickly in the beginning, gradually slows as the tree grows, and then suddenly runs tens of thousands of times slower or aborts once the amount of available memory is exceeded. The only thing we are certain of is that as the support count is lowered more unique pairs will need to be counted, and the chances of running out of memory increase. We also know that this technique will use the cache inefficiently because elements will be added to the tree at random.
+
+We generate 112,394 frequent unique pairs after applying the Apriori principle to our data set at a 1% support level.
+
+Assuming that we use 16 bytes to store the pair (4 bytes per item) plus the counter (4 bytes) plus the required linkages (4 bytes), this gives us a memory requirement of 1.6 megabytes. For 0.01% this increases to approximately 7GB and for a 0.001% support level we need almost 16GB to store our counters. We see that this method fails for a support level of 0.01% when 6GB of memory is available. These observations agree with the intuitive prediction that all the extra complexity will not help once the support level is sufficiently low and we are no longer working with a sparse set of non-zero pairs.
+
+TABLE IV.  COMPUTED K=2 FREQUENT PAIRS  Supt %  Possible k=2  Generated Pairs  Non Zero k=2  Frequent k=2  10.0 7,442 1.1*109 7,381 729 1.0 2.1*106 14.2*109 2*106 112,394 0.1 49.2*106 20.8*109 48.2*106 1.25*106  0.01 1.1*109 23.4*109 437.8*106 8.37*106 0.001 24.9*109 24.5*109 952.4*106 51.1*106  C. Counting Using Map-Reduce Map-Reduce relies on a Map process outputting the  generated pairs as a linear stream of KV pairs and then organizing that stream such that KV pairs that group together appear together to an associated Reduce process. It eliminates the need to store the generated pairs in memory, removing that restriction no matter how low we set the support level. Instead of using memory based counters we generate approximately 15 bytes per KV pair that are sequentially (and very quickly) written to a file system.
+
+These pairs then need to be sorted and reduced.
+
+When we are dealing with a support level of 10% we generate 16GB of KV data and this technique works nicely.
+
+Unfortunately, for a 0.001% support level we emit about 350GB of KV data. This is far too large a number. We start with only 1.25GB of raw data and are only going to produce a few kilobytes of relevant results.
+
+D. Why PCY Can Fail With A Very Low Support Level PCY has problems once support levels are so low that the  number of unique potential pairs that need to be counted  causes many of the counters to exceed the specified support level. Also, holding the exact counters of each item pair has to be done in a hash-tree. Therefore, PCY suffers from the same problems as the other approaches using hash-trees for keeping the item pair counts.
+
+Given our particular dataset it is apparent that for a support level of 0.001%, PCY has problems when we only have 1.25GB of memory. Assuming 4 bytes per counter, 1.25GB memory can store up to 312.5 million counters.
+
+According to Table IV we have 952.4 million unique non- zero pairs to count in these 312.5 million counters, so every counter is very likely to be set by at least three different pairs. At least 51 million of these counters will exceed the support level because 51.1 million unique pairs exceed this support level. Assuming the pairs, which PCY indicates have to be counted, are subsequently held in a hash tree, (and that each of these hash tree counters requires 16 bytes) we can see that this can fail even with multiple hash passes.
+
+In our specific case we could guarantee that PCY works by using a single process that uses all 6GB of memory, but that does not change the underlying observation.
+
+
+
+IV. TECHNIQUES  A. Pre-Processing Steps The problem we are trying to solve can summarized as: 1. Generate results when the number of non-zero pairs  that need to be counted will not fit in memory.
+
+2. Generate these results in a fast predictable time frame.
+
+3. Make effective use of available multi-CPU multi-core  hardware to generate the results, and have the time taken to produce these results decrease in a near linear manner as more processors are added.
+
+We have developed two distinct techniques that will achieve these goals. One uses all available memory on a single core to generate the results. The other efficiently shares that memory between multiple cores on multiple computers. Both share many common features, including many of the same pre-processing steps. To make our explanations easier to understand we have chosen to document our techniques using square counting arrays (as opposed to triangular)  Our first step is to count the data discovering the number of occurrences for each unique item. This pass only takes a couple of minutes, and uses relatively little memory to compute these occurrences.
+
+Once we have counted the occurrences it is easy to sort the items by count and substitute their frequency (FID) for their item numbers, such that the item with the most occurrences becomes FID 1, the next most frequent becomes FID 2 and so on. (Ties are broken arbitrarily). Infrequent items are eliminated at the same time. This process happens completely in memory and only takes a few seconds.
+
+Reading the file a second time and writing it out again with the substituted FIDs (trimming infrequent items and dropping empty transactions) takes only a couple of minutes.
+
+Our total pre-processing time is less than 10 minutes.
+
+B. Single Core 0.01% Support Using All 6 GB Memory Some memory is needed for the operating system and for  other tasks. Assuming that we use 32-bit numbers as counters it is safe to assume we have sufficient memory space available (5GB) to store approximately 1.25 billion counters without needing to do any disk I/O. This means that we can safely create a two-dimensional square array whose side is 33,000.
+
+Counting proceeds as follows. We generate all possible pairs for every row, which already contains only frequent items. For each generated pair we examine both FIDs. If both are less than 33,000 the pair is counted in our memory resident table (See Fig 1). Otherwise the pair is emitted as a KV pair with a value of 1. Once the process finishes, all the frequent pairs found in the memory table are emitted as KV pairs with their values being their counts rather than 1s. A final pass reads in all the emitted pairs, aggregates them ?a la Map-Reduce?, and eliminates the infrequent ones.
+
+A support level of 0.1% produces 9,919 frequent FIDs.
+
+The potential pairs generated will fit in a square table of size 9,919 x 9,919. We have sufficient memory to accommodate a table that has a side of 33,000. So for this support level the entire computation proceeds in memory making it extremely fast. And no further optimization is needed.
+
+TABLE V.  PAIRS GENERATED FOR 0.01% SUPPORT LEVEL  k=1 items 47,286 Total number of KV pairs  generated from webdocs data 23,382,204,891  Pairs counted in memory 22,938,692,793 Pairs emitted during the process  because they could not be counted in memory  443,512,098  Frequent pairs emitted at the end of the calculation  307,401,070  Total pairs emitted by process 750,913,168 Percentage pairs emitted because  they did not fit in memory 1.9%   A support level of 0.01% produces 47,286 FIDS. We  count pairs that have both FIDS less than 33,000 in memory.
+
+This time we emit KV pairs when either FID is over 33,000.
+
+Because we are using frequency based item IDs most of the generated KV pairs are counted in memory. We only need to emit 443 million instead of 23,382 billion KV pairs. This reduces the amount of data emitted from 350 gigabytes (the amount emitted by a simple Map-Reduce) to 6.5 gigabytes, allowing us to generate our results in under 20 minutes.
+
+Fig 1 ? Distribution of pairs for 0.01% support. 22.9 Billion KV-pairs  counted in the in-memory 33,000?33,000 matrix of counts. 0.4 Billion KV- pairs  emitted    C. Single Core 0.001% Support Using All 6GBMemory The above technique does not work so well when mining  with a 0.001% support level. In this case Table VI shows we are dealing with a square whose side is 223,282.
+
+TABLE VI.  PAIRS GENERATED FOR 0.001% SUPPORT LEVEL  k=1 items 223,282 Total number of KV pairs  generated from webdocs data 24,481,791,476  Pairs counted in memory 22,938,692,793 Pairs emitted during the process  because they could not be counted in memory  1,543,098,683  Frequent pairs emitted at the end of the calculation  307,401,070  Total pairs emitted by process 1,850,499,753 Percentage pairs emitted because  they did not fit in memory 6.3%   Emitting 6.3% KV pairs sounds ok until you realize that  this still causes 1.5 billion pairs to be emitted occupying over 20 GB of disk space. This is 18 times better than a simple Map-Reduce (which would generate over 360 gigabytes of data), but we can do much better.
+
+Fig 2 ? Distribution of pairs for 0.001% support. 22.9 Billion1 KV-pairs counted in a 33,000?33,000 matrix of counters. 1.5 Billion KV-pairs emitted.
+
+D. Multi-Core 0.001% Support Using 100 Cores Belonging to 25 CPUs Our second technique uses multiple processes to generate  the results. In our illustrative example we use 100 processes to handle a support level of 0.001%. Because each computer has 4 cores and 6 gigabytes of memory we know that each process can safely use 1 gigabyte of memory without causing any disk IO. (The rest is reserved for the operating system, other variables and disk buffers). This means that each process can safely hold 256 million 32-bit counters in memory. We know that we are dealing with 223,282 FIDs.
+
+This means that each process can fit into memory a range of 1,150 values for the first FID of the pair when combined with all the values for the second FID of the pair. 1,150 rows represents 0.5% of the total number of rows. So we can generate our results using 200 processes as shown in Table IX.
+
+TABLE VII.  COUNTING WHEN 200 CORES ARE AVAILABLE  Rows? ?Columns 1 thru 230,000? Process  1-1150 ?..256 million counters?.. 1  1151-2300 ?..256 million counters?.. 2  2301-3450 ?..256 million counters?.. 3  ?..256 million counters?.. ?  226551-227700 ?..256 million counters?.. 198  222701-228850 ?..256 million counters?.. 199  228851-230000 ?..256 million counters?.. 200  We do not want to use FIDs with this technique because the process that handled the first few FID numbers (Process 1 in Table VII) would take a lot longer to complete. We can replace FID numbers with something more random. Rather   1 This is the same number as for Fig 1, and it is not a coincidence.
+
+The frequency rank of items depends on the dataset, not the support level used.
+
+than sorting the items by the number of hits we simply assign 1 to the most frequent item, 2 to the next frequent item and so on. These sequential items (SID)s distribute the processing adequately as can be seen in Table IX.
+
+If we only have 100 cores available we have to create a script that processes two different sets of rows one after the other. Doing things this way ensures that the second set cannot start running until the first one completes, and therefore we won?t accidentally set up a situation where the computer has to page memory.
+
+TABLE VIII.  COUNTING WHEN 100 CORES ARE AVAILABLE  Rows? ?Columns 1 thru 230,000? Process  1-1150 ?..256 million counters?.. 1  1151-2300 ?..256 million counters?.. 2  2301-3450 ?..256 million counters?.. 3  ?..256 million counters?.. ?  226551-227700 ?..256 million counters?.. 3  222701-228850 ?..256 million counters?.. 2  228851-230000 ?..256 million counters?.. 1   Passing through the entire Webdocs data set once with a  Unix wc command takes about 60 seconds. Running our java program that looks at all the transactions, generates all the pairs, and counts the appropriate ones in memory takes an average of 4.5 times as long, with the fastest process taking 211 seconds and the slowest process taking 419 seconds. The final set of results from the final process completes less than 12 minutes after the mining starts.
+
+TABLE IX.  PAIRS GENERATED FOR 0.001% SUPPORT LEVEL  k=1 items 223,282 Total pairs generated from webdocs data 24,481,791,476  Frequent Pairs 51,053,891 Time taken by fastest pass 211 secs Time taken by slowest pass 419 secs   Because of the way we are distributing the data we can  be certain that everything will scale reasonably linearly. For example, using 25 cores belonging to 7 systems, with each process making 4 passes takes 25 minutes. Also, as expected, we didn?t see any significant differences in performance when we used 25 cores on 25 different systems.
+
+In a heterogeneous environment where different cores have different performance characteristics it is ok to give different cores different numbers of rows to process.
+
+Providing that the number of rows is small enough to fit the entire results table in memory, and the run time for each cpu/memory with its supplied number of rows isn't significantly slower than the norm.
+
+E. Filtering Out Unreasonable Results The 1.25 million frequent pairs generated at a support  level of 0.1% are too many to be useful. To resolve this     problem we need to filter out all the pairs where the relationship appears to be accidental. Using confidence meets this need. It only requires a minor change to the code, and did not affect the amount of time required to generate results. Table X shows that using this technique reduced this 1.25 million to 1,511 (approx 1000:1) for the case where we assume that a frequent pair is interesting only if either one of its items appears 85% of the time in the pairs.
+
+TABLE X.  CONFIDENT PAIRS  Support Frequent Pairs  25% Confident  Pairs  50% Confident  Pairs  80% Confident  Pairs  10% 729 0 0 0 1% 112,394 3,265 1,351 353  0.1% 1.25*106 11,457 3,732 1,680 0.01% 8.37*106 26,032 13,110 8,949  0.001% 51.1*106 304,658 173,788 118,854 Support Frequent  Pairs 85%  Confident Pairs  90% Confident  Pairs  95% Confident  Pairs 10% 729 0 0 0 1% 112,394 301 118 118  0.1% 1.25*106 1,511 1,170 1,117 0.01% 8.37*106 8,528 7,901 7,600  0.001% 51.1*106 99,219 94,686 90,345
+
+V. INTERPRETATION OF RESULTS  A. Support Produces Too Much Noise It is hard to say what a reasonable support level is before  the results have been produced. It depends on the data being analyzed and the information we are attempting to glean from that data. With our techniques it is possible to produce results really quickly. This makes it feasible to mine for very low support levels.
+
+Once we have our frequent pairs we can then obtain the numbers of pairs for multiple confidence levels with a few seconds worth of processing. As can be seen in Table X above, there are only 304,658 pairs that have even a 25% confidence level.
+
+When we use what we think is a reasonable support level of 0.1% for this data set we generated 1.25 million frequent pairs. This was reduced to 1,511 pairs once we limited our results to those pairs with a confidence level of at least 85%.
+
+This type of filtering ensures that the reported results are valuable.  It is equally essential when mining for longer sets of frequent items. We recommend this use of confidence (or better still h-confidence [11]) at a moderate level (70-90%) for this purpose. We understand that doing so will dramatically change the way we view some of the existing data mining code. But we also believe that this is necessary if we want to evaluate how well these algorithms produce meaningful results.
+
+B. Map-Reduce Is Sometimes Very Inefficient Map-Reduce is not a magic solution to all multi-core  problems. We have demonstrated that with a bit of thought we could reduce the amount of data emitted by the Map processes by a factor of 20-30. We also showed that by carefully choosing the exact way the memory is used we can almost totally eliminate the Reduce step.
+
+It also turns out that language libraries can cause lots implicit disk IO as well as burning lots of extra cpu cycles, and that is something that needs more attention when using Map-Reduce for simple computations on large data sets. It is easy to lose the performance gains that Map-Reduce can deliver by simply making a wrong choice in programming language when that language causes unexpected paging.
+
+C. Size Is Meaningless Without Support This research makes it clear that the absolute size of the  data set being evaluated is not a fair representation of the effort required to mine that data set. For example, the size of the Webdocs data set is approximately 1.25 gigabytes, but most of that size is noise at high support levels.
+
+It is more accurate to state that it is 250 megabytes when the support level is 10% and 600 megabytes when the support level is 5%. We suggest that using the effective size of the data set (obtained after stripping out all the k=1 infrequent items) is a much better measure when comparing results. This number is still inaccurate because the number of potential candidates generated depends on the square of the number of items appearing in each transaction, but it is nonetheless a step forward by making it easier to compare results among different datasets.
+
+D. Apriori Is Better Than The Literature Suggests One of the supposed weak points of the Apriori algorithm  is that it requires multiple passes through the data. The timings generated by this paper show that when mining for low support levels this is irrelevant. The time to pass sequentially through the data is insignificant when compared with the time required to generate and count the candidates.
+
+In fact I would predict that if we mine the same datasets with different well-coded algorithms on the same computer loaded with enough memory to fit the entire working set of intermediate and final results Apriori will produce similar run times to other minimg algorithms.
+
+E. A Potential Real-World Application Table VII shows that if we have 200 cores each with  1GB of memory then we can efficiently count pairs for 230,000 unique values. This number happens to be approximately the number of words in the English language.
+
+Suggesting that this technique can be used to count word pairs found in continuous text streams and compare them real-time for various purposes such as determining who is generating the output or fraud detection. (Small numbers of infrequent highly correlated results).
+

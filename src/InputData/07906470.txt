@@ -1,0 +1,384 @@
+A Parallel Multiclassification Algorithm for Big Data Using an Extreme Learning Machine
+
+Abstract? As data sets become larger and more complicated, an extreme learning machine (ELM) that runs in a traditional serial environment cannot realize its ability to be fast and effective. Although a parallel ELM (PELM) based on MapReduce to process large-scale data shows more efficient learning speed than identical ELM algorithms in a serial environment, some operations, such as intermediate results stored on disks and multiple copies for each task, are indispensable, and these operations create a large amount of extra overhead and degrade the learning speed and efficiency of the PELMs. In this paper, an efficient ELM based on the Spark framework (SELM), which includes three parallel subalgorithms, is proposed for big data classification. By partitioning the corresponding data sets reasonably, the hidden layer output matrix calculation algorithm, matrix ? decomposition algorithm, and matrix V decomposition algorithm perform most of the computations locally. At the same time, they retain the intermediate results in distributed memory and cache the diagonal matrix as broadcast variables instead of several copies for each task to reduce a large amount of the costs, and these actions strengthen the learning ability of the SELM. Finally, we implement our SELM algorithm to classify large data sets. Extensive experiments have been conducted to validate the effectiveness of the proposed algorithms. As shown, our SELM achieves an 8.71? speedup on a cluster with ten nodes, and reaches a 13.79? speedup with 15 nodes, an 18.74? speedup with 20 nodes, a 23.79? speedup with 25 nodes, a 28.89? speedup with 30 nodes, and a 33.81? speedup with 35 nodes.
+
+Index Terms? Big data, classification, extreme learning machine (ELM), matrix, parallel algorithms, Spark.
+
+Manuscript received January 26, 2016; revised October 28, 2016; accepted January 6, 2017. This work was supported in part by the Key Program of National Natural Science Foundation of China under Grant 61432005, in part by the National Outstanding Youth Science Program of National Natural Sci- ence Foundation of China under Grant 61625202, in part by the International (Regional) Cooperation and Exchange Program of National Natural Science Foundation of China under Grant 61661146006, in part by the National Nat- ural Science Foundation of China under Grant 61370095 and Grant 61472124, in part by the International Science & Technology Cooperation Program of China under Grant 2015DFA11240 and Grant 2015AA015303, and in part by the Natural Science Foundation of Hunan Province of China under Grant 2015JJ4100 and Grant 2016JJ4002. Kenli Li is the author for correspondence.
+
+M. Duan and X. Liao are with the Collaborative Innovation Center of High Performance Computing, National University of Defense Technology, Changsha 410073, China (e-mail: duanmingxing16@nudt.edu.cn; xkliao@ nudt.edu.cn).
+
+K. Li is with the College of Information Science and Engineering, Hunan University, Changsha 410082, China (e-mail: lkl@hnu.edu.cn).
+
+K. Li is with the College of Information Science and Engineering, Hunan University, Changsha 410082, China, and also with the Department of Computer Science, State University of New York at New Paltz, New Paltz, NY 12561 USA (e-mail: lik@newpaltz.edu).
+
+Color versions of one or more of the figures in this paper are available online at http://ieeexplore.ieee.org.
+
+
+
+I. INTRODUCTION  A. Motivation  DATA mining [1] has become a powerful technique forvaluable information discovery, and in data mining, classification is one of the fundamental problems. Support vector machine [2], Naive Bayes [3], and extreme learning machine (ELM) [4] are three important classification algorithms for big data at present. Huang et al. [4] proposed the ELM for training single layer feedforward networks, and this approach updates only the output weights while the hidden neuron parameters are randomly assigned [5]. Because of its properties of good generalization performance, fast training speed, and little human intervention, ELM is not only widely used for processing binary classification [6] but also used for multiclassification [7]. By reducing the storage space, ELM has been proved to be an efficient and fast classification algorithm [8], [9]. However, as the training data becomes larger and more complicated, due to the limitations of memory in traditional serial environments and the intensive compu- tation for the inverse of large matrices in ELM, traditional ELM cannot give full play to its efficient classification ability.
+
+To overcome the problems mentioned earlier, it is necessary to scale up conventional extreme machine learning techniques by using massively parallel frameworks (e.g., Hadoop, Spark, and so on). During the process of computation of ELM, the most expensive part of the calculation is the Moore?Penrose generalized inverse matrix (M-PGIM), which is decomposable, and thus, we can compute this matrix in parallel. In recent work, several parallel ELM (PELM) algorithms have been computed based on MapReduce, and they obtained good performance. He et al. [10] proposed a PELM based on MapReduce, which shows an efficient method for addressing regression problems. Compared with the PELM algorithm, the ELM* [11], [12] algorithm uses one MapReduce stage instead of two, which reduces the transmission cost and enhances the processing efficiency. Based on ELM*, Xin et al. [11], [12] proposed the ELM*-Improved algorithm, which outperforms the PELM and ELM* algorithms by performing a local summation of elements in the matrix.
+
+Although PELM algorithms based on MapReduce are used to handle big data classification, there are many map and reduce tasks during the stages. The intermediate results generated during the map stages are written onto disks, while during the reduce stages, they are read from disks into Hadoop distributed file system (HDFS). There is no doubt that the process seriously increases the communication cost and  See http://www.ieee.org/publications_standards/publications/rights/index.html for more information.
+
+This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+Fig. 1. Simple example for the RDD lineage graph.
+
+I/O overhead and degrades the learning speed and efficiency of the system. Furthermore, there are several copies for each task within MapReduce, which increase the additional overhead of the system. Last, MapReduce does not offer a good fault tolerance mechanism. If one node hangs up, then the tasks in that node will be assigned to other nodes, and reprocessed again, which leads to more cost during the process.
+
+Relative to Hadoop, Spark is designed to process data- intensive applications with distributed memory-based archi- tectures and provides similar scalability and fault tolerance characteristics [13]. The key part in Spark is an abstrac- tion called the resilient distributed data set (RDD), which is regarded as a handle for a collection of individual data partitions. All operations are based on RDDs, and RDDs can be cached in memory across nodes, which can be reused in multiple MapReduce-like parallel operations. Thus, when we calculate the M-PGIM, the multiple occurrences of the variables and intermediate variables can be cached in memory instead of on disks, which reduces the communications costs and I/O overhead. Through partitioning, Spark allows users to control the layout of the key-value pairs, which ensures that a set of keys that will be accessed together stay on the same node. That operation not only minimizes the network traffic but also provides significant speedup. For example, based on a hash-partition operation, we might partition an RDD into 50 partitions, such that the keys that have the same hash value modulo 50 will appear on the same node.
+
+By transformation operations, new RDDs arise, and Spark monitors the set of dependencies between different RDDs, called the lineage graph. Therefore, according to the lineage characteristic, it can recompute any RDDs that are required.
+
+Furthermore, that approach also provides good fault tolerance, and if a partition is lost, the RDD can recover the lost partition quickly. Fig. 1 shows a simple lineage graph example. Based on the dependencies among the RDDs, the DAGScheduler in Spark forms a directed acyclic graph (DAG) of stages for each job, which is an important reason why Spark processes big data faster.
+
+B. Our Contributions  In this paper, we propose an improved PELM based on Spark (SELM), which consists of three important parallel subalgorithms: parallel hidden layer output matrix calculation (H-PMC) algorithm, parallel ? matrix decompo- sition (?-PMD) algorithm, and parallel V matrix decomposi- tion (V-PMD) algorithm. These algorithms adequately exploit the strengths of the Spark framework to speed up the process of calculating the M-PGIM. Therefore, that process accelerates  the process of ELM classifying big data. While maintaining a competitive accuracy on the test data, our SELM achieves a significant speedup compared with the baseline ELM algo- rithm implemented on a single machine. More importantly, our SELM algorithm outperforms other PELM algorithms based on MapReduce by exhibiting a significant performance improvement in terms of the learning speed and efficiency as well as maintaining the training and testing accuracy.
+
+The major contributions of this paper are summarized as follows.
+
+1) We propose an efficient parallel method called SELM to process the multiclassification of big data based on Spark. By partitioning the data set reasonably, our SELM algorithm attempts to execute most of the com- putations locally. More importantly, it retains in memory the repeated variables and many intermediate results, which accelerates the learning speed.
+
+2) We develop three efficient parallel algorithms to speed up the ELM? training stage. More importantly, for the ?-PMD algorithm, the matrix I/? is a diagonal matrix, which means that there is less memory utilized to process the nonzero elements. Therefore, it is cached as broadcast variables, which means that the I/? matrix is cached on each node, which reduces a large amount of transmission cost during the computation process.
+
+Afterward, we implement the parallel SELM algorithm for big data classification.
+
+3) We conducted a performance evaluation according to two aspects: medical big data classification and hand- written digit recognition. For the first aspect, we tested the performance of SELM with regard to four aspects: the different dimensionalities of data sets; different num- bers of hidden nodes; different numbers of records; and different numbers of workers. For the second aspect, we recognized handwritten digits using our SELM under different numbers of hidden nodes and different numbers of workers. These experiments revealed the performance benefit of our SELM algorithm, which outperforms other PELMs based on MapReduce by exhibiting a significant performance improvement in terms of the learning speed and efficiency, and it can fulfill the requirements of many real-world applications.
+
+The remainder of this paper is organized as follows.
+
+Section II reviews the related work. Section III gives prelimi- nary information. Section IV discusses the SELM performance model analysis. Section V describes the proposed algorithms.
+
+The experiments and results are illustrated in Section VI.
+
+Finally, we present our conclusions in Section VII.
+
+
+
+II. RELATED WORK  ELM was first proposed by Huang et al. [4] and is used to process regression and classification based on single hidden layer feedforward neural networks (SLFNs). Huang et al. [4], [7], [14] noted the essence of ELM as the following: 1) the hidden layer of SLFNs with wide a type of hidden neurons that need not be tuned and 2) the output weights can be adjusted based on application-dependent optimization constraints.
+
+This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+DUAN et al.: PARALLEL MULTICLASSIFICATION ALGORITHM FOR BIG DATA USING AN ELM 3  1) Improved ELM Variants: Recently, to exploit the good performance of the ELM, many improved ELM variants have been developed. Feng et al. [15] proposed a dynamic adjust- ment ELM mechanism, which could further tune the input parameters of insignificant hidden nodes, and they proved that it was an efficient method. Gastaldo et al. [16] proposed a random projections (RP) ELM model that analyzed relation- ships between the feature mapping structure and the paradigm of RP in the ELM. The experimental results showed that RP-ELM combined generalization performance and compu- tational efficiency. Other improved methods based on ELM have been proposed, such as error minimized ELM [17], optimally pruned ELM [9], multilayer ELM [18], hierarchical ELM [19], hierarchical local receptive fields ELM [20], and so on. There is no doubt that the improved ELM variants provide better performance and efficiency compared with the basic ELM. However, these variants face two problems: 1) a high computational cost from taking the inverse of large matrices and 2) an enormous runtime memory requirement.
+
+To solve these problems, an effective method is to develop efficient parallel algorithms.
+
+2) Parallel Variants of ELM: He et al. [10] first proposed the PELM for regression problems based on MapReduce.
+
+The essential aspect of the method involves how to calcu- late the generalized inverse matrix in parallel. In the PELM method, two MapReduce stages are used to compute the final results. As shown in our experiments, PELM achieves a 7.23? speedup, a 10.51? speedup, a 15.01? speedup, an 18.91? speedup, a 22.01? speedup, and a 26.49? speedup when the nodes are 10, 15, 20, 25, 30, and 35, respectively.
+
+There is no doubt that there is a large amount of I/O spending and communication cost during the two stages, which increase the runtime of the ELM based on the MapReduce framework.
+
+Compared with PELM, Xin et al. [11], [12] proposed ELM* and ELM-Improved algorithms, which use one MapReduce stage instead of two and reduce the transmission cost, thus enhancing the processing efficiency. Experiments show that ELM* gains a 7.77? speedup, an 11.38? speedup, a 16.03? speedup, a 20.73? speedup, a 24.33? speedup, and a 28.01? speedup, while ELM-Improved obtains an 8.09? speedup, a 12.03? speedup, a 16.94? speedup, a 21.87? speedup, a 25.61? speedup, and a 29.58? speedup when the nodes are 10, 15, 20, 25, 30, and 35, respectively. Other PELM variants that are based on MapReduce also accelerate the training of the ELM and present an efficient process, such as ELM-MapReduce [21], distributed kernelized ELM [22], parallel online sequential ELM [23], and so on. However, these algorithms require several copies for each task when MapReduce works, and if one node cannot work, the tasks in that node will be assigned to other nodes and reprocessed again, which leads to more costs during the process.
+
+Furthermore, many intermediate results should be written onto disks during the map stage while the reduce stage reads them from disks into the HDFS. There is no doubt that a large amount of I/O overhead and communication costs are spent in the map and reduce stages, which degrade the learning speed and efficiency of the ELM. In our approach, we propose the parallel SELM, which adequately exploits the strengths of  TABLE I  COMMONLY USED MAPPING FUNCTIONS IN ELM  the Spark framework to improve the learning efficiency of the ELM.
+
+
+
+III. PRELIMINARY INFORMATION  A. Short Review of the Extreme Learning Machine  Huang et al. [4], [24] first proposed ELM for SLFNs. Their approach was extended to the generali zed SLFNS, and its hidden layer is not required to be neuron-alike [19], [25]. ELM first maps the input data from d-dimensional space into the L-dimensional hidden layer random feature space (also called ELM feature mapping), and then through ELM learning, the system achieves the output results. ELM can achieve better generalization performance than the other conventional learn- ing algorithms at an extremely fast learning speed. Moreover, ELM is less sensitive to user-specified parameters and can be deployed faster and more conveniently [7], [26].
+
+1) ELM Feature Mapping: The output function of the ELM network structure for generalized SLFNs is the following:  f (x) = L?  i=1 ?i hi (x) = h(x)? (1)  where ? = [?1, ? ? ?, ?L ]T denotes the output weights? vector between the hidden layer and the output layer with m ? 1 output nodes, while h(x) = [h1(x), ? ? ?, hL(x)] is the output vector of the hidden layer, which is called ELM nonlinear feature mapping. Different activation functions can be used in different hidden neurons [14]. Especially in real applications, hi (x) can be written as follows:  hi (x) = G(ai , bi , x), ai ? Rd , bi ? R (2) where G(a, b, x) denotes a nonlinear piecewise continuous function, and Table I shows the commonly used activation functions. Here, (ai , bi ) expresses the j th hidden node weight vectors and biases, respectively. ELM trains an SLFN that includes two critical stages, and random feature mapping is the first stage. In this stage, by randomly initializing the hidden layer, h(x) maps the data from the d-dimensional input space into the L-dimensional hidden layer random feature space (which is also called the ELM feature space) [20]. Therefore, h(x) denotes a random feature mapping in essence, which is also called ELM feature mapping. ELM learning is the second stage, which we will discuss next.
+
+2) ELM Learning: In contrast to traditional feedforward neural network learning algorithms, without needing to adjust the hidden neural, the goal of ELM theory is not only to reach the smallest training error but also to achieve the smallest norm    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+of the output weights [7], [19], [27], [28]. That goal can be written as follows:  Minimize: ||?||?1? + ?||H? ? T||?2? (3) where ?1 > 0, ?2 > 0, and ?, ? = 0, (1/2), 1, ? ? ? ,+?.
+
+? is a parameter that controls the tradeoff between these two terms. H denotes the hidden layer output matrix, which can be denoted as follows:  H = ? ??  h(x1) ...
+
+h(xN )  ? ?? =  ? ??  h(x1) . . . hL(x1) ...
+
+. . .
+
+...
+
+h1(xN ) ? ? ? hL(xN )  ? ?? (4)  and (5) expresses the training data target matrix  T = ? ??  t1T ...
+
+tN T  ? ?? =  ? ??  t11 ? ? ? t1m ...
+
+...
+
+...
+
+tN1 ? ? ? tNm  ? ??. (5)  There are many efficient methods for computing the output weights ?, such as orthogonal projection methods, singular value decomposition, and iterative methods [20], while accord- ing to [7] and [26], the optimization solution for ELM is ?1 = ?2 = ? = ? = 2, which has been proved to be more stable and has better generalization performance. Therefore, ? can be written as follows:  ? =  ? ????  ????  HT (  I C +HHT  )?1 T, if N ? L  ( I C +HT H  )?1 HT T, if N > L .
+
+(6)  Theorem 1: Universal approximation capability [24], [25], [29], [30]: For any nonconstant piecewise continuous function that is used as the activation function, if the parameters of the hidden neurons are tuned, then the function can make the SLFNs approximate any target continuous function f (x).
+
+Then, according to any continuous distribution probability, the function sequence {hi (x)}Li=1 can be randomly generated, and it has the universal approximation capability, which means that limL??||?Li=1 ?i hi (x)? f (x)|| = 0 holds with probability of one with appropriate output weights ?.
+
+Theorem 2: Classification capability [7]: For any non- constant piecewise continuous function that is used as the activation function, if the parameters of the hidden neurons are tuned, then the function could make the SLFNs approximate any target continuous function f (x), and then, with the random hidden layer mapping h(x), SLFNs can separate arbitrary disjoint regions of any shapes.
+
+Therefore, ELM not only has universal approximation but also possesses classification. From the description mentioned earlier, the process of ELM can be described as follows. First, ELM randomly assigns hidden neuron parameters (wi , bi ), and then, it calculates the hidden layer output matrix H. Finally, we can calculate the output weight vector ?.
+
+Huang et al. [7] also proved that the resulting solution was stable, and the system had better performance when a positive value 1/? was added to the diagonal of HT H or HHT in the calculation of the output weights ? based on the ridge regression theory. When we use ELM to address large-scale  data set, it is easy to find N ? L. Therefore, we can easily compute HT H, because its size is much smaller than that of HHT . The output weights ? can be written as in  ? = (  I ? +HT H  )?1 HT T. (7)  Then, we can obtain the ELM output function  f (x) = h(x)? = h(x) (  I ? +HT H  )?1 HT T. (8)  We use U to denote HT H and V to express HT T, and thus, (8) can be described as  f (x) = h(x)? = h(x) (  I ? + U  )?1
+
+V. (9)  B. Broadcast Variable  When we use Spark to process big data applications, to process small data sets fast, we expect that those data sets are cached on each node, and thus, each task can copy the data from local nodes instead of obtaining it through the remote transmission during the computational process. Broadcast vari- ables are shared variables, and they allow programmers to keep read-only variables cached on each machine rather than shipping a copy of them with the tasks. They can be used, for example, to give every node a copy of a large input data set in an efficient manner. Spark attempts to distribute broadcast variables using efficient broadcast algorithms to reduce the communication costs. It only caches the nonzero element, and a massive diagonal matrix I ? Rn?n can be seen as a small nonzero element data set, such as I = {i1, i2, . . . , in}, for which we can cache the matrix as broadcast variables.
+
+When we calculate (I/? + HT H), I/? is a diagonal matrix, and we keep it in distributed memory as broadcast variables.
+
+Therefore, we can cache it on each machine rather than shipping a copy of it with the tasks, which can reduce the communication costs.
+
+C. Resilient Distributed Data Set  RDD [31], the basic abstraction in Spark, represents an immutable, partitioned collection of elements that can be operated in parallel. Each RDD is characterized by five main properties: 1) lists of partitions, as an abstraction in Spark; RDD contains a list of partitions, which are distributed across clusters; 2) a function for computing each split; 3) a list of dependencies on other RDDs, a so-called lineage, and according to it, the DAGScheduler forms a DAG of stages for each job; 4) optionally, a partitioner for key-value RDDs (e.g., to say that the RDD is hash-partitioned); and 5) option- ally, a list of preferred locations to compute each split (e.g., the block locations for an HDFS file).
+
+As a read-only data set, RDD can be created by numbers of operations [e.g., sc.textFile (?hdfs://.../data.txt?)] based on data in stable storage or other transformation operations in Spark (e.g., map, join, and so on). There are two types of primary operations in Spark: transformations and actions.
+
+This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+DUAN et al.: PARALLEL MULTICLASSIFICATION ALGORITHM FOR BIG DATA USING AN ELM 5  No actual operations are carried out in the process of transfor- mation until action operations occur. During the process of the transformation operation, RDD transforms into other different forms of RDDs, and this process does not need to be executed until it meets the action operation. That means that there are no actual operations during the process of transformation while each RDD remembers their parents and their children, their so-called lineage. Fig. 1 shows a simple lineage graph example. That provides good fault tolerance without requiring replication, by tracking how to recompute lost partitions that start from the base data on disk. That process reduces a substantial amount of the cost such as storage, recomputation, communications, and so on. When we use Spark to process ELM based on RDDs, this method enhances the learning ability and learns massive amounts of data efficiently.
+
+The reason why Spark addresses big data faster is that it builds a DAG graph, which reduces a large amount of overhead during the process. DAGScheduler makes the whole process form a DAG according to the dependencies between the RDDs, which makes the Spark framework work efficiently. When we use ELM to process big data classification on Spark, ELM can learn quickly and efficiently based on the DAG graph.
+
+In addition, persistence and partitioning are two other important parts of RDDs that can be controlled by users. Based on the characteristic of persistence, the users can choose a relevant storage strategy for RDDs. In our SELM algorithm, we choose an in-memory strategy to cache the intermediate results and the repeated variables, which accelerates the whole calculation process. Partitioning the data set reasonably not only minimizes the network traffic but also provides significant speedups.
+
+
+
+IV. ANALYSIS OF SELM PERFORMANCE: MODEL ANALYSIS  A. Analysis of Data Set Partitioning  The data sets in MapReduce are divided into many subdata sets, and the number of subdata sets depend on the size of the map tasks that are running in parallel. Compared with MapReduce, the data set in Spark forms an RDD, which represents a read-only collection of data partitions. Because the correlation calculations of the matrix are decomposable, they can be computed in parallel. The data sets in our work are in the form of matrixes, and thus, we try our best to design an effective algorithm to process them in parallel. As we discussed earlier, the number of partitions for RDD can be controlled by the programmers, and different partitions will cause different results. Therefore, we try our best to make more computations performed locally by partitioning the data sets reasonably.
+
+As two important data sets, the training data set and the randomly generated hidden neurons parameters data set are transformed into RDDs in the initial stage. We assume the RDDs are called Rx and Ry . The results of the hidden layer nodes are the outputs from Rz , because all of the computations of Rx are based on the rows, while Ry and Rz are based on the columns. We partition Rx according to the rows, while Ry and Rz are based on the columns. Hence, according to our analysis for partitioning the RDDs, when we calculate  the output of the hidden layer, we obtain the corresponding output of the hidden nodes from the different partitions, which reduces a large amount of the cost.
+
+We use ? = {(xi , ti )|xi ? Rn , ti ? Rm , i = 1, 2, . . . , N} as our training data set, and the randomly generated hidden neu- ron parameters data set can be written as {(w j , b j ) | w j ? Rn, b j ? R, j = 1, 2, . . . , L}. Therefore, we can obtain the j th hidden node output as follows:  hi j = xi1w1 j + xi2w2 j + ? ? ? + xinwnj + b j . (10) Based on the analysis mentioned earlier, we should make  each hidden layer node an independent partition, which can reduce the communication cost and the I/O overheads, and make more operations executed locally. Based on the analysis mentioned earlier, we divide the randomly generated hidden node parameters data set into L partitions according to the sizes of the hidden layer nodes.
+
+B. Analysis of the Matrix Computation on Spark  We have analyzed the division for the matrix, and next, we discuss the advantage of Spark for matrix computing.
+
+According to the analysis mentioned earlier for basic ELM, the most expensive computation is calculating M-PGIM, while the matrix multiplication operator is an important part of M-PGIM. As is known, the matrix multiplication operator is decomposable, and we can calculate it in parallel.
+
+Although all of the partitions are distributed across different nodes, in-memory computing, the scheduling mechanism, and the high fault tolerance property make all of the partitions of RDDs calculate quickly and efficiently in parallel. Each operation for the matrix is computed in memory (e.g., matrix- vector multiplication, matrix addition, subtraction, and so on).
+
+We cache the repeated variables, and the intermediate results in memory, in such a way that the computation process should not reprocess them again or reread from the disks, which reduces a large amount of the computation costs and I/O spending.
+
+When all of the partitions of the RDDs are executed while one partition is lost, the lost part will be reconstructed quickly according to the lineage. While on the MapReduce framework, the tasks of the bad nodes should be reassigned to new nodes and be recomputed; this process takes a large amount of overhead. The efficient fault tolerance makes the SELM process big data classification more stable, fast, and efficient.
+
+
+
+V. PROPOSED ALGORITHMS  A. Parallel Extreme Learning Machine on Spark  1) H-PMC Algorithm: Based on the analysis of part A in Section IV, training data sets and randomly generated hidden neuron parameter data sets are obtained from HDFS form RDDs in Spark, and we assume them to be Rx and Ry , respec- tively. To make most of the computations computed locally, Rx and Ry are divided into L partitions. They are collections of the data sets, and all of the data will be preprocessed.
+
+Afterward, they will be in the form of ?key, value? pairs. For example, hi j denotes the i th row and the j th column element, and thus, ?i, j? is equivalent to a key. When we calculate    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+Algorithm 1 H-PMC Algorithm Require:  Training samples ? = {(xi , ti ) | xi ? Rn , ti ? Rm , i = 1, 2, . . . , N}; Randomly generated hidden neurons parameters dataset {(w j , b j )| w j ? Rn , b j ? R, j = 1, 2, . . . , L}.
+
+Ensure: The hidden layer output matrix.
+
+1: Parse the training samples and hidden node dataset; 2: Partition the training samples into L partitions according  to the rows of the samples; 3: Partition hidden nodes dataset into L partitions according  to the columns; 4: value ? ?; 5: key ? ?; 6: M ? ?; 7: for each partition of Rx and Ry in parallel do 8: for z ? 1 to N do 9: value ? value ? {  n? i=1 (x[z][i ] ? w[i ])+ b[ j ]}  ( j denotes the corresponding partitions of Ry); 10: key ? key ? {< z, j >}; 11: M ? M ? {< key, value >}; 12: end for 13: end for 14: Cache M in distributed memory; 15: Return hidden layer output matrix.
+
+Fig. 2. Hidden layer output matrix.
+
+the j th hidden node output matrix, its size is 1? N , and the intermediate key is the i th output result of the j th hidden node.
+
+The intermediate value is the output results. The intermediate key and the value will be kept in collection M , and M will be cached in memory, which aims to accelerate the processing of the later calculations. Algorithm 1 gives pseudocode for the hidden layer output matrix on Spark.
+
+Algorithm 1 has two parts. In the first part (Lines 1?6), there are many operations, such as the following: parsing the data sets, partitioning the data sets, and variable initialization.
+
+The second part is also an important part, which is used to calculate the hidden layer output matrix. It can be learn from Algorithm 1 that the whole computation is surrounded by Ry , and we give a simple example to explain the detailed steps of Algorithm 1 in Fig. 2.
+
+As shown in Fig. 2, the hidden node data set matrix is divided into L parts, and all of the parameters of each hidden  node will be maintained in one partition. Because the hidden node data set will form Ry , the partitions will be Py1, . . . , Py L .
+
+In other words, Ry has L partitions, and each partition caches all of the parameters of the corresponding hidden nodes. To perform the computations more conveniently, the training data set is also divided into L parts. Rx denotes the training data set, and the partitions will be Px1, . . . , Px L . All of the partitions of Rx and Ry are distributed over different nodes, and we compute the hidden layer output matrix in parallel. Afterward, we can obtain the hidden layer output matrix H, and it is cached in the following form in memory:  H = ?  ?? {?1, 1?, value11} ? ? ? {?1, L?, value1L}  ...
+
+. . .
+
+...
+
+{?N, 1?, valueN1} ? ? ? {?N, L?, valueN L }  ?  ??. (11)  2) ?-PMD Algorithm: According to (5), hi j = g(w j ? xi + b j ), we can find that  ui j = N?  z=1 hTiz hzj =  N?  z=1 hzi hzj  = N?  z=1 g(wi ? xz + bi )g(w j ? xz + b j ) (12)  vi j = N?  z=1 hTiz tz j =  N?  z=1 hzi tz j =  N?  z=1 g(wi ? xz + bi)tz j . (13)  We have calculated the hidden layer output matrix H, and according to the the matrix H, (12) and (13) can be written as follows:  ui j = N?  z=1 valuezi valuez j (14)  vi j = N?  z=1 valuezi tz j . (15)  According to (14), ui j can be expressed by the summation of valuezi multiplied by valuez j , in which valuezi denotes the zth element in the i th column of H, while valuez j expresses the zth element in the j th column H. We can also find that vi j is the summation of valuezi multiplied by tz j , which is the zth element in the j th column of t.
+
+According to many of the experiments for generalized ELM, we find that the whole calculation process uses most of its time in processing the matrix Moore?Penrose generalized inverse operator in output weight vector calculation. As an efficient parallel computation framework, we use Spark to compute the matrix Moore?Penrose generalized inverse operator. According to (7), we use ? to denote (I/? + HT H).
+
+In Algorithm 1, we have calculated the hidden layer output matrix H, and it is cached in memory in L partitions. The intermediate key and value will be kept in collection Q, and Q will be kept in memory. Each partition expresses the output of the corresponding hidden node, and each partition expresses an N ?1 dimension matrix. For example, the i th hidden node    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+DUAN et al.: PARALLEL MULTICLASSIFICATION ALGORITHM FOR BIG DATA USING AN ELM 7  Algorithm 2 ?-PMD Algorithm Require:  Hidden layer output matrix H; The L ? L dimension diagonal matrix I/ ?.
+
+Ensure: The output weight vector matrix.
+
+1: Broadcast variables ? diagonal matrix I/ ?; 2: outvalue ? ?; 3: endkey ? ?; 4: Q ? ?; 5: for each partition of two RDDs in parallel do  6: outvalue ? outvalue ? { N?  z=1 (value[z][i ] ?  value[z][ j ])} (i , j denote the corresponding partitions of two RDDs);  7: endkey ? endkey ? {< i, j >}; 8: if i equals to j 9: outvaluei j ? 1/?;  10: end if 11: Q ? Q ? {< endkey, outvalue >}; 12: end for 13: Cache Q in distributed memory; 14: Return output weight vector matrix.
+
+Fig. 3. Computation process of matrix ? on Spark.
+
+output matrix is the following:  hzi = ?  ?? {?1, i?, value1i }  ...
+
+{?N, i?, valueNi }  ?  ??. (16)  Algorithm 2 has two parts. Part one (Lines 1?4) is mainly initialization, and part two (Lines 5?13) calculates the matrix ?. Fig. 3 shows the detailed process for Algorithm 2.
+
+Based on the analysis mentioned earlier, the whole output of each hidden layer node is in an independent partition, as shown in Fig. 3. Rz denotes the hidden layer output, and its partitions can be depicted as Pz1, Pz2, . . . , PzL . From (14), we can learn that we only multiply all of the corresponding elements of each column in two matrixes, and we obtain HT H, for example, u11 = value11 ? value11 + value21 ? value21 + ? ? ? + valueN1 ? valueN1. At the same time, we calculate the matrix ?. Therefore, the results of ? can be  Algorithm 3 V-PMD Algorithm Require:  Hidden layer output matrix H; The N ?m dimension sample training result matrix t.
+
+Ensure: The output weight vector matrix.
+
+1: Partition training samples result matrix into m partitions according to the columns;  2: endvalue ? ?; 3: outkey ? ?; 4: R ? ?; 5: for each partition of Rz and Rd in parallel do  6: endvalue ? endvalue ? { N?  z=1 (value[z][i ] ? t[z][ j ])}  (i , j denote the corresponding partitions of two RDDs); 7: outkey ? outkey ? {< i, j >}; 8: R ? R ? {< outkey, endvalue >}; 9: end for  10: Cache R in distributed memory; 11: Return output weight vector matrix.
+
+written as follows:  ? U =  ? ?? ?1, 1?, outvalue11 ? ? ? ?1, L?, outvalue1L  ...
+
+. . .
+
+...
+
+?L, 1?, outvalueL1 ? ? ? ?L, L?, outvalueL L  ? ??.
+
+(17)  3) V-PMD Algorithm: Equation (15) tells us that the output matrix of all of the elements of each column in matrix HT  multiplied by the corresponding elements of each column in t is matrix V. The intermediate key and value will be kept in collection R, and R will be cached in memory.
+
+The pseudocode for the matrix V computation on Spark is described in Algorithm 3.
+
+In Algorithm 3, we first parse the training samples result matrix t, and we then partition the matrix. Afterward, we calculate matrix V (Lines 5?10).
+
+At this time, the process of computing matrix V is so similar to Algorithm 1 that we simply display the output of matrix V.
+
+Based on (15), we realize the calculation of matrix HT and matrix t on Spark, and we obtain matrix V, for example, v11 = value11 ? t11 + value21 ? t21 + ? ? ? + valueN1 ? tN1.
+
+Afterward, matrix V can be depicted in  V = ?  ?? ?1, 1?, endvalue11 ? ? ? ?1,m?, endvalue1m  ...
+
+. . .
+
+...
+
+?L, 1?, endvalueL1 ? ? ? ?L,m?, endvalueLm  ?  ??.
+
+(18)  4) SELM for Classification: We have mentioned that the most expensive computational part of ELM is the computation of the matrix, and the above-mentioned parts have calculated M-PGIM, matrix H?. At that time, all of the parameters for the SELM algorithm are confirmed, and then, we implement the SELM algorithm to classify the testing data sets. At the same time, we use the testing results to verify whether the    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+Algorithm 4 SELM Algorithm Require:  The testing dataset matrix ? = {(xi , ti )|xi ? Rn, ti ? Rm, i = 1, 2, . . . ,M}; The output weight matrix ?z = {?z1, ?z2, . . . , ?zm, z = 1, 2, . . . , L}.
+
+Ensure: The testing results of SELM.
+
+1: The testing dataset Algorithm1???????? the hidden layer output  matrix H; 2: Parse the output weight matrix ?; 3: Partition the matrix H into L partitions according to the  columns; 4: Partition the matrix ? into L partitions according to the  rows; 5: value? ? ?; 6: key ? ? ?; 7: ? ? ?; 8: for each partition of RDDs in parallel do  9: value? ? value? ? { L?  z=1 value[i ][z] ? ?[z][ j ]}  (i , j denote the corresponding partitions of two RDDs) 10: key ? ? key ? ? {< i, j >}; 11: end for 12: ? ? ? ? {< key ?, value? >}; 13: Return testing results of SELM ? .
+
+performance is good or not. As is known, the ELM output is f (x) = H(x)? = o, and thus, we use the Spark framework to calculate the matrix H(x) and ?. At this time, matrix x denotes the testing data sets not the training data sets, while the method that is used to compute H(x) is the same as in Algorithm 1. We use the method to compute the H(x) matrix.
+
+How to divide matrix ? is a key problem. We assume that the size of the testing data set is M ? n, and the output of H(x) is depicted in  H = ?  ?? {?1, 1?, value11?} ? ? ? {?1, L?, value1L ?}  ...
+
+. . .
+
+...
+
+{?M, 1?, valueM1?} ? ? ? {?M, L?, valueM L ?}  ?  ??  (19)  while matrix ? is written as follows:  ? = ?  ?? {?1, 1?, ?11} ? ? ? {?1,m?, ?1m}  ...
+
+. . .
+
+...
+
+{?L, 1?, ?L1} ? ? ? {?L,m?, ?Lm }  ?  ??. (20)  The output of H(x) is divided into L partitions. To be convenient for the next computation, matrix ? will be divided into L partitions according to the columns, and these partitions are distributed over the node randomly.
+
+Based on the analysis mentioned earlier, the pseudocode for the SELM algorithm is described in Algorithm 4.
+
+Algorithm 4 describes the major mechanism of the SELM algorithm, which mainly contains two parts. The main work of part one (Lines 1?7) is initializing the testing data set  Fig. 4. SELM for big data classification on Spark.
+
+and matrix ? and calculating matrix H. The second part is also important (Lines 8?12), and it classifies the testing data.
+
+Afterward, we give a simple example to explain the detailed steps for the whole process in Fig. 4.
+
+We summarize the implementation of the SELM algorithm, which mainly includes two phases, as follows. In the first phase (computing the output weight matrix using the H-PMC algorithm, ?-PMD algorithm, and V-PMD algorithm), the H-PMC algorithm is used to calculate the hidden layer output matrix, while the ?-PMD algorithm and V-PMD algorithm compute matrix M-PGIM. The steps of the three mentioned algorithms are similar, and the general process is as follows.
+
+1) Parse the data sets, and divide them into corresponding partition sizes to reduce the communications costs and I/O overhead.
+
+2) Calculate the corresponding output matrix.
+
+In the second phase (classifying the testing data sets using  the SELM algorithm), the SELM algorithm uses the para- meters that are generated by the H-PMC algorithm, ?-PMD algorithm, and V-PMD algorithm to classify the testing data sets.
+
+1) Compute the hidden layer output matrix of the testing data set H according to Algorithm 1.
+
+2) Parse the data set, and divide them into corresponding partitions.
+
+3) Classify the testing data set, and based on the results, analyze the performance of our proposed SELM.
+
+B. Performance Analysis for SELM  1) Accuracy Analysis for SELM: In this paper, accuracytraining denotes the training accuracy rate, and accuracytest ing expresses the testing accuracy rate. In our experiments, we find that the missing classification rate is smaller than the accuracy rate, and thus, we use the missing classification rate to calculate the accuracy rate. We use misstraining and misstest ing to, respectively, denote the training and testing missing numbers in the classification.
+
+N denotes the number of training samples, and M expresses the number of testing records. Therefore, the training accuracy rate can be written as in  accuracytraining = 1? misstraining  N (21)    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+DUAN et al.: PARALLEL MULTICLASSIFICATION ALGORITHM FOR BIG DATA USING AN ELM 9  and the testing accuracy rate can be written in  accuracytesting = 1? misstesting  M . (22)  The purpose of our SELM algorithm is to accelerate the learning process and improve the efficiency of the whole process while maintaining or improving the testing accuracy.
+
+Zhou et al. [32] mentioned that the accuracy increases when increasing the number of hidden layer nodes. The equations that are used to calculate the output weight matrix ? in our SELM algorithm are substantially the same as in the naive ELM. Our SELM algorithm calculates matrix H, matrix ?, and matrix V based on Spark, which enhances the learning speeding effectively compared with naive ELM. More specifi- cally, all of the parameters (e.g., w j , b j , I, xi , and so on) and all of the equations [e.g., (7), (8), and so on] are the same as in the naive ELM, while our algorithms make the ELM classify big data fast and effectively, which mean misstraining and misstest ing of ELM and SELM are almost the same under the same conditions. Therefore, by classifying the same input data set with identical parameters, accuracytraining and accuracytest ing of the naive ELM and SELM are completely identical, and we verify this claim by several experiments.
+
+2) Runtime Analysis for SELM: In this section, we analyze the performance benefit of the SELM algorithm. Because the PELM algorithms based on MapReduce are basically similar, we use TPELM to denote the runtime of the PELM algorithms based on MapReduce. In particular, a speedup of a system on h servers can be depicted as follows:  speedup = computing time on 1 computer computing time on h computers  . (23)  The runtime of stand-alone ELM consists of two parts, i.e., the computation of matrix ? and the classification for the test- ing data set. We assume that the time of computing N training samples is t1 N and that the time of calculating M testing samples is t2 M . Therefore, the runtime of the traditional ELM is the following:  TELM = t1 N + t2 M. (24) Equation (24) can roughly estimate the runtime, and to  better analyze the performance benefit of our SELM algorithm over PELM based on MapReduce, we make a more detailed analysis on the runtime. According to the discussion men- tioned earlier, we know that ELM spends most of its time on calculating the matrixes, including H, ?, and V while matrix ? and matrix V need more time to be processed than matrix H.
+
+The size of the input data sets is directly proportional to the runtime of matrix H, which we use T1(N, n) to denote, where N denotes the number of samples, and n is the dimensionality of each sample. T1 stands for a positive function, which means that when the value of N or n is increased, the value of T1(N, n) increases. The runtime of ? and V is, respectively, T2(N, L) and T3(N, L,m), where L is the size of the hidden layer nodes, and m denotes the output layer nodes. Relative to the runtime of the training data set, the runtime of the testing data set is also an important part of the whole process time, and we use T4(M, n, L,m) to denote it, where M stands for  the size of the testing data sets. Hence, the runtime of PELM on one server can be written as  TELM = T1(N, n) + T2(N, L) + T3(N, L,m) + T4(M, n, L,m) (25)  while the calculation time of SELM on one server can be depicted in  T ?ELM = T1?(N, n) + T2?(N, L) + T3?(N, L,m) + T4?(M, n, L,m). (26)  When we use PELM based on MapReduce to process the same training data sets and testing data sets as expressed earlier, the PELM based on MapReduce also consists of the computation of matrix ? and the classification for the testing data set. To make a fair comparison with SELM, we assume that there are ? instances that work in parallel. In the training phase, there are ? workers who participate in parallel, and the training data sets are distributed among the workers. Hence, the runtime of this phase is t ?1 [N/?]. During the testing phase, ? workers participate in parallel, and therefore, the runtime of this phase is t ?2 [M/?]. During the two phases, the communication time of each mapper or node is t3. We should know that there is a high probability that one or several nodes cannot work and that the system should reallocate the tasks and recompute them. We use P to denote the probability, and the recalculation time is t4. Therefore, the total time of the PELM based on MapReduce can be written as follows:  TPELM = t ?1 N  ? + t ?2  M  ? + t3 + Pt4. (27)  According to the analysis of (25), the parallel process- ing runtime of matrix H, matrix ?, and matrix V on MapReduce is, respectively, T1(N/?, n), T2(N/?, L/?), and T3(N/?, L/?,m/?). The runtime of processing the testing data set is T4(M/?, n, L/?,m/?). Therefore, (27) can be depicted in  TPELM = T1(N/?, n)+ T2(N/?, L/?)+ T3(N/?, L/?, m/?) + T4(M/?, n, L/?, m/?) + t3 + Pt4. (28)  Our SELM also calculates matrix ? and classifies the testing data set. During the process of the computation, we can imagine that there are ? nodes that take part in the computation in parallel. Due to the lineage characteristic, the lost RDDs or partitions can be recomputed in subseconds, and we use t ?4 to denote this time. P ? denotes the corresponding probability.
+
+We use t ?3 to represent the communication time, and the total time of the SELM is depicted in  TSELM = t1?? N ? + t2??M  ? + t3? + P ?t4?. (29)  Without loss of generality, (29) can be written as (30) based on the analysis mentioned earlier  TSELM = T1?(N/?, n)+ T2?(N/?, L/?)+ T3?(N/?, L/?, m/?) + T4?(M/?, n, L/?, m/?)+ t3? + P ?t4?. (30)    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+TABLE II  DETAILED INFORMATION OF DATA SETS  Therefore, we can approximate ?1 as follows: ?1 = T1(N, n)+T2(N, L)+T3(N, L,m)+T4(M, n, L,m)(  T1 ( N ? , n  )+ T2 ( N ? ,  L ?  )+ T3 ( N ? ,  L ? ,  m ?  )  +T4 ( N ? , n,  L ? ,  m ?  )+ t3 + Pt4  ) .
+
+(31)  In addition, ?2 can be written as follows: ?2  = T1 ?(N, n) + T2?(N, L) + T3?(N, L,m)+T4 ?(M, n, L,m)(  T1? ( N ? , n  )+ T2? ( N ? ,  L ?  )+ T3? ( N ? ,  L ? ,  m ?  )  +T4? ( N ? , n,  L ? ,  m ?  )+ t3? + P ?t4? ) .
+
+(32)  From (31) and (32), we observe that as N , L, or m increases, the speedup becomes larger and finally converges to a certain value. For small data sets, the effect of the communication, reading, and writing costs are obvious, and they have a great impact on the speedup. If we increase the size of the samples, the size of the dimensionality, or the size of the hidden layer nodes, the speedup is small. When the data sets become larger, the runtime is so dominant that the effect of the communication, reading, and writing cost on the speedup is nearly invisible. At that time, when we increase the size of the data sets or the size of the hidden layer nodes, the speedup becomes greater and converges to a certain value.
+
+As we have described, our SELM algorithm partitions the data sets reasonably, based on which additional computations are performed locally. At the same time, we cache the diagonal matrix I/? as broadcast variables, which means that it is cached on each node, in such a way that each task can copy the data from a local node instead of obtaining data through remote transmission during the computation process.
+
+Similar to the broadcast variables, we can keep the repeated data and intermediate results in distributed memory instead of recomputing them or rereading them from disks while in the MapReduce framework, and the intermediate values should be written into HDFS, which heavily increases the communication and I/O costs. In the MapReduce framework, when one or several nodes cannot work, the tasks in that node will be reallocated to other active nodes and recomputed, which requires a large amount of time, whereas Spark will compute the lost partitions or RDDs according to the lineage in subseconds. Therefore, we can find that relative to t3 and Pt4, t ?3 and P ?t ?4 occupy a small proportion of the total runtime.
+
+More importantly, we can approximate TPELM > TSELM under the same condition based on the analysis mentioned earlier.
+
+Hence, under the same condition, ?2 > ?1, and ?2 can quickly converge to a certain value. We will use several experiments to verify our analysis in Section VI.
+
+
+
+VI. EXPERIMENTS  In this section, we depict the experimental setup first.
+
+Then, we compare the performance of our SELM with the PELM [33] algorithm, ELM* [11] algorithm, and ELM*-Improved [11] algorithm for different tasks.
+
+A. Experimental Setup  1) Experiment for Medical Big Data: All of the parallel algorithms, such as PELM, ELM*, ELM*-Improved, and our SELM, are run on a cluster, while ELM runs on an independent server. Because we have been told that PELM has the same accuracy as naive ELM with the same data set and parameters, we verify that theory. Each server has a 2T disk, 2.5-GHz core, and 16-GB memory. In this cluster, one computer is used as the master node, and the others are used as slave nodes. The independent server has 2T disk, 2.5-GHz core, and 32-GB memory. All of the servers have the Ubuntu 12.04 Operation System, and we implement Hadoop 2.4.0, scala 2.10.4, Java Development Kit 1.8.0?25, and Spark 2.0.0 on this cluster while MATLAB R2011b is deployed on the independent server. In our experiments, the origin data sets are taken from our medical data mining project [34], and then, we compute a large amount of process- ing. In our finished work [34], we have presented these data sets in detail. All of the inputs (attributes) have been normal- ized to the range [?1, 1], while the class labels have been normalized to [0, 1]. Afterward, we obtained our synthetic data sets, and they were used to evaluate the performance of our SELM algorithm with several PELM algorithms based on the platform described earlier. The data sets are Patient (S1), Outpatient (S2), Medicine (S3), Breast Cancer (S4), Heart Disease (S5), Chronic Kidney Disease (S6), Hepatitis (S7), Gastritis (S8), and Hypertension (S9).
+
+In our experiments, each experiment has been performed more than ten times, and then, we obtain their correspond- ing averages, including training accuracy, testing accuracy, and performance speedup. All of the synthetic data sets are shown in Table II, and the different numbers of hidden nodes    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+DUAN et al.: PARALLEL MULTICLASSIFICATION ALGORITHM FOR BIG DATA USING AN ELM 11  TABLE III  ACCURACY OF ELM FOR MULTICLASSIFICATION ON DIFFERENT PLATFORMS  are 20, 50, 100, 150, 200, 250, 300, 350, and 400. The hidden layer node activation function used in our experiment is the sigmoid function. In Table II, the File Size denotes the size of data set, and the Dimensionality stands for the features. The Sample Size denotes the number of samples, and the Training Sample Size expresses the number of training samples, while the Testing Sample Size denotes the number of testing samples. The brackets stand for the size of data sets.
+
+2) Experiment for Pattern Recognition: Without loss of gen- erality, we use SELM to process handwritten digit recognition task and test its performance on the well-known MINIST data set [35]. The data set consists of 70 000 images (including 60 000 training images and 10 000 test images), and each image is 28 ? 28 gray-scale pixels. Because more hidden neurons can extract the discriminative features, we set the hidden neurons to be 500, 1000, 1500, 2000, 2500, and 3000.
+
+More importantly, we also test our SELM? performance on different numbers of workers, and the workers are set to be 10, 15, 20, 25, 30, and 35. Without loss of generality, each experiment will be performed more than ten times; the average training error rate and test error rate and the average training time and test time will be presented.
+
+B. Accuracy of the ELM for Multiclassification on Different Platforms  In this section, we use the data sets to verify our theory that the accuracy of ELM classification for the same data set with the same parameters is identical in different platforms.
+
+The experimental platform for ELM is MATLAB R2010b on one server, while the PELM algorithm, ELM* algorithm, and ELM*-Improved algorithm are Hadoop 2.4.0 with ten servers in parallel. Our SELM algorithm is performed on a Spark framework with ten servers in parallel. In those experiments, the number of hidden layer nodes is 20. The averages of the experimental results are illustrated in Table III.
+
+From Table III, we find that the corresponding accuracy rates of the same data set with the same parameters in different platforms are almost the same. Although we use different calculation frameworks to process the data sets, the essence of the classification is that they use the same equations, the same data sets, and the same hidden layer parameters.
+
+Different platforms accelerate the learning speed and enhance the learning efficiency, while their accuracies are almost the same as the accuracy in the serial environment.
+
+As shown in Table III, we also know that with an increase in the data sets, the accuracy of the naive ELM declines. As is known, all of the computations are calculated in memory, and many smaller intermediate results will be cached in memory. When there is not sufficient memory, some new intermediate results will cover the front results, which causes some important data to be lost or overflow. Compared with naive ELM, big data sets are distributed across several servers in our SELM algorithm, and during the computation, the system has sufficient memory to process such data set. At the same time, we can cache more intermediate data in memory, and when some data are lost, Spark can recompute the lost data according to the lineage. All of these characteristics make the accuracy of SELM stable.
+
+C. Performance of SELM Under Different Conditions  1) Results on Runtime: We use several experiments to validate the performance of our SELM under different dimen- sionalities of the data sets, different numbers of hidden nodes, different numbers of records, and different numbers of work- ers. For different dimensionality conditions, we used S1, S2, S3, S4, and S5 to test the performance, and the number of hidden layer nodes was 50 while the number of servers was 10.
+
+For the different numbers of hidden nodes, the hidden nodes were set to be 50, 100, 150, 200, 250, 300, 350, and 400, and the data set was S1 with ten servers. For different numbers of records, the samples were S1, S6, S7, S8, and S9, and the hidden layer node was 50, while the size of the cluster was 10. For different numbers of workers, the samples were S1, and the hidden layer node was 400. Fig. 5(a)?(d) shows our SELM algorithm compared with the PELM algo- rithm, ELM* algorithm, and ELM*-Improved algorithm, under different conditions.
+
+Fig. 5(a)?(c) shows that with an increase in the dimension- ality (n), the number of hidden layer nodes (L), the size of the samples (N), the training time, and the testing time all increase. When we increased the dimensionality, we had to spend more time calculating the hidden layer output matrix H.
+
+We know that the system should spend most of its time com- puting M-PGIM, which includes computing the N ? L matrix and L ? L matrix, and an increase in the dimensionality of the data set does not have a large influence on the size of M-PGIM. Therefore, the runtime for calculating the matrix H increases with the increase in the dimensionality, while the    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+Fig. 5. Runtime under different conditions. (a) Runtime under different dimensionality. (b) Runtime under different hidden nodes. (c) Runtime under different size of samples. (d) Runtime under different workers.
+
+Fig. 6. Speedup under different conditions. (a) Speedup under different dimensionality. (b) Speedup under different hidden nodes. (c) Speedup under different size of samples. (d) Speedup under different workers.
+
+whole runtime keeps growing slightly. For different numbers of hidden layer nodes (L), when the value of L increases, the time that is used to process ? and V increases in both cases. At the same time, the communication cost and I/O overhead also become larger. Therefore, the entire runtime increases under this condition. When we increase the size of the samples (N), the time used to process matrix H, matrix ?, and matrix V all increase, while the communication, reading, and writing costs become larger. Fig. 5(d) also shows that the runtime decreases with an increase in the size of the workers, and more workers can speed up the whole calculation process to a certain extent.
+
+It can be seen from Fig. 5 that the performance of our SELM is better than that of the ELM*, ELM*-Improved, and PELM. PELM has two MapReduce phases, and in the first phase, with the increase in the dimensionality, it has spent more time to compute the matrix H. At the same time, two MapReduce phases mean more overhead, including computation, communication, and I/O cost, which cause PELM to cost the most time to realize the ELM.
+
+Relative to the PELM algorithm, the ELM* algorithm, and ELM*-Improved algorithm use one MapReduce phase to finish the classification, which reduces a large amount of the cost.
+
+On the other hand, the ELM*-Improved algorithm leverages the local summation of the corresponding elements in the matrix, in such a way that it reduces the transmitting time and has better performance than the ELM*. Compared with the PELM algorithms mentioned earlier, our SELM partitions the data sets reasonably, which ensures that most of the calculations are processed locally. During the computation process, many intermediate results can be cached in distributed memory instead of storing them on disks or HDFS, which reduces substantially the transformation cost and accelerates the whole computational process. At the same time, Spark takes less time to recompute the lost data because of lin- eage, while MapReduce must redistribute the lost node tasks and recompute them, which heavily increases the overhead.
+
+Therefore, we can conclude that TSELM < TPELM, TSELM <  TELM?, and TSELM < TELM*-Improved.
+
+2) Results on Speedup: To better analyze the performance  of SELM, we computed the corresponding speedups and performed a comparison among the PELM algorithms based on MapReduce under different conditions. In Fig. 6(a)?(d), we found that with an increase in the dimensionality of the data sets, numbers of hidden nodes, numbers of records, and numbers of workers, the speedups of PELM, ELM*, ELM*- Improved, and our SELM all increase. In theory, the speedup should be equal to the number of parallel processors, but it is less than that because of communication, I/O overhead, and so on. For the increase in the dimensionality of the data set or the size of the samples, when the data set is small, the calculation costs are relatively small both in stand-alone and parallel plat- forms, which means that the stand-alone algorithms can finish the whole process at a fast speed and the parallel algorithms cannot obtain high speedups. As the value of n or N increases, the calculation cost of the correlation matrices increases, which means that more memory and processing units are required, to enable the parallel algorithms to gain a better speedup. For different hidden nodes, the changing process for speedup is the same as those for the different dimen- sionalities and samples mentioned before. With the increase in the number of workers, the systems can acquire obvious speedups.
+
+At the same time, when the data sets become larger, the computation costs are dominant, while the other costs are nearly invisible. Therefore, the speedups increase and converge to a certain value. Our SELM splits the data set reasonably, which makes many computations to be performed locally as possible and lowers the communication cost and I/O cost.
+
+Because of the characteristic of lineage, our SELM has good fault tolerance, in such a way that it processes lost data quickly.
+
+As is known, in the MapReduce framework, during the shuffle stage, the intermediate results should be kept in HDFS, and they should be read from the HDFS during the reduce stage, which heavily increases the additional overhead. Therefore, we can conclude that ?2 > ?1, which means that our SELM    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+DUAN et al.: PARALLEL MULTICLASSIFICATION ALGORITHM FOR BIG DATA USING AN ELM 13  TABLE IV  EVALUATION RESULTS FOR MNIST DATABASE UNDER DIFFERENT NUMBERS OF HIDDEN NODES  TABLE V  EVALUATION RESULTS FOR MNIST DATABASE UNDER DIFFERENT NUMBERS OF WORKERS  has the highest speedup compared with other PELMs based on MapReduce.
+
+D. Performance of SELM for Handwritten Digit Recognition 1) Evaluation Results for the MNIST Database Under  Different Numbers of Hidden Nodes: In this section, we present the performance of our SELM for handwritten digit recognition under different numbers of hidden nodes (500, 1000, 1500, 2000, 2500, and 3000). This time, we set the number of workers in the cluster to be 10. Each experiment  will be tested ten times and we will obtain the average of each experiment as the final results. We show the evaluation results in Table IV.
+
+From Table IV, we find that with an increase in the number of hidden neurons, there is no doubt that the corresponding training error rates and testing error rates for ELM, PELM, ELM*, and ELM*-Improved descend, while their training time and testing time increase. It can be seen that TSELM < TPELM, TSELM < TELM?, and TSELM < TELM??Improved under the same number of hidden neurons, and the speedups for PELM,    This article has been accepted for inclusion in a future issue of this journal. Content is final as presented, with the exception of pagination.
+
+ELM*, ELM*-Improved, and SELM approximate 7.2, 7.8, 8.1, and 8.7, respectively. We also find that the training error rate and the testing error rate under the same number of hidden neurons are nearly identical, which have nothing to do with the different parallel platforms. Although we evaluate different algorithms on different parallel platforms, the essence of the whole calculation process is in using the same data sets, the same equations, the same hidden layer parameters, and so on, which means that the main contribution of parallel platforms is in speeding up the computing processes. At the same time, under the same hidden neurons, the training error rates and testing error rates fluctuate and our SELM obtains a lower training error rate and testing error rate due to its good cache strategy, fault tolerance, and lineage, which are mentioned earlier.
+
+2) Evaluation Results for the MNIST Database Under Different Numbers of Workers: We also present our SELM? performance compared with different ELM algorithms for handwritten digit recognition under different numbers of work- ers (10, 15, 20, 25, 30, and 35). This time, we set the hidden nodes to be 2000. Without loss of generality, each experiment will be tested ten times and we calculate the average of each experiment as the final result. Table V presents the final average results.
+
+It can be seen from Table V that with an increase in the number of workers, the training time and the testing time of each algorithm decrease, while the training error rates and testing error rates of ELM on different parallel platforms are approximately the same. There is no doubt that the parallel platform can speed up the whole calculation.
+
+We can learn from Table V that our SELM obtains the highest speedup among the compared parallel algorithms.
+
+That finding is mainly due to our well designed program, which makes full use of the excellent characteristics of Spark.
+
+At the same time, the reason why the error rates are almost the same is that the essence of PELM, ELM*, ELM*- Improved, and SELM is still the ELM structure and all of the equations, the training data sets, hidden nodes, and so on, which are the same, such that the error rates stay nearly the same.
+
+
+
+VII. CONCLUSION  In this paper, we proposed a novel SELM algorithm that is based on the Spark parallel framework to speed up the whole computing process of ELM for big data. First, we proposed an SELM algorithm that consists of three subalgorithms: the H-PMC algorithm, ?-PMD algorithm, and V-PMD algorithm, which make full use of a series of Spark?s good characteristics, including fault tolerance, persist/cache strategies, partitioning controlled by users, and so on, to speed up the process of decomposing the M-PGIM. Afterward, we implemented the SELM algorithm to classify big data. We presented the process of implementing the SELM algorithm for big data classification in detail in this paper and made a performance analysis for our SELM with the compared algorithms. Finally, we conducted a large number of experiments to test the performance of our SELM for medical big data classification and handwritten digit recognition under different conditions.
+
+The experimental results show that our SELM obtains the highest speedup compared with PELM, ELM*, and ELM*-Improved while guaranteeing the accuracy as being the same as traditional ELM under the condition of the same parameters.
+

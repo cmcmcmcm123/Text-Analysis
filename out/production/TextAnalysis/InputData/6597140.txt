@@ -1,0 +1,198 @@
+Massive Parallel Join in NUMA Architecture Wei He, Minqi Zhou, Xueqing Gong, Xiaofeng He[1]
+
+Abstract? Advance in hardware technology and growing de- mands for fast response of database application have led to active research in In-Memory Database (IMDB). Compared to traditional on-disk database, IMDB has advantages such as faster access to storage and simpler internal optimization algorithms.
+
+Because of the importance of join operation in database system, join algorithm is always a hot research topic and many join algorithms have been proposed for distributed database system.
+
+Nevertheless, due to the nature of memory access in Non- Uniform Memory Access (NUMA) architecture, most existing join algorithms for classic Symmetric Multi-Processing (SMP) architecture cannot be applied to NUMA architecture directly.
+
+In this work, we present the Distributed Bitmap Join algorithm designed exclusively for IMDB in NUMA architecture. This Distributed Bitmap Join algorithm aims at improving the overall performance for groups of queries, rather than just one single query, by utilizing bitmap to reduce the communication cost in NUMA architecture. The comparative experiments of Distributed Bitmap Join algorithm against no-partition hash join show that although no-partition hash join algorithm is faster than Distributed Bitmap Join in single query case, our algorithm outperforms it for a group of queries.
+
+
+
+I. INTRODUCTION  Traditional database management systems mainly rely on hard disk for data storage. For applications such as mobile computing and online advertising [1] where the real time response is one of the major concerns, operations which have to access data stored in disk no longer satisfy the requirement.
+
+A system with fast data access capability hence becomes much desired. As the result of hardware technology improvement, computer systems witness the development from single CPU to multi-core and many-core processors which dramatically accelerate the processing speed. On the other hand, this improvement makes the problem of memory wall worse in that the race condition for memory usage is more prominent even if larger memory becomes available, which makes it possible for the data to reside in memory. To partially address this issue, the Non-Uniform Memory Access (NUMA) is designed for multi-core system such that each processor accesses its local memory faster than shared memory. NUMA effectively solves the memory-access related starvation problem in Symmetric Multi-Processing (SMP) architecture [2] [3].
+
+In-Memory Database (IMDB) refers to database systems that primarily rely on main memory for data storage [4].
+
+In recent years, fast development in memory, network, and processor has greatly changed database system. With cheaper RAM, IMDB is available for database application. Faster  1Xiaofeng He is the corresponding author.
+
+memory-access ensures better performance of IMDB than tra- ditional on-disk database system. Elimination of sophisticated data scheduling strategies also simplifies internal optimization algorithms as well [5] [6].
+
+As a frequently-used yet expensive operation in database application, join has been studied for a long time and many join algorithms have been proposed in various application scenarios. Despite its overall performance gain, however, there still exists some problems in optimizing join algorithms for distributed IMDB: data skew, synchronization cost, commu- nication cost, as well as the computation cost [5]. Due to the advantages of NUMA over SMP, optimization of join algorithms for IMDB in NUMA architecture attracts many research efforts [7].
+
+In this paper, we analyze two typical join algorithms, both of which are suitable for multiprocessing, yet inevitably with some inherent flaws. We gain some insight by applying these two algorithms to NUMA architecture and analyzing their re- spective advantages and disadvantages under NUMA. Inspired by the analysis results, we propose the Distributed Bitmap Join algorithm for distributed IMDB in NUMA architecture. In the experiments, we compare Distributed Bitmap Join algorithm with no-partition hash join algorithm in NUMA. The no- partition hash join is faster than Distributed Bitmap Join in single query case, but when applied to a group of queries, our algorithm is more efficient than no-partition hash join.
+
+This paper makes three major contributions.
+
+? We analyze two typical optimized join algorithms, the radix join and Massive Parallel Sort-Merge Join (MPSM), in NUMA and compare their respective pros and cons.
+
+This analysis reveals the root of their problems, and inspires the design of Distributed Bitmap Join algorithm.
+
+? We propose Distributed Bitmap Join algorithm that opti- mizes a group of queries rather than one single query.
+
+? We perform extensive experiments comparing Distributed Bitmap Join algorithm and no-partition hash join algo- rithm in NUMA architecture. The result shows that our method outperforms no-partition hash join, and is not af- fected by data skew. Considering skewness is ubiquitous in many real-life data, this result is significantly useful.
+
+The rest of this paper is organized as follows. In Section II, we introduce related work for join operation in IMDB setting.
+
+Section III presents our Distributed Bitmap Join algorithm. We present the algorithm implementation and experimental results in Section IV and Section V respectively, and conclude the paper in Section VI.
+
+2013 IEEE International Congress on Big Data  DOI 10.1109/BigData.Congress.2013.37
+
+II. RELATED WORK  The first database engine that supports both in-memory and on-disk tables in a single database was released in 2003 [8]. Since then, the research on IMDB has been very active.
+
+In addition to the faster memory-access and simpler internal optimization algorithms, IMDB also avoids the long seek time of disk storage, which makes itself very useful in applications requiring real-time response.
+
+HANA DB of SAP [9] is one of the most famous IMDBs, while HANA is designed as a new application architecture that offers real-time analytics and aggregation capability. To catch up the pace of rapid development of Internet and multime- dia, as well as the growing requirement for semi-structured, unstructured, and text data processing, HANA DB provides three in-memory storage engines: Relational Engine, Graph Engine, and Text Engine, which allows users to store relational data, graph data, and text data into one system. Furthermore, HANA offers a memory-based solution to big data challenges which process big data problem in large memory. HANA DB has 1TB RAM at its first launch which can support 5TB uncompressed data. By the end of 2011, 8TB RAM is available on market. So far HANA DB can run on servers with 100TB memory capacity. HANA?s success in IMBD further stimulates the research in this field [10] [11].
+
+Join is one of the most used operations in relational database. Its optimization is a hot topic for database re- searchers due to its high complexity. For traditional nested loop join, the time complexity is O(?R???S?), where R and S represent input relations of a join operation, and ???represents the size of a relation. Simple join between two large tables is apparently not suitable. Many optimized join algorithms have been proposed for SMP architecture, such as sort-merge join and hash join. The efficiency of sort-merge join is limited by sorting algorithms, while the performance of hash join is negatively influenced by data skew in many applications. In the meantime, the design of high performance join algorithms for IMDB has developed into two directions: minimizing the number of processor catch misses and minimizing processor synchronization cost [5]. In general, processor catch misses can be minimized by accessing data sequentially and avoiding too large working set that cannot fit in the data catch. Radix join algorithm is a positive example while no-partition hash join is a negative one [12]. Minimizing processor synchroniza- tion cost, on the other hand, always needs to find the tradeoff between synchronization cost and thread safety.
+
+Radix join algorithm [13] is a typical approach for mini- mizing the number of processor catch misses. In radix join, the partitioning phase divides the input tuples based on the values of their keys, which ensures that the memory can be read sequentially, helping the prefetcher hide the remote access latency. With the utilization of prefetches [14], partitioning can be a way to improve the performance of join operation [12].
+
+The synchronization cost of radix join algorithm in NUMA, however, is not negligible. Almost every step in radix join algorithm requires the outcome of previous steps. It is obvious  that the radix join algorithm needs more synchronization points than other join algorithms. Additionally, because radix join is essentially a hash join algorithm, data skew causes its performance issue.
+
+Another join algorithm is MPSM join which aims at min- imizing processor synchronization cost. In MPSM algorithm, every node in the system is called a worker. In phase 1, each chunk of input relation S is sorted locally, resulting in runs Si. In phase 2, each worker range partitions its chunk of input relation R to runs Ri. In phase 3, each worker sorts Ri locally, and in phase 4, merge joins its Ri with all input runs Si. This MPSM join algorithm does not require any synchronization, and the range partitioning phase helps save the work during join phases. Nonetheless, the range partitioning phase also needs to move large scale of tuples through workers, which leads to large communication cost in NUMA.
+
+Data skew is a difficult problem bothering all researchers studying hash join algorithms. Kim et al. indicates that data skew is a troublemaker to hash join algorithms [13], which makes the optimization of join algorithms even harder. Some efforts have been done to attack data skew problem. Blanas et al. [5] proposes a series of hash join algorithms in mul- tiprocessing environment and discovers that the no-partition hash join algorithm can improve the performance in presence of data skew, whereas they still cannot eliminate the influence entirely. The recently proposed MPSM algorithm tries to solve this problem through a kind of histogram-based technique [15], but this method increases the computation cost among workers.
+
+In this paper, we present Distributed Bitmap Join algorithm that aims at optimizing join operation for IMDB in NUMA architecture by means of reducing communication cost during processing. Distributed Bitmap Join also tries to reduce the influence of data skew, and minimize the synchronization cost and computation cost at the same time. Note that our algorithm tends to optimize the join operation on a group of queries, instead of on a single query.
+
+
+
+III. DISTRIBUTED BITMAP JOIN  NUMA architecture logically keeps consistent with SMP architecture, but the physical implementation is quite different.
+
+In SMP architecture, threads can communicate through shared memory, thus the optimized join algorithms for SMP need to consider more about the processor synchronization cost when accessing shared memory. In NUMA architecture, on the other hand, nodes are connected with QuickPath Interconnect (QPI) and the speed of accessing remote memory is much slower than accessing local memory, therefore special attention needs to be paid to communication cost when designing optimized join algorithms.
+
+Distributed Bitmap Join algorithm is designed to be an optimized join algorithm for equi-join in IMDB in NUMA.
+
+It focuses on reducing both computation cost and remote memory access by utilizing part of intermediate results and bitmap. Distributed Bitmap Join algorithm handles queries in the form of:     Select ? ? ? from R, S where R.key=S.key and oth- er conditions  All tuples reside in main memory. To the ease of reading, we list the used notations in Table I.
+
+TABLE I NOTATIONS  Notation Meaning  R Input relation R S Input relation S MS??R intermediate result of R ?? S N Number of workers in NUMA architecture wi i  th worker Ri R runs on wi Ri.bitmap bitmap of Ri Si S runs on wi Si.bitmap bitmap of Si MS??Ri intermediate result of R ?? S on wi MS??Ri .bitmap bitmap of MS??Ri Ti Temporary result on wi ti Number of Ri tuples that can find a match t Number of R tuples that can find a match kr Number of different key values in R and S  In the following sections, we will first present a basic optimized join algorithm whose main idea is the utilization of intermediate results. After analyzing the complexity of this basic algorithm, we provide our Distributed Bitmap Join algorithm and show that how the use of bitmap can reduce communication cost in NUMA architecture.
+
+A. Basic optimized join algorithm  One simple way to optimize join algorithms in NUMA architecture is to record some intermediate results we have already known. Since communication cost is much a trouble in NUMA architecture, we need to minimize remote memory access in join algorithms. Take as example the execution of a query involving a join operation between relation R and relation S. In basic optimized join algorithm, when we need to match pairs of tuples, we optimize the join operation by reusing the intermediate results, checking those with unknown results instead of all pairs.
+
+In this algorithm, we maintain some special relations to record the results of join operations, and update these relations every time when new results are generated. The input relations of basic optimized join algorithm are relations R and S which are divided into equal sized chunks Ri and Si among all workers. The algorithm can be divided into four steps.
+
+Step 1: wi iterates all tuples in Ri and eliminates those not satisfying join conditions.
+
+Step 2: wi checks whether there is an intermediate result relation MS??Ri in local memory. If so, wi tries to match all the tuples in Ri and MS??Ri , adding the results of successful matches into relation Ti. The tuples in both MS??Ri and Ti are in the form of (v, sid) where v represents key values and sid represents addresses of S tuples in NUMA architecture.
+
+Step 3: wi accesses all chunks Sj in NUMA architecture to match all tuples in Ri which are not matched with tuples in  MS??Ri , adding the results of successful matches into relation Ti.
+
+Step 4: wi performs the actual join action according to the tuples in Ti, and checks whether there is a relation MS??Ri in local memory. If so, wi updates relation MS??Ri with tuples in Ti, or establishes relation MS??Ri before updating otherwise.
+
+The third step of basic optimized join algorithm requires to match tuples in Ri with those in all chunks Sj in NUMA architecture, where hash join algorithms can be adopted. If using no-partition hash join in step 3, the basic optimized hash join algorithm only requires one synchronization point there, and the synchronization cost is low.
+
+B. Pseudo-code of basic optimized join algorithm  We present pseudo code for basic optimized join algorithm in Algorithm 1 below.
+
+Algorithm 1 BASIC OPTIMIZED JOIN ALGORITHM Require: Input relations R and S for join operations Ensure: A relation Qi including the results of S ?? Ri  1: build a relation Ti whose schema is Ti(key, sid) 2: //Step 1: Iterates all tuples in Ri 3: for each tuple tr in Ri do 4: check whether tr satisfies the join conditions other than  equal key.
+
+5: end for 6: //Step 2: Match Ri tuples with MS??Ri tuples 7: if there is a relation MS??Ri in local memory then 8: for each tuple tr in Ri do 9: if there is a tuple tm in MS??Ri such that t-  m.key=tr.key then 10: add (tm.key, tm.sid) into Ti 11: end if 12: end for 13: end if 14: //Step 3: Match Ri tuples with S tuples 15: for each tuple tr in Ri that cannot match with tuples in  MS??Ri do 16: for each worker wj in NUMA architecture do 17: if there is a tuple ts in Sj such that tr.key=ts.key then 18: add (tr.key, ts.sid) into Ti 19: end if 20: end for 21: end for 22: //Step 4: Do join action and update MS??Ri 23: for each tuple (key, sid) in Ti do 24: join the tuple tr in Ri such that tr.key=key with the  tuple ts in S such that ts.sid=sid 25: put the results of join action into Qi 26: end for 27: if there is no relation MS??Ri in local memory then 28: build MS??Ri 29: end if 30: update MS??Ri with Ti     C. Complexity of basic optimized join algorithm  In step 1, wi walks through all tuples in Ri. In step 2, wi iterate all tuples in Ri and tries to find a matching tuple in MS??Ri , where a hash index of MS??Ri can be used to reduce computation cost of this step. In step 3, for each tuple in Ri, all chunks Sj in NUMA architecture are accessed sequentially to find matching tuples. Finally, in step 4, each worker iterates tuples in Ti and does actual join actions accordingly, and updates MS??Ri with Ti tuples.
+
+The time for each worker in basic optimized join algorithm is shown in Table II. The overall complexity of basic optimized  TABLE II COMPLEXITY OF BASIC OPTIMIZED JOIN ALGORITHM  Complexity Action  ?R?/N Iterate all tuples in Ri ?R?/N match all tuples in Ri with tuples in MS??Ri?S?/N Build hash index for relation S ?R? r?/N ?N match each tuple in Ri with tuples in all chunks Sj ti Do actual join action ti Update MS??Ri with Ti  join algorithm is O(?R?/N + ?S?/N + ?R? r?+ ti) Because the basic optimized join algorithm requires only  one synchronization point, the synchronization cost is low. The problem of communication cost, on the contrary, is serious in NUMA architecture due to the reason that each tuple in Ri needs to access all chunks Sj in step 3. In order to solve this problem, we introduce bitmap to our algorithm on the basis of basic optimized join algorithm.
+
+D. Distributed Bitmap Join  Traditional join algorithms usually require to check each pair of R tuple and S tuple to determine whether or not they can match. But most of these actions are just wasteful because not all pairs of tuples can be matched. This forms major bottleneck for join operation. Optimizing this check process is especially critical to join algorithms in NUMA architecture because useless check means unnecessary access to remote memory. Similarly, checking the tuples whose results have already been known should also be avoided.
+
+Distributed Bitmap Join algorithm takes advantage of in- termediate results to eliminate checks on known results, and utilizes bitmap to minimize communication cost caused by useless checks. In this algorithm, every time the results of checks are available, they are recorded to a special relation MS??Ri in local memory. Thus, when we need to check pairs of tuples, we can first match them with tuples in MS??Ri and there is no need to check the ones with known results in NUMA again. When we need to check the pairs whose results are not known, we use a bitmap to find out which tuples can be used for a match and avoid checking the ones that cannot be matched.
+
+The inputs of Distributed Bitmap Join algorithm are rela- tions R and S which are divided into equal sized chunks Ri  and Si among all workers. The algorithm can be divided into four steps.
+
+Step 1: wi iterates all tuples in Ri and eliminates those not satisfying join conditions.
+
+Step 2: wi tries to find MS??Ri for R ?? S in local memory.
+
+If MS??Ri exists, match Ri tuples with MS??Ri tuples via bitmap operations and add the results of successful matches to Ti. The tuples in both MS??Ri and Ti are in the form of (v, sid), where v represents key values and sid represents addresses of S tuples in NUMA architecture. Assign bitmap bm2 the outcome of Ri.bitmap ?MS??Ri .bitmap, and bm1 the outcome of bm2?Ri.bitmap.
+
+Step 3: wi accesses Sj .bitmap in the memory of all workers wj , and obtains bitmaps bm3 as outcomes of bm1?Sj .bitmap.
+
+Then it looks for each Sj tuple whose key values are corre- sponding to 1-bit in bm3, and put the addresses of Sj tuples along with their key values into Ti.
+
+Step 4: wi performs the actual join action according to the tuples in Ti, and checks whether there is a relation MS??Ri in local memory. If so, wi updates relation MS??Ri with tuples in Ti, or establishes relation MS??Ri before updating otherwise.
+
+Distributed Bitmap Join algorithm minimizes the number of S tuples that should be accessed by each worker. The use of intermediate results reduces the computation cost of this algorithm, while bitmap enables us to avoid useless actions.
+
+In addition, with the utilization of bitmap, Distributed Bitmap Join can process data in batch, which is desirable in the massive data situations.
+
+Throughout all steps of the algorithm, only local memory is written, which means Distributed Bitmap Join requires only one synchronization point before step 3 to make sure that Sj .bitmap has already been created. Note that Ri.bitmap and MS??Ri .bitmap can be built before join operations, so there is no requirement for synchronization for them. Thus, this algorithm needs one synchronization point only, hence low synchronization cost.
+
+Since we utilize bitmap in Distributed Bitmap Join algo- rithm, it may lead to a high space complexity. To reduce the space demand, we can use bitmap compression algorithms such as word-aligned hybrid code (WAH) algorithm proposed by Wu et al. [16] [17] [18]. WAH is a run-length encoding algorithm whose main advantage is the efficient support to logical operations of bitmap. Given that the Distributed Bitmap Join algorithm requires frequent logical operations on bitmaps, WAH is a good compression choice.
+
+The behavior of searching MS??Ri , Ri and Sj tuples with key values involved in steps 3 and 4 can be implemented with the help of dictionaries on join keys. The dictionary of a relation is a data structure in information retrieval which allows us to build bitmaps and search data quickly. In our algorithm, the terms in dictionaries are key values and the indexes in those are sids, the addresses of S tuples in NUMA architecture. The dictionaries of relation Ri can be created before join operations and those of relation MS??Ri are maintained at the same time when MS??Ri is updated. The algorithm needs to build the dictionaries of Sj at the first     query dealing with R ?? S, and reuses these dictionaries for follow-up queries. Therefore, the cost of creating dictionaries can be amortized by all queries.
+
+E. Pseudo-code of Distributed Bitmap Join  We present pseudo code for Distributed Bitmap Join algo- rithm in Algorithm 2 below.
+
+Algorithm 2 DISTRIBUTED BITMAP JOIN Require: Input relation R and S for join operations Ensure: A relation Qi including the results of S ?? Ri  1: build a relation Ti whose schema is Ti(key, sid) 2: build bitmaps bm1, bm2, bm3 3: //Step 1: Iterates all tuples in Ri 4: for each tuple tr in Ri do 5: check whether tr satisfies the join conditions other than  equal key.
+
+6: end for 7: //Step 2: Match Ri tuples with MS??Ri tuples 8: if there is a relation MS??Ri in local memory then 9: bm2? Ri.bitmap ?MS??Ri .bitmap  10: bm1? bm2?Ri.bitmap 11: end if 12: for i = 0 to bm2.length do 13: if ith bit of bm2 equals to 1 then 14: find tuple tm in MS??Ri such that tm.key equals to  the key value represented by ith bit of bm2 15: add (tm.key, tm.sid) into Ti 16: end if 17: end for 18: //Step 3: Match Ri tuples with S tuples 19: for each worker wj in NUMA architecture do 20: bm3? bm1 ? Sj .bitmap 21: for i = 0 to bm3.length do 22: if ith bit of bm3 equals to 1 then 23: find tuple ts in Sj such that ts.key equals to the  key value represented by ith bit of bm3 24: add (ts.key, ts.sid) into Ti 25: end if 26: end for 27: end for 28: //Step 4: Do join action and update MS??Ri 29: for each tuple (key, sid) in Ti do 30: join the tuple tr in Ri such that tr.key=key with the  tuple ts in S such that ts.sid=sid 31: put the results of join action into Qi 32: end for 33: if there is no relation MS??Ri in local memory then 34: build MS??Ri 35: end if 36: update MS??Ri with Ti  F. Complexity of Distributed Bitmap Join  Distributed Bitmap Join algorithm is executed in parallel, assuming that the number of workers in NUMA is N . In step  1, all tuples in Ri are accessed sequentially. In step 2, each worker tries to match Ri tuples with MS??Ri tuples locally through bitmap operations, and puts the results of successful matches into Ti. Then, in step 3, each worker matches bm1, one of the results of bitmap logical operations in step 2, with Sj .bitmap of N workers. Finally, in step 4, each worker iterates tuples in Ti and does actual join actions accordingly, as well as updates MS??Ri with Ti tuples.
+
+The performance of bitmap operations depends on the bandwidth in NUMA architecture as well as the compression ratio of WAH algorithm. Assuming the bandwidth in NUMA architecture is B and compression ratio of WAH in this case is c(0 < c < 1), the complexity approximation of each worker wi is shown in Table III. The overall complexity of Distributed  TABLE III COMPLEXITY OF DISTRIBUTED BITMAP JOIN  Complexity Action  ?R?/N Iterate all tuples in Ri kr/B ? c Logical operation on bitmaps kr ? c Iterate bitmap bm2 N ? kr/B ? c Logical operation on bm1 and all Sj .bitmap N ? kr ? c Iterate bitmap bm3 ti Do actual join action ti Update MS??Ri with Ti  Bitmap Join algorithm is O(?R?/N +N ? kr ? c+ ti).
+
+The complexity analysis shows that there are more terms  involving kr than terms involving ?R? and ?S? in the calculation. It is because that in the Distributed Bitmap Join algorithm, we minimize the access to S tuples by utilizing bitmap in order to reduce communication cost in NUMA architecture. kr refers to the number of different key values in relation R as well as relation S, and depends on the layout of key values of these two relations in real cases. In the best case, when most R tuples can match with most S tuples, kr approximately equals to ?R?. In the worst case, on the other hand, when almost none of R tuples can match with S tuples, kr approximately equals to ?R?+?S?. Fortunately, in this case, when few tuple in R matches S tuples, there will be large numbers of continuous 0-bit in the bitmap, which makes the compression ratio of WAH algorithm very small and no performance degradation for Distributed Bitmap Join algorithm.
+
+Because Distributed Bitmap Join algorithm is designed for IMDB in NUMA architecture exclusively, we must take communication cost in NUMA architecture into consideration.
+
+Li et al. [2] evaluated the bandwidth and latency of IBM X Series x3850 X5 system, a NUMA system, to reveal the difference between the speed of local memory access and remote memory access. In general, the speed of local memory access is more than twice as fast as remote memory access for sequential access, which verifies the importance of reducing communication cost of algorithms.
+
+In order to simplify the analysis of communication cost, we focus on remote memory access and ignore all local memory access. In Distributed Bitmap Join algorithm, most     remote memory accesses are in step 3 where each worker needs to access N ? 1 Sj .bitmap and a dictionary of each Sj . Thus, the approximate communication cost can be rep- resented as in Table IV. The overall communication cost  TABLE IV COMMUNICATION COST OF DISTRIBUTED BITMAP JOIN  Remote Memory Access Action  N ? (N ? 1) ? sizeof(bitmap) Access Sj .bitmap t ? sizeof(dictionary entry) Find Sj tuples according to bm3 t ? sizeof(S tuple) Do actual join action  of Distributed Bitmap Join algorithm is (N ? (N ? 1) ? sizeof(bitmap)+t?sizeof(dictionary entry)+t?sizeof(S tuple))/speedof(QPI). t denotes the total number of suc- cessful matches which is usually far smaller than ?S? in join operations. Traditional join algorithms always require more accesses to S tuples, including many invalid ones, whereas in Distributed Bitmap Join algorithm, only t tuples need to be accessed, which largely reduces communication cost of join operations. Although our algorithm needs to access some bitmaps, the size of bitmaps are much smaller than the size of relation S.
+
+
+
+IV. IMPLEMENTATION  Considering that the focus of Distributed Bitmap Join algo- rithm is to optimize a group of queries instead of one single query, we need pay special attention to following components when implementing the algorithm.
+
+A. Dictionary and bitmap  In steps 2, 3, and 4 of Distributed Bitmap Join algorithm, workers need to search tuples by key values. Since the time complexity of sorting algorithms is O(n ? log(n)), we decide not to use sorting in our algorithm [19] [20]. Instead, we use dictionaries to search for tuples quickly.
+
+In Distributed Bitmap Join algorithm, all relations Ri, Si, and MS??Ri require dictionaries. Because creating dictionaries needs to iterate the entire relations, we can pre-compute some of them or reuse them to amortize the cost in the following way.
+
+For relation Ri, the bitmap and dictionary on its key attribute can be pre-computed before calling join algorithms.
+
+This approach not only reduces computation cost of each join operation, but is also be reused by later queries and amortizes the cost.
+
+For relation Si, the bitmaps and dictionaries can be built in Distributed Bitmap Join algorithm at the first time of R ?? S.
+
+Maintaining these structures in memory enables us to reuse them and amortize the cost.
+
+For relation MS??Ri , we can build an empty bitmap and an empty dictionary at the first time of R ?? S, and update them at the same time when we update MS??Ri with Ti tuples.
+
+In this way, the computation cost of this algorithm can be amortized and thus improve the overall performance of a group of queries.
+
+B. Bitmap compression  We use WAH algorithm to compress the bitmaps in our implementation. Because Distributed Bitmap Join algorithm utilizes bitmap to improve its performance, it must deal with the space waste issue since the distribution of 1-bit in bitmap is often very sparse. According to the experiments given by Wu et al. [16], the performance of WAH algorithm is just slightly worse than BBC algorithm of Oracle [21] when the bit density is in [0.0001, 0.5], while the speed of logical operations on compressed bitmap is much faster than that of BBC. Because WAH allows us to do the logical operations on compressed bitmaps directly without decompression, it is desirable in our algorithm.
+
+
+
+V. EXPERIMENTS  We provide some comparative experiments between our algorithm and no-partition hash join algorithm in this section.
+
+The reason why we choose no-partition hash join for compar- ison is that hash join is better than sort-merge join in general [13] and no-partition hash join has good performance at the presence of data skew compared to shared partition hash join, independent partition hash join, and radix partition hash join algorithms [5].
+
+The experiments are implemented in C++, and use interfaces provided by C/C++ head files pthread.h and numa.h [22] [23] to control multi-threads and memory access in NUMA architecture. The source code of our experiments is partly based on the code provided by Kim et al. [13] which is written in C and implements several parallel hash join algorithms in SMP architecture. We use the part of the threads control and relation table structure in our implementation.
+
+A. Platform and experimental data design  Our experiments run on IBM X Series X3950 X5 Server with one TB memory capacity and eight CPUs clocked at 2.40 GHz with 10 physical cores each. The operating system is 64-bit OpenSUSE Enterprise Edition 10.1.
+
+The data set we used in the experiments includes three relations: A, B, and C. These relations have 1,000,000 tuples, 600,000 tuples, and 800,000 tuples respectively. 300,000 tuples can be joined between A and B, while 400,000 tuples can be joined between A and C. In the experiments, all the data resides in main memory.
+
+The query set used in the experiments has following prop- erties. Assuming the first query in the query set is A ?? B, the second query can be regarded as overlapped with the previous one if it is also A ?? B, or it will be regarded as independent if it is not A ?? B. It is obvious that the overlapped queries can reuse intermediate results, so the performance of Distributed Bitmap Join algorithm depends on the overlap ratio of query set to large extent. In the experiments, only the intermediate result of A ?? B will be recorded. In this way, we simulate the condition that wi can find MS??Ri in its local memory for A ?? B, and that wi cannot find MS??Ri in its local memory for A ?? C. We evaluate our algorithm with query sets of different overlap ratios.
+
+?????  ?????  ?????  ?????  ????? ??  ?  ?  ? ??  ??? ??  ??  ??????????  ????????  ?  ????  Fig. 1. Comparison on execution time under different overlap ratios  The form of the queries is as following: Select ? ? ? from R, S where R.key=S.key Each tuple in relations R and S consists of a 64-bit key and  a 64-bit payload.
+
+We compare the performance of Distribute Bitmap Join and  no-partition hash join algorithm from two aspects. One is to compare the running time of both algorithms under different overlap ratios. The other is to compare the running time of both algorithms with different number of threads.
+
+1) Comparison under different overlap ratios: The result of comparison between Distributed Bitmap Join and no-partition hash join algorithms when the overlap ratio of query set ranging from 40 percents to 100 percents is shown in Fig. 1.
+
+The performance of Distributed Bitmap Join algorithm is better than no-partition hash join. In addition, the running time keeps decreasing when the overlap ratio becomes larger. On the other hand, there is almost no change of execution time for no-partition hash join when overlap ratio changes. It is because hash join algorithm itself is not affected by overlapped queries.
+
+If we consider both Join algorithms as two phases: build phase which includes establishing dictionaries, bitmaps, and hash indexes, and join phase which includes matching tuples, then the execution time can be divided into two parts, which is shown in Fig. 2. When the overlap ratio increases, the running time for both build phase and join phase of Distributed Bitmap Join decreases continuously, while a little bit increase appears in build phase of no-partition hash join. For join phase of our algorithm, the running time decrease is due to the utilization of intermediate results which reduces both computation cost and communication cost of join operations, while the decrease for build phase can be attributed to the reuse of various structures, e.g., the bitmaps and dictionaries. As long as one join operation between relation A and relation B has been done, there is no need for creating dictionaries and bitmaps any more. Thus, the amortization of computation cost in build phase leads to a relative high performance overall. Moreover, the increase in build phase of no-partition hash join is because relation C is larger than relation B.
+
+?????  ?????  ?????  ?????  ????? ??? ???????????  ?????????  ? ??? ?????  ?  ????  ???? ??????? ???  ???? ??????? ???  ???? ??????? ???  ????? ??????? ???  ???? ????? ???  ???? ????? ???  ???? ????? ???  ????? ????? ???  ? ?????????  Fig. 2. Comparison on execution time for each phase of both algorithms  ????  ????  ????  ????  ???? ??? ???????????  ?????????  ? ??? ?????  ?  ???  ??????? ?????????  ?? ?? ????  ??????? ?????????  ??? ?? ????  ??????? ?????????  ??? ?? ????  ????? ?????????  ?? ?? ????  ????? ?????????  ??? ?? ????  ????? ?????????  ??? ?? ????  ? ?????????  Fig. 3. Comparison on execution time under different number of threads  2) Comparison under different number of threads: Fig. 3 shows the execution time of both algorithms when different number of threads are used. In this experiment, there is no change of the size of relations, and every relation is divided into equal sized runs among all threads. From the figure we can see clearly that the performance of Distributed Bitmap Join becomes worse with increasing thread number, while that of no-partition hash join becomes better. The performance deterioration in join phase of Distributed Bitmap Join is due to the increase in communication cost. Since the communication cost is (N ?(N?1)?sizeof(bitmap)+t?sizeof(dictionary entry) + t ? sizeof(S tuple))/speedof(QPI), increase in N causes increase in communication cost. The degradation in build phase, on the other hand, can be attributed to the increas- ing computation cost when creating bitmaps and dictionaries.
+
+Although Distributed Bitmap Join is worse than no-partition hash join in Fig. 3, we emphasize here that the focus of our algorithm is the optimization of a group of queries instead of just one single query. In fact, the major reason for performance degradation of Distributed Bitmap Join algorithm is that it has to build bitmaps and dictionaries for all threads. When it comes     to a group of queries, this cost can be amortized among all queries, and thus optimize the overall performance, which was illustrated in Fig. 1.
+
+The experimental results show that even though Distributed Bitmap Join algorithm is worse than no-partition hash join for one single query, it outperforms no-partition hash join for a group of queries. In addition, because it is not sensitive to data skew problem, Distributed Bitmap Join algorithm performs better in this case.
+
+
+
+VI. CONCLUSION  With the advance in hardware technology as well as grow- ing demands for real-time response for database application, IMDB becomes the central focus in this field. Because of its architectural advantages, NUMA which is designed for multi-core system such that each processor accesses its local memory faster than shared memory, effectively solves the memory-access related starvation problem. In this paper, we propose a Distributed Bitmap Join algorithm which aims at optimizing join, one of the most expensive operations in database applications, by reducing the communication cost and reusing of intermediate results. The comparison with no- partition hash join shows that our method outperforms the competitor in terms of execution time for a group of queries.
+
+The performance also improves with the increase of overlap ratio of query set.
+
+Acknowledgement: This work is partially supported by Shanghai Leading Academic Discipline Project No. B412, Na- tional Science Foundation of China under grunt No.61003069, No.61033007 and No.60925008, National 973 program under grant No.2010CB731402.
+

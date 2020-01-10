@@ -1,0 +1,218 @@
+Making Unstructured Data SPARQL   Using Semantic Indexing in Oracle Database
+
+Abstract?This paper describes the Semantic Indexing feature  introduced in Oracle Database 11g Release 2 for indexing unstructured text (document) columns. This capability enables searching for concepts (such as people, places, organizations, and events), in addition to words or phrases, with further options for sense disambiguation and term expansion by consulting knowledge captured in OWL/RDF ontologies. The distinguishing aspects of  our approach are: 1) Indexing: Instead of building a  traditional inverted index of (annotated) token and/or named entity occurrences, we extract the entities, associations, and events present in a text column data and store them as RDF named graphs in the Oracle Database Semantic Store.  This base content can be further augmented with knowledge bases and inferred triples (obtained by applying domain-specific ontologies and rulebases). 2) Querying: Instead of relying on proprietary extensions for specifying a search, we allow users to specify a complete SPARQL query pattern that can capture arbitrarily complex relationships between query terms.  We have implemented this feature by introducing a sem_contains SQL operator and the associated sem_indextype indexing scheme.
+
+The indexing scheme employs an extensible architecture that supports indexing of unstructured text using native as well as third party information extraction tools. The paper presents a model for the semantic indexing and querying, describes the feature, and outlines its implementation leveraging Oracle's native support for RDF/OWL storage, inferencing, and querying.
+
+We also report a study involving use of this feature on a TREC collection of over 130,000 news articles.
+
+
+
+I. INTRODUCTION Semantic Web technologies are becoming increasingly  popular in the enterprise. The use of semantics for data integration and logical inference are major reasons for the adoption of this technology. However, a major impediment to the use of this technology is the manual effort needed to convert legacy (relational and unstructured) data into a form that is suitable for semantic tools and applications.
+
+Furthermore, an estimated 80 to 85% of this legacy enterprise data is unstructured data [1], and the typical way to use this data has been to build an inverted index of tokens and occurrence data to support keyword search. This basic approach has been refined and improved over decades, and semantics have been used to direct the search by consulting thesauri and taxonomies to relate the query terms to other relevant concepts and properties.
+
+This existing unstructured data can be further utilized by extracting named entities, concepts, events, or in general, facts,  and representing this information explicitly as RDF data rather than augmenting the traditional inverted index. The semantic indexing of unstructured text (documents) feature introduced in Oracle Database 11g Release 2 is a realization of this approach [2]. This feature uses native and third party information extractors to automatically generate RDF named graphs from documents. The extracted RDF data can subsequently be used for document retrieval or as input to other semantic tools.
+
+This approach has several benefits: 1. The RDF triple representation [3] can be used to encode  any set of facts. Thus, anything that is extracted can be represented in a straightforward manner.
+
+2. By adding one or more ontologies, we can enhance and/or refine the meaning of the extracted set of triples.
+
+3. We can infer additional triples by combining the extracted triples with domain-specific ontologies and knowledge bases and then applying RDF/OWL semantics.
+
+The set of inferred triples expands the effective information content of the documents.
+
+4. The index itself can be queried, potentially for cross- document knowledge discovery.
+
+For querying, we let users formulate a complete SPARQL [4] query against the pre-populated repository of document- specific named graphs, in conjunction with one or more RDF/OWL [5] ontologies. This gives users the expressivity and conciseness of SPARQL, to express simple to arbitrarily complex relationships of query terms.
+
+Example: Let us consider a table containing archived news articles from a newspaper: news(article_id NUMBER, news_date DATE, title VARCHAR2(128), text VARCHAR2(4000));  After semantically indexing the text column (as proposed above), user can issue the following queries, where a sem_contains operator is used to identify each document that semantically satisfies a SPARQL query pattern, and the sem_contains_select operator returns bindings (values for variables in the SPARQL query).
+
+Query 1: Find articles about very young (younger than 18) athletes who competed in the 1988 Seoul Olympics: SELECT article_id FROM news WHERE SEM_CONTAINS (text,  ?{?s :competedIn  :SeoulOlympics1988 .
+
+?s :dateOfBirth ?dob .
+
+DOI 10.1109/ICDE.2012.59    DOI 10.1109/ICDE.2012.59     FILTER(?dob > "1970-09-17"^^xsd:date)}?, ?)=1;  Query 1 may require augmenting the extracted RDF with RDF/OWL Ontology or knowledge base, which is supported by the notion of an augmented policy (See Section 2).
+
+Query 2: Refinement of Query 1 using OPTIONAL is possible, e.g., if the athlete won a medal, additionally return information about it:  SELECT article_id, SEM_CONTAINS_SELECT(1) FROM news WHERE SEM_CONTAINS (text,  ?{?s :competedIn  :SeoulOlympics1988 .
+
+?s :dateOfBirth ?dob .
+
+OPTIONAL {?s :awarded ?medal} FILTER(?dob > "1970-09-17"^^xsd:date)}?,  ?)=1; We have implemented semantic indexing and search  capability in Oracle Database 11g Release 2 by leveraging Oracle?s native support for RDF/OWL storage, querying, and inferencing [6] and Oracle?s Extensibility Framework [7].
+
+For indexing, a new sem_indextype indexing scheme has been introduced that uses an extensible architecture to allow plugging in a native Oracle extractor as well as third-party text extraction tools such as GATE [8], OpenCalais [9], Lymba [10], etc. By defining multiple index policies, user can perform extraction on a text column using multiple extractors, and the extraction results are natively stored in Oracle as a set of named graphs.
+
+For querying, we have introduced a sem_contains SQL operator for specifying semantic search queries.  We support two ancillary operators: 1) sem_contains_count: returns the number of matches in a document, and 2) sem_contains_select: returns the solution bindings [4] for matched documents. (See Section III for more details.)  We conducted a study by loading a TREC document collection [11] consisting of over 130,000 news articles from LA Times, which demonstrates the feasibility of our approach.
+
+We believe the proposed approach opens up new possibilities for searching unstructured data, as well as poses interesting challenges (see Table I).
+
+The extraction step can be as simple as collecting tokens to as complex as Natural Language Processing, which in turn can make use of gazetteers, ontologies, and knowledge bases. The  storage of extracted data as RDF triples makes it easily available for further analysis using SPARQL.
+
+A notable benefit of our approach is the ability to augment the index data through inferencing.  This has become possible, in part, due to maturing of semantic technologies in general, including wider adoption of W3C standards (particularly, RDF, OWL, and SPARQL).
+
+Although Table I shows the comparison of the three approaches, it does not preclude us from using them together.
+
+For example, in Oracle, one can create both an inverted index and semantic index on a text column and query them using a combination of contains and sem_contains operators.
+
+The key contributions of the paper are as follows: a model for semantic indexing and querying, an index storage scheme using document-specific RDF  named graphs, a querying scheme using SPARQL to find documents of  interest, a mechanism for retrieving ancillary information for  matched documents (match count for each document and solution bindings for each match),  an extensible architecture that allows plugging in native as well as third party information extraction tools,  an implementation in Oracle using the Extensible Indexing Architecture and Semantic Technologies, and  an experimental study.
+
+A. Related Work Keyword-based search on unstructured data is an  extensively researched area [1] with recent work focusing more on web content [12]. This has been extended in various ways to support semantic search.
+
+One of the earliest works on semantic search [13] discussed maintaining an index using pre-determined concepts describing the objects instead of their lexical values, which allowed broadening the notion of key from a lexical string to a related concept. Along similar lines, [14] indexes concepts present in documents by building a conceptual taxonomy, which is subsequently used for retrieval. It also introduces a ?relaxation ranking? algorithm, where the inexact matches are assigned penalty scores.
+
+TABLE I COMPARING THE THREE APPROACHES    Inverted Index with Keyword-based search  XML Index with XQuery/XPATH based search  Semantic Index with SPARQL-based search  Extraction Usually Proprietary; can combine, e.g. UIMA[19]  Typically, the column itself holds XML document  Multiple extractors outputs can be easily combined  Index Format Proprietary and optimized Proprietary and optimized W3C Standard RDF based but verbose Augmenting the Index  Addition of  taxonomies, thesaurus, possible  Usually no augmentation done Can be augmented with any OWL/RDF ontologies, and  Inferred Triples  Query Keyword-based Search XPATH/XQuery based Search SPARQL based Search (for documents) Query Index itself Typically not allowed Typically not allowed Can be queried with SPARQL (for triples) Ranking Measures Sophisticated measures  developed over three decades Exact matches so ranking usually not done Simple measure available; Need to develop further  ranking measures      A subsequent work [15] involved indexing word senses by  consulting WordNet [16], to further disambiguate the meaning of words, whereas [17] indexed named entities occurring in the documents.  The problem of recognizing named entities in a query (as opposed to in the content) is considered in [18] to understand the intent of the user and hence improve the ranking of results. This is complementary to our work, in that the identified named entities can subsequently be specified as a SPARQL pattern to be searched in the indexed document collection.
+
+Our indexing mechanism can handle multiple extractors, similar to the way UIMA framework [19] allows the same text to be analyzed using multiple extractors.
+
+The work on information retrieval in semantic web [20] annotates the document to include extracted RDF triples (after expanding with inferred triples), which can then be searched using a DAML query. In contrast, we do not embed the extracted triples in the document but store them as a document-specific named graph in a RDF store. This can be augmented with additional ontologies, if needed, and we allow inference on the extracted named graph in conjunction with one or more ontologies.
+
+The paper on semantic annotation, indexing, and retrieval [21] makes a case for a standard upper-level ontology and the need to encode the extracted knowledge formally.  Our extensible framework for plugging in any information extractor can easily take advantage of the extractor?s support for such ontologies. Also, the use of SQL and semantic ranking differentiates our work from theirs.
+
+B. The Organization of Rest of the Paper Section II introduces the key concepts. Section III describes  the semantic indexing feature in Oracle database. Section IV discusses the design considerations. Section V presents the experimental study. Section VI concludes the paper.
+
+
+
+II. KEY CONCEPTS In this section we first introduce terminology related to  RDF and SPARQL, and then we present the key concepts.
+
+A. Terminology  RDF concepts: The basic unit of data stored in RDF is a <subject, predicate, object> triple that describes the value (object) of a property (predicate) of a resource (subject). The value (object) can itself be a simple value or a resource. Each resource is identified by a URI (Uniform Resource Identifier) [3] and simple values are specified using RDF literals. A triple is also seen as an edge in a directed, labeled graph where a directed edge, labeled predicate, connects the subject node to the object node.
+
+An RDF graph is a set of RDF triples. An RDF graph may optionally be identified by a URI. Such a graph is referred to as a named graph. An RDF graph without an identifier is referred to as an unnamed graph. For example, Table II shows RDF triples contained in two named graphs (:gMA and :gNY).
+
+Note that each triple in Table II is identified by a letter for later reference.
+
+TABLE II SAMPLE RDF DATA   An RDF dataset is a collection of one unnamed graph  (referred to as the default graph) and zero or more named graphs. The default graph can be empty.
+
+SPARQL query language: SPARQL is a W3C recommendation [4] for querying RDF graphs using graph patterns. The graph pattern used in a query may consist of one or more basic graph patterns (BGPs), FILTER clauses, and more complex graph patterns involving OPTIONAL and UNION clauses. A query uses variables (denoted with prefix ?) in the graph pattern and returns solutions, each solution consisting of bindings for (some of) the variables specified in the SELECT list. Each solution represents a matching subgraph consisting of the set of triples (edges) that identify a match with the graph pattern in the query.
+
+Consider the following query to evaluate against each of the RDF graphs, whose URIs are specified in the FROM NAMED clauses:  SELECT ?g ?city ?state FROM NAMED :gMA FROM NAMED :gNY WHERE {GRAPH ?g {?ct rdf:type   :City .
+
+?ct geo:name   ?city .
+
+OPTIONAL {?st geo:StateCap ?ct .
+
+?st geo:name ?state }}}  The solutions are shown in Table III. It shows that multiple matching subgraphs can be found in a single named graph.
+
+Specifically, there are two solutions (2nd and 3rd row) for graph :gNY. The solution in the 2nd row returns a (non-NULL) binding for ?state due to a match with the OPTIONAL clause.
+
+TABLE III MATCHING RESULT SUBGRAPH  Triples in Matching Subgraph ?g ?city ?state 1: [a,b] :gMA ?Acton? 2: [r,s,v,u] :gNY ?Albany? ?NY? 3: [p,q] :gNY ?New York?   Document-centric vs. Corpus-centric Inference: Inference refers to the process of deriving additional triples by applying RDF/OWL semantics on an RDF dataset. In the context of a  ID Graph URI  Subject Predicate Object  a :gMA :ma1 rdf:type :City b :gMA :ma1 geo:name ?Acton? c :gMA :ma2 rdf:type :State d :gMA :ma2 geo:name ?MA? p :gNY :ny1 rdf:type :City q :gNY :ny1 geo:name ?New York? r :gNY :ny2 rdf:type :City s :gNY :ny2 geo:name ?Albany? t :gNY :ny3 rdf:type :State u :gNY :ny3 geo:name ?NY? v :gNY :ny3 geo:stateCap :ny2     text column holding documents, two types of inference are possible: 1) Document-centric inference: Here the inference is scoped to an individual named graph of extracted triples and the inferred triples inherit the name of the source graph, and 2) Corpus-centric inference:  The corpus in our context refers to the document collection corresponding to the text column, and the inference in this case takes into consideration extracted triples of all named graphs. That is, it can result in additional triples being inferred due to multi-document inferencing. The resulting triples usually are not assigned a graph identifier and are stored as triples in an unnamed (default) graph.  We also use the term entailment to refer to the set of inferred triples.
+
+Note that entailment, in this paper, is used to denote only the new triples derived by the inference process.
+
+B. A Model for Semantic Index Content In this section, we describe the model for semantic index.
+
+Semantic index content consists of several kinds of data as explained below. We assume here that the semantic index is created on an unstructured text column col of table T. In the following, a lower case letter such as m denotes an element, whereas an upper case letter such as M denotes a set.
+
+Extracted Named Graphs (GE): The base content of a semantic index is an RDF dataset that consists of named graphs created, one for each row of table T, and populated with the RDF triples extracted from the unstructured data in that row, using a set of extractors. (Note that, due to unique mapping between a row and the corresponding graph name, for a given row, triples contributed by every extractor would be associated with the same named graph. However, triples for the named graphs generated by each extractor are managed as a separate unit to allow for flexibility in altering the set of extractors.) The base content can be represented as follows:  GEX(T.col)  named graphs, one per row, containing triples  extracted from unstructured text in column col of table T using each extractor in set X  Document-centric Inference based extensions to Named Graphs (DI): Base content of a semantic index may be augmented by extending each named graph with additional triples that can be inferred by combining the triples in that graph, extracted using each extractor in a set, with triples in a set of ontologies O and applying rules in a set of inference rulebases R. These extensions can be represented as follows:  DIX,O,R(T.col)  the set of new named graph triples inferred, with scope limited to one graph at a time from triples in individual named graphs in GEX(T.col) using triples in each ontology in set O applying rules in each rulebase in set R  Corpus-centric Inference based Default Graph (CI): New triples derived by combining triples from two or more named graphs with set of ontologies O and applying rules in a set of inference rulebases R. The content of this default graph can be represented as follows:  CIX,O,R(T.col)  the set of new triples in the default graph  inferred, with scope spanning all the named graphs from triples in two or more named graphs in GEX(T.col) using triples in each ontology in set O applying rules of each rulebase in set R  Asserted Knowledge Base (KA): Semantic index content may also be augmented by adding asserted knowledge from one or more knowledge bases. The asserted knowledge typically is stored as triples in the default graph (i.e., with NULL graph name), but named graphs may be included as well. For simplicity, we will assume that the asserted knowledge is stored in the default graph. The content of an asserted knowledge base can be represented as follows:  KAm  set of triples asserted in knowledge base named m  Inference based extensions to Knowledge Bases (KI): Augmentation of semantic index content may also be done by adding a set of triples inferred from one or more knowledge bases by combining the set of asserted triples with one or more ontologies and applying inference rulebases.
+
+KIM,O,R  set of triples inferred from triples in each knowledge base in set M using triples in each ontology in set O applying rules of each rulebase in set R  Content of a semantic index (S): In general, the content of a semantic index created on column col of a table T can be expressed as follows:  S collection of named graphs and default graphs GEX(T.col), and optionally, instance(s) of DIY,O,R(T.col), where typically  Y=X, but Y could be any subset of X, and optionally, instance(s) of CIY,O,R(T.col), where typically  Y=X, but Y could be any subset of X, and optionally, instance(s) of KAm, where m is the name of  any knowledge base, and optionally, instance(s) of KIM,O,R, where M is a set of  knowledge bases.
+
+Example:  Let us consider the table docTab (Fig. 1-a). One can create an extractor, SomeExtr, to extract from the docText column two named graphs, one for each named graph (:G1 and :G2), in GE{SomeExtr}(docTab.docText) (Fig 1-b).
+
+Next, suppose there is an ontology FamilyOnt containing RDF triples shown in Fig. 1-c. Applying OWL rulebase on combination of triples in each individual graph in GE{SomeExtr}(docTab.docText) and the triples in ontology FamilyOnt, we infer new triples for each graph identified by DI{SomeExtr},{FamilyOnt},{OWL}(docTab.docText)  in Fig. 1-d.
+
+Furthermore, doing corpus-centric inference (that is, combining triples from both inference-extended named graphs :G1 and :G2 together) and using the FamilyOnt ontology (specifically, the rule that :Father is an intersection of :Parent and :Male) with OWL rulebase, we can create the     default graph CI{SomeExtr},{FamilyOnt},{OWL}(docTab.docText) as shown in Fig 1-e.
+
+Fig. 1 A sample table and its extracted (and inferred) named graphs  Next, suppose that we have a knowledge base GeoKB containing the RDF triples shown in Fig. 2-b which also comprises the asserted knowledge set KAGeoKB:  Let there be an ontology GeoOnt containing an RDF triple stating that :locatedIn is a transitive property (Fig. 2-a). Next, applying OWL rulebase on combination of the triples in the knowledge base GeoKB and the triples in ontology GeoOnt, gives us the inferred knowledge set KI{GeoKB},{GeoOnt},{OWL} (Fig.
+
+2-c).
+
+Fig. 2 A sample Knowledge Base and its inferred triples  A semantic index may be created with base content comprising the named graphs in GE{SomeExtr}(docTab.docText), and optionally including the inference derived extensions in DI{SomeExtr},{FamilyOnt},{OWL}(docTab.docText) and CI{SomeExtr},{FamilyOnt},{OWL}(docTab.docText), triples in KAGeoKB, and the inference based extension in KI{GeoKB},{GeoOnt},{OWL}.
+
+To understand the benefits of augmentation with inferred triples, consider a query for documents in docTab that are about males. Use of just the base content GE{SomeExtr}(docTab.docText) of this semantic index will not return any documents because the triples in none of the extracted named graphs, :G1 and :G2, would match. However, augmenting the base content with DI{SomeExtr},{FamilyOnt},{OWL}(docTab.docText), the query will return the document  with docId=2 as a match.
+
+Benefits of augmentation with the corpus-centric inference based extensions may be seen by considering a query for retrieving documents in docTab that are about fathers growing up in Boston. Augmenting the semantic index with CI{SomeExtr},{FamilyOnt},{OWL}(docTab.docText) allows us to retrieve the document corresponding to docId=1 as a match due to presence of the inferred triple  :Pat  rdf:type  :Father as shown in Fig 1-e.
+
+Similarly, the benefits of augmentation with asserted knowledge base can be seen by considering a query for documents in docTab that are about adults growing up in a place located in MA. Unless we augment the semantic index with the asserted knowledge set KAGeoKB, it will not return the document with docId=1 as a match.
+
+Similarly, benefits of augmentation with inference based extensions to a knowledge base can be seen by considering a query for documents in docTab that are about adults growing up in a place located in USA. The query will return the document with docId=1 as a match only if we augment the semantic index with the inference based extension KI{GeoKB},{GeoOnt},{OWL}.
+
+C.  Policy Descriptor for Semantic Index Content  A policy descriptor may be used to describe the content to be included in a semantic index. In general, multiple policies may be associated with a semantic index and accordingly its content as a whole is a union of all the (possibly overlapping) contents described by the individual policies.
+
+Base Policy descriptor: The base content of a semantic index can be described by specifying a set of base policy descriptors.
+
+Each base policy corresponds to an extractor (that will be used for extraction) and is specified as follows: PBx  base policy descriptor with extractor x  Augmented Policy descriptor: To describe semantic index content that includes base content as well as augmentations, one needs to include one or more base policies and the various kinds of augmentations: PAX, M, I D, I C, I K  augmented policy descriptor with base policy descriptor PBx, for each extractor x in set  X augmentation with set M of asserted knowledge bases augmentation with set ID of document-centric inference  based extensions to named graphs (Note: each inferred extension iD itself is based on base policies corresponding to extractors in a set, a set of ontologies, and a set of rulebases)  augmentation with set IC of corpus-centric inference based extensions stored in default graphs (Note: each inferred extension iC itself is based on base policies corresponding to extractors in a set, a set of ontologies, and a set of rulebases)  augmentation with set IK of inferred extensions to asserted knowledge bases (Note: each inferred extension     iK itself is based on a set of asserted knowledge bases, a set of ontologies, and a set of rulebases)  Policy instantiation: A policy may be specified without associating it with any specific unstructured text column. The association would then be established at the time of semantic index creation.
+
+Specifying an augmented policy involving inference based extensions becomes difficult in practice if we use the pure approach of postponing policy instantiation to the step of semantic index creation. This is because each such extension becomes verbose due to the need for specifying the set of policy extractors (X), the set of ontologies (O), and the set of rulebases (R). Thus in practice, one may first create the semantic index using the base policies (plus optionally, any knowledge bases) and then create and name the inference based extensions so that any augmentation using such extensions can then be specified simply by using the names of the extensions (instead of specifying their definitions using X, O, and R). The temporal constraint that this imposes may often be acceptable given the benefit of avoiding verbosity.
+
+Policies and Index maintenance: The inclusion of inference based extensions (entailments) in a policy complicates index maintenance. Entailments are often pre-materialized using forward chaining for query processing efficiency. In such cases, entailments can become stale if the set of extracted triples used to generate the entailments changes. Accordingly, the status of an entailment can be VALID (up to date), INCOMPLETE (missing inferences possible after insert), or INVALID (missing and/or incorrect inferences possible after delete). Once an entailment goes out of VALID status, the inference must be recomputed to become VALID again.
+
+However, querying may be allowed for policies that include INCOMPLETE or INVALID entailments.
+
+Alternative strategies can be used for frequently updated data. For example, to speed up incremental inference, truth maintenance strategies may be used. Furthermore, use of query-time backward chaining techniques can avoid the pre- materialization altogether.
+
+D. A Model for Querying Semantic Index We can classify the query requirements into two classes:  Querying for matching documents Querying for matching triples  Query for matching documents. Since we are searching an RDF dataset, which is a collection of named graphs (extracted and inferred) augmented with a default graph consisting of knowledge bases (and any associated inferred triples), the SPARQL graph pattern (p) is the natural choice for querying it.
+
+The document matching function fm searches the semantic content S for pattern p with e as the acceptable level of validity for entailment components and returns the set of matching documents D:  D={d1,?, dk}= fm(S,p,e) Conceptually, fm can be viewed as a SPARQL query  containing the graph pattern p:  SELECT ?g WHERE { GRAPH ?g {p} }  This query will be executed against the contents of a semantic index S, and the bindings found for ?g will represent the matching documents D for fm. In our scheme, a named graph uniquely maps to a row in the documents table and hence identifies the corresponding document in the unstructured text column that is being indexed.
+
+We must relax the SPARQL graph semantics slightly, however, to get the desired behavior for fm. According to SPARQL graph semantics, all triples matched by the graph pattern p must be contained within the same named graph.
+
+This restriction forbids p from matching any triples in the default graph, which may contain information from associated knowledge bases. We would like to relax this condition so that p can match triples from named graphs and triples from the default graph. To get the desired behavior for document match fm, we use the following two restrictions on the triples t1,?tn that form a solution to p: ti.graph = tj.graph OR ti.graph = null OR tj.graph = null, AND at least one ti.graph is non-null  The idea behind the second condition is that we would like at least one of the extracted or inferred triples from a document to be present in the solution in order for that document to qualify as a match.
+
+Consider the pattern GRAPH ?g   {?s :grewUpIn ?place .
+
+?place :locatedIn :USA} A valid match would be <:John :grewUpIn  :Boston>,  extracted from a document, with the knowledge <:Boston :locatedIn :USA> coming from a knowledge base.
+
+Note that our criteria of requiring any one matching triple to be present in a named graph, can also match <:Boston :locatedIn :USA> as an extracted or inferred triple from the document, with <:John :grewUpIn  :Boston> coming from a knowledge base. If a user wants to distinguish between these two solutions, we need to provide finer granularity of match on the named graph portion, which we currently do not support. However, it can be supported by directly querying the index itself as explained in the subsection below. For directly querying the index, either strict or relaxed SPARQL graph semantics can be used.
+
+As discussed in previous section, any included entailment component can be in {VALID, INCOMPLETE, or INVALID} state. The parameter e lets user choose what is acceptable. For example, by choosing e=INCOMPLETE, user indicates that the query should be processed even if a component entailment is incomplete. By default, a single parameter specifies the acceptable validity status. This can be also be made more fine- grained by letting user specify the acceptable level for each entailment component individually, by using array e[n], where n is the number of entailments present in the semantic content.
+
+Also, for entailments resulting in named graphs, the validity of an individual entailment itself could be maintained at each of its named graphs (individual documents). In such     cases, an additional query option of skip named graphs not satisfying the entailment component validity status would be useful.
+
+Before we discuss querying the index itself, a few more aspects of the matched documents need to be explored. Since we are doing a SPARQL query, we could get multiple matching subgraphs for a single document. This ancillary information (count c of matching subgraphs in a named graph) could be useful, for example, to determine a document?s relevance. This can be expressed as a multi-set C of counts for each matched document as follows:  C={c(d1),?, c(dk)}= fmc(S,p,e) Also, the actual bindings of each matching subgraph can  provide additional information, which, for example, can be used to highlight portions of matched documents. These can be expressed as the multi-set B of bindings for each matched document as follows:  B={?(d1),?, ?(dk)}= fmb(S,p,e) where ?(di) ={(bi11, bi12, ..., bi1r), ...,( bic1, bic2, ..., bicr) }  c is the count of solutions for a document, and r is the number of bindings within a solution.
+
+We model fmc and fmb as ancillary operators and make it  available to user as discussed in Section II-E.
+
+Example: For the query pattern considered above and the data extracted from document d1:  :John :grewUpIn  :Boston :Boston :locatedIn :USA  there is one solution (i.e., c(d1) = 1), and the bindings ?(d1) are: b111 ?s=:John, b112 ?place=:Boston.
+
+Query for matching triples. The advantage of storing Semantic content S as RDF triples is that it can be independently queried. Here user can leverage the complete expressivity of SPARQL.
+
+Specifically, user can either: 1. write a query involving named graph variables to  precisely match as needed, or 2. ignore the named graph component altogether and  query all the triples in the RDF dataset.
+
+Consider the following example of query formulation 1.
+
+Assuming strict SPARQL graph semantics, user could explicitly specify which triple patterns must match a named graph (document) and which must match the default graph:  SELECT ?g WHERE { GRAPH ?g { ?s :grewUpIn ?place } ?place :locatedIn :USA }  In this example, <?s :grewUpIn ?place> must match within a named graph and <?place :locatedIn :USA> must match within the default graph.
+
+For query formulation 2, we would like to have a default graph that is equivalent to the union of the existing default graph triples and all named graph triples. An option for this extended default graph behavior is available in Oracle database. With this extended default option, the following query will match across all documents and any associated knowledge bases.
+
+SELECT ?s ?place  WHERE { ?s :grewUpIn ?place .
+
+?place :locatedIn :USA }
+
+III. SEMANTIC INDEXING FEATURE IN ORACLE DATABASE This section describes the key aspects of the semantic indexing feature from a user?s point of view. This includes: 1) Extractor plug-in: User interested in plugging an extractor into Oracle Database to make it available for use in extracting and returning information from documents during semantic index creation and maintenance, 2) Semantic Index creation and maintenance: User using available extractor(s) to create semantic index on their tables and optionally augment it with available knowledge bases, any inference based extensions of extracted data and the knowledge bases using ontologies and rulebases,  and 3) Query: User querying the tables using the semantic index.
+
+A. Extractor Plug-ins Oracle Database supports an extensible architecture for  plugging in information extractors. Users can plug-in new extractors by implementing a concrete object type under the supplied PL/SQL abstract object type, RDFCTX_EXTRACTOR.
+
+Creating an object type for plugging in a new extractor involves implementing some of the methods to override their default implementation. A portion of an interface for a concrete object type is shown below.
+
+A key method is extractRdf(), which accepts a text  document as input, processes the document using the extraction capability of the extractor (accessed via local call for native extractors, or using client-server or web-service interface), and then returns the data extracted from the document as an RDF/XML document. An alternative to extractRdf() is batchExtractRdf(), which accepts a cursor for accessing documents and inserts RDF/XML documents corresponding to the retrieved documents into a table specified by the invoker.
+
+This extensible architecture is also used by Oracle Database to provide some built-in plug-ins for several extractors including the native CTX_ENTITY [22] extractor and extractors based on GATE [8] and OpenCalais [9].
+
+B. Semantic Index Creation and Maintenance Creating a base policy: To specify the base content of a semantic index, user needs to create one or more base policies     and then associate them with the semantic index as part of a CREATE INDEX invocation or later using ALTER INDEX.
+
+Example: The following call creates a base policy, specifying the extractor type corresponding to the extractor to be used.
+
+sem_rdfctx.create_policy( policy_name=>'SEM_EXTR', extractor => rdfctxu.info_extractor());  Creating a semantic index using just a base policy: A semantic index may be created on unstructured text column docText of table docTab using the base policy SEM_EXTR.
+
+Example: The following call creates a semantic index docIdx using base policy SEM_EXTR. Thus content of the semantic index will consist of named graphs extracted using the extractor plugged in via the rdfctxu.info_extractor object type.
+
+CREATE INDEX docIdx ON docTab (docText) INDEXTYPE IS mdsys.SemContext  PARAMETERS (?SEM_EXTR?);  Creating an augmented policy. To specify augmentations for the content of a semantic index, user needs to create a policy that includes a (pre-created) base policy and one or more augmentations. Based on the description of augmented policy in Section II-B, augmentations may include: A knowledge base, say GeoKB (Fig 2-a).
+
+Document-centric inference based extension,  SEM_EXTR_DOC_INF (Fig 1-d), inferred from the extracted named graphs corresponding to base policy SEM_EXTR (Fig 1-b) and ontology FamilyOnt (Fig 1-c) and applying the OWL 2 RL rulebase. This inference step needs to be done, before creating the augmented policy, using sem_apis.create_entailment subprogram of Oracle?s semantic store.
+
+Corpus-centric inference based extension, SEM_EXTR_CORPUS_INF (Fig 1-e), inferred from the extracted named graphs (Fig 1-b) and ontology FamilyOnt (Fig 1-c) and applying the OWL 2 RL rulebase. This inference step too involves use of sem_apis.create_entailment.
+
+An inference based extension, Geo_inf (Fig 2-c), of triples inferred using knowledge base GeoKB (Fig 2-a), an ontology GeoOnt (Fig 2-b), and applying the OWL 2 RL rulebase.
+
+Example: The following call creates an augmented policy SEM_EXTR_plus (referred to as a dependent policy in the product, for historical reasons because it depends on a base policy) as well as the augmentations mentioned above :  sem_rdfctx.create_policy( policy_name => 'SEM_EXTR_plus', base_policy => ?SEM_EXTR?,  user_models => RDF_MODELS(?GeoKB?) user_entailments => RDF_MODELS(?SEM_EXTR_DOC_INF?, ?SEM_EXTR_CORPUS_INF?,?Geo_Inf?));  Adding an augmented policy to a semantic index. Once an augmented policy is created, one may add this new policy to an existing semantic index using the ALTER INDEX REBUILD command.
+
+Example: The following example shows how the augmented policy SEM_EXTR_plus created above may be added to the semantic index docIdx created earlier:  ALTER INDEX docIdx REBUILD PARAMETERS(?-add_policy SEM_EXTR_plus?);  Note that this rebuild is a virtually zero-time operation because it does not result in any physical copying or creation of data. Specifically, no further extraction is needed because the extraction was already done when the semantic index was created with the base policy included in this augmented policy.
+
+The only effect of this rebuild is that the semantic index content now also includes the triples in SEM_EXTR_DOC_INF, SEM_EXTR_CORP_INF, and Geo_Inf. This inclusion is done logically, that is, without any physical copying of data.
+
+Discussion: Note that the collection of named graphs for each base policy, as well as ontologies and entailments (inference based extensions) specified in definitions of dependent policies, are maintained in Oracle Database Semantic Store as separate RDF models (model denotes an RDF dataset in Oracle) to simplify management. However, the specification of dependent policy allows combining them at the time of querying to get semantically enriched results. The assumption of entailment, especially the document-centric inference of named graphs (DI), being pre-materialized and stored leads to a sequencing constraint that requires extraction of the collection of named graphs (GE) using the base policy be done first. This is because creation of DI requires that GE, to base the inference on, must be available first.
+
+Current support for the corpus-centric inference based extension (CI) actually includes document-centric inference based extension (DI) as well. We plan to address this in our future work.
+
+Also, currently only a single base policy can be included when creating an augmented policy. This can be easily extended to support inclusion of a set of base policies.
+

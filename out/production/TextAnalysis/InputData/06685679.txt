@@ -1,0 +1,210 @@
+Towards A Moderate-granularity Incremental Clustering Algorithm for GPU
+
+Abstract?The incremental clustering algorithm plays a vital role in big data processing. The massive data problems generally raise high computation demand on the hardware platform. GPU-based parallel computing is a promising method to satisfy this demand. However, the existing incremental clustering algorithms face an accuracy-parallelism dilemma when accelerated by GPU. The block-wise algorithms evolve the clusters in coarse granularity and sacrifice accuracy for parallelism; while the point-wise algorithms proceed in fine granularity and barter parallelism for accuracy. We propose a moderate-granularity algorithm. This algorithm constantly generates micro-clusters from the incoming data blocks, and then evolves the clusters in the granularity of a micro-cluster.
+
+The proposed algorithm takes the following advantages: first, it avoids predefining a cluster number searching range like block-wise algorithms; second, it alleviates the accuracy problem caused by coarse granularity; third, it adopts the parallel-friendly algorithm to generate micro-clusters and decreases the amount of serial operations, so that it is parallelism-scalable compared to point-wise algorithms.
+
+Experiments on a CPU-GPU hybrid platform show that our algorithm can achieve comparable accuracy to its batch counterpart and is scalable in terms of parallelism.
+
+Keywords- incremental clustering; moderate-granularity; GPU
+
+I. INTRODUCTION  A. Background Due to the rapid developments of the digital sensors, high-  performance computing, large-capacity data storage and communications, enormous volumes of data are being produced everyday in modern society. The huge amounts of data demand automatic analysis methods to extract concerned information, so that man can efficiently understand and use the data. A promising solution to this problem is machine learning. Based on their input type or desired output, machine learning algorithms can be categorized as: supervised learning, semi-supervised learning, unsupervised learning and so on. The first two categories require labeled data as the training input, and labeled data are usually provided by human experts of a certain discipline.
+
+However, labeled data are not available in all application scenarios. Moreover, with regards to the massive data problem, it is somewhat difficult to decide how many training data is enough. In contrast, unsupervised learning does not need labeled data, and thus can be more widely applied. In addition, clustering is a common method for unsupervised learning.
+
+Many clustering algorithms have been developed to handle massive data, including the incremental clustering  algorithm. Using incremental clustering algorithms, the learning machine can process input data step by step. In each step it has access to only part of the entire input data points, so its knowledge of the so far processed data can be built only upon these data points and the former knowledge (if any). The incremental clustering algorithm takes the following advantages: Single-pass operation: the incremental clustering algorithm can identify the clusters with a single pass over the input [1].
+
+Memory-limited applications: If it does not have a large enough memory to simultaneously memorize the entire input data, the learning machine can use the incremental clustering algorithm to process the input data points part by part.
+
+Redundant computation elimination: The incremental clustering algorithm is helpful to eliminate redundant computation. For instance, it can potentially contribute to redundant computation elimination of data center [2].
+
+Massive data problems often raise high demand on the hardware platform?s computing power. Parallel computing is a common solution to provide powerful computing capabilities. In recent years, the General Purpose Graphic Processing Unit (GPGPU) has emerged as a promising device for parallel computing. The superiorities of the GPU includes: much faster increasing computing power than CPU [3], affordability, programmability and so on.
+
+B. Motivation and related works Accelerating incremental clustering with the GPU is a promising method. However, existing incremental clustering algorithms face a dilemma whether to use the block-wise process pattern or point-wise processing pattern. In the incremental clustering process (either block-wise or point- wise), s (s=2, 3, 4 ...) represents the current learning step.
+
+?Historic clusters? represents the so far processed data?s knowledge obtained in the (s-1)th step.
+
+With regards to the block-wise pattern, ?new clusters? represents the knowledge of the newly arrived data in the sth step. If s=2, historic clusters come from processing the first data block using a batch clustering algorithm (the algorithm that processes the entire input data simultaneously); else they come from updating the historic clusters with the new clusters. New clusters always come from processing the new data block of the sth step (using the batch clustering algorithm). And the cluster number of this data block can be explicitly identified using methods like the Bayesian Information Criterion (BIC). Since many batch clustering algorithms possess inherent parallelism and fit the CUDA programming model well, the block-wise incremental clustering algorithms can exhibit good parallelism. The algorithm in [4] just maintains the parallelism of the EM   DOI 10.1109/CyberC.2013.38     algorithm of GMM (Expectation Maximum Algorithm of Gaussian Mixture Model). But this algorithm faces accuracy problems, because it evolves the clusters of the so far processed data in coarse granularity (demonstrated in Part A of Section II). Our previous work showed that the accuracy of this algorithm (measured by Davies-Bouldin index) is significantly lower than its batch counterpart (the EM algorithm of GMM) [5]. And its final cluster number differs from that of the batch counterpart, by order of magnitude.
+
+While the block-wise processing pattern sacrifices clustering accuracy for parallelism, the point-wise pattern barters parallelism for accuracy. In each step, the point-wise algorithm processes the input data points one by one, and strong data dependency exists between adjacent steps. This kind of algorithms implicitly identify the number of clusters: the number is naturally obtained in the clusters? evolutionary process. The point-wise algorithms evolve the clusters of the so far processed data in fine granularity.
+
+Therefore, they generally obtain good clustering accuracy [6]-[11]. As far as we know, there are much more point- wise incremental clustering algorithms than block-wise algorithms. But due to the strong data dependency, their parallelism is limited, in terms of benefiting from GPU?s computing power with best efforts.
+
+A parallelized implementation of BIRCH [6] (Balance Iterative Reducing and Clustering using Hierarchy) was designed based on a MPI-supported multi-processor platform [12]. However, BIRCH is inherently point-wise, and it only shows processor-level parallelism; inside each processor, the data are still processed sequentially. Thus, BIRCH is not suitable for GPU-like processors. With the support of CUDA, PBIL (population based incremental learning) was applied to image stereo matching [13]. Rabeiro et al et al evaluated a GPU-based implementation of RAN-LTM (Resource Allocation Network with Long Time Memory) [14]. PBIL and RAN-LTM both show good learning accuracy and speedup on the GPU. Nevertheless, PBIL is not an unsupervised learning method and RAN-LTM cannot adjust the cluster number to the evolving data. Our previous work proposed an approximate incremental clustering algorithm of GMM [5]. It actually maintains the parallelism and improves the clustering accuracy of the algorithm in [4]. But problems still remain to be resolved, and three of them are: First, it is only for GMM clustering. Second, identifying the cluster number need a predefined searching range, which is hard to obtain for massive evolving data. Third, resolving the cluster number involves running the EM algorithm on the same data block for many times and brings redundant computation.
+
+C. The proposed Algorithm In this paper, we derive an algorithmic method for GPU-  powered incremental clustering from the works of [15] and [10]. In order to seek balance between accuracy and parallelism, our algorithm evolves the cluster in the granularity of a micro-cluster. A micro-cluster is a small dense region in the feature space constituted by the input data points. A cluster can be constituted by several or even many micro-clusters. In each incremental clustering step, our  algorithm does the following two tasks: First, parallel- friendly part: it generates micro-clusters from the newly incoming data block by running a GPU-accelerated mean- shift algorithm. Second, sequential part: based on the basic idea of the point-wise processing pattern, the micro-clusters are clustered one by one. The proposed algorithm takes the following advantages: First, the final cluster number is naturally obtained in the clusters? evolutionary process.
+
+Therefore the cluster number searching range is not required.
+
+Second, the size of a micro-cluster can be much smaller than that of a cluster, which ensures finer granularity than the block-wise processing pattern. Third, the parallel part maintains the inherent parallelism of the batch clustering algorithm. Also, there is another advantage with the micro- cluster granularity. The sequential part handles micro- clusters other than data points. Generally, the amount of micro-clusters can be much smaller than that of data points.
+
+This significantly reduces the amount of sequential operations to be done and dramatically decreases the time span during which the GPU is underutilized. Experiments show the efficiency of our method as follows:  1) The most desirable incremental clustering algorithm should eventually obtain the same clusters as if the entire input data were processed at once. Images are used as the input. We run our method to incrementally segment an image and run its batch counterpart to segment the same image at once, respectively. Results show that our algorithm can achieve comparable accuracy to its batch counterpart.
+
+The accuracy metrics are peak signal to noise ratio (PSNR), and the final cluster number.
+
+2) The sequential part is done on CPU. The parallel- friendly part is run on CPU and GPU, respectively. The parallel-friendly part gains dramatic speedup from the computing power of GPU. In addition, the sequential operation number of our algorithm is smaller than that of the point-wise algorithm, by orders of magnitude.
+
+The rest of this paper is organized as follows: Section II analyzes the accuracy-parallelism dilemma; Section III proposes our moderate-granularity incremental clustering algorithm; Section IV presents the experiments; Section V concludes our work and points out the further work.
+
+
+
+II. PROBLEM ANALYSIS AND STATEMENT Suppose the incremental clustering is currently in the sth  (s = 2, 3, 4,?) step, Cs represents the historic clusters, and Xs represents the input data of the current step. Actually, Cs is a set of clusters that imply the knowledge of the ?so far processed? data; Xs is a subset of the entire input data. The basic problem of incremental clustering is to update Cs with the information contained by Xs.
+
+A. The block-wise processing pattern  Under this kind of processing pattern, Xs can contain abundant data points. First, Xs is clustered by a batch clustering algorithm. Cs,new represents the set of newly obtained clusters in step s. Second, the statistically equivalent cluster pairs (between Cs and Cs,new) are identified and merged according to certain metrics, so that     Cs+1 is obtained. In the first step (s=1), X1 is directly clustered by the batch clustering algorithm; and the result serves as C2. The abovementioned processing flow is summarized in Algorithm 1.
+
+Algorithm 1 The basic flow of the block-wise incremental clustering  1:  INPUT: historic cluster set Cs, input data subset Xs 2:  OUTPUT: the cluster set of the so far processed data: Cs+1 3:  Run the batch algorithm on Xs, and resolve Cs,new.
+
+4:  Empty Cs+1 5:  for all cluster pairs between Cs, and Cs,new do 6:    Test the statistical equivalence of the two clusters. If they are  statistically equivalent, then produce a new cluster by merging this pair. Add the newly produced cluster to Cs+1.
+
+7:  end for 8:  Move the remaining clusters of Cs, Cs,new to Cs+1, respectively (if any).
+
+There are many parallel-friendly bath clustering algorithms. Moreover, the time complexity of the test- merging is generally much lower than that of batch clustering. Therefore, test-merging (Algorithm1 line 5 to 7) can be sequentially done on the CPU, and the batch algorithm (Algorithm1 line 3) can be accelerated by GPU.
+
+Tb1, Tb2  are the batch algorithm?s total computing time on the CPU and GPU, respectively; Ttm is the test-merging operations? total computing time on CPU. Here we neglect the host-to-device or device-to-host data transfer latency, because CUDA provides data transfer bandwidth of 1 GB/s or higher and CUDA device of compute capability 2.0 or higher support concurrent data transfer. In the single-CPU and single-GPU scenario, the speedup is:   b tm block wise  b tm  T TSp T T?  += +  .                   (1)  In the single-CPU and multi-GPU scenario, p is the total number of GPUs. Tb1,i is the batch algorithm?s running time on the ith data block with a single CPU; Tb2,i is the batch algorithm?s running time on the ith data block with a single GPU; and Ttm,i-k is the total running time of the test-merging operations from the ith step to the kth step, with a single CPU. If p data blocks are simultaneously clustered and each of them is processed on a single GPU, then the speedup is:     1, , ( 1) '  2, , ( 1) ( 1)  { }max  s p  b i tm s s p i s  block wise b i tm s s p  s i s p  T T Sp  T T  + ?  ? + ? =  ? ? + ?  ? ? + ?  + =  +  ? .        (2)  Obviously, the block-wise processing pattern is scalable in terms of parallelism. However, it evolves the clusters with coarse granularity and thus induces accuracy problems. An example of the accuracy problems is illustrated in Fig. 1. If entire input data blocks could be processed in the batch mode, the clustering result would be a benchmark. In Fig.1, the red points and green points are supposed to be affiliated to two different clusters of the benchmark. The mean vectors of these two clusters are shown in red and green circles, respectively. (Note that the colors are only used to distinguish different clusters, and do not necessarily  represent the RGB values.) The dotted rectangles represent the data blocks, and the dashed arrows point out the direction of the growth in the block number. The red points are distributed in block a, (a+1), and c, while the green points are concentrated within block (a+1). When running the batch clustering on each data block (Algorithm 1 line 3), the algorithm has no global view of the entire red points. As a result, the red points are divided into three parts: 1) In step a: red points in block a are identified as an independent cluster. (Its mean vector is shown with a black circle.)  2) In step (a+1): because red points in block (a+1) are very close to the green points, they may be combined into a single cluster. (The mean vector of this cluster is shown with a white circle.) 3) In step c: red points in block c are identified as an independent cluster. (Its mean vector is shown with a gray circle.)             Fig. 1 Problems with the block-wise processing pattern  The statistical equivalence of clusters is typically done based on their statistical characteristics (mean vector, covariance matrix, and so on). Keeping this in mind, the biased statistical characteristics can exert negative influence on the equivalence test. For examples:  1) In the equivalence test of step (a+1): if the red cluster of block a and the wrongly combined cluser of block (a+1) are identified as not equivalent, then the red points of block a and block (a+1) cannot be merged; otherwise, if the two clusters can be merged, then the green points will be affiliated to a wrong cluster.
+
+2) In the equivalence test of step c: the red cluster of block a and the red cluster of block c can be identified as not equivalent due to the biased statistical characteristics, then the red points of block a and block c cannot be merged.
+
+As the algorithm proceeds, these kinds of inaccuracy inevitably accumulate.
+
+B. The point-wise processing pattern Under this kind of processing pattern, Xs (s = 2, 3, 4, ?)  only contains a single data point: xs. h (h = 1, 2, 3, ?, Hs ) represents a cluster in Cs. The algorithm defines a metric function f (Cs, h, xs). The value of this function is either 1 or 0, which indicates whether xs is affiliated to cluster h or not.
+
+Note that the number of a data point xs?s affiliated cluster is at most one. If it is affiliated to a certain cluster in Cs, xs is merged into this cluster. Otherwise, if xs is affiliated to none of the currently existing clusters in Cs, a new cluster is     induced. Let f h = f (Cs, h, xs). F is the set of the metric function values: F = {f h | h = 1, 2, 3, ? Hs}. The abovementioned processing flow is summarized in Algorithm 2.
+
+Algorithm 2 The basic flow of the point-wise processing pattern  1:  INPUT: historic cluster set Cs, input data point xs 2:  OUTPUT: the cluster set of the ?so far processed? data: Cs+1 3:   Empty set Cs+1 and set F.
+
+4:   for h = 1 to Hs do 5:    Compute f (Cs, h, xs), add the function value to F.
+
+6:   end for 7:   If there is a non-zero element f h in set F then 8:    Merge xs into the cluster h; move the updated cluster  h and the other clusters from Cs to Cs+1.
+
+9:   else 10:   Construct a new cluster that only contains xs and add it to Cs+1; move  the clusters of Cs to Cs+1 11:  end if   The arrival of xs will either change the parameters of an existing cluster, or bring a new cluster. Before completely identifying how xs changes Cs, the algorithm cannot obtain Cs+1. And xs+1 cannot be processed without a clearly identified Cs+1. Thus, strong data dependency exists between two adjacent incremental clustering steps. However, the point-wise processing pattern does not have problems illustrated by Fig.1. This is because: every time it needs to identify a data point?s affiliation, the point-wise pattern always refers to the latest historic clusters (Algorithm 2 line 4 to 6). On the opposite, before referring to the latest historic clusters (Algorithm1 line 5 to 7), the block-wise processing pattern first decides the currently accessible data points? affiliations based on a local view (Algorithm1 line 3).
+
+As is discussed in this Section, incremental clustering faces a parallelism-accuracy dilemma.
+
+
+
+III. THE MODERATE-GRANULARITY ALGORITHM In order to achieve the balance between parallelism and accuracy, we propose our algorithm to evolve the clusters in moderate granularity.
+
+A. The basic idea Our basic idea is to combine the advantages of both the block-wise and point-wise processing pattern. Two key points of our algorithm are summarized as follows: 1) Partitioning the data block into micro-clusters: Abundant data points constitute a feature space. A micro- cluster is a small dense region in the feature space. A cluster can be partitioned into a certain number of micro- clusters. In this way, the statistical characteristics of adjacent micro-clusters are close to each other. Thus, the probability of wrong combination is low, due to the small size of the micro-cluster. Even though some wrong combinations still exist, the number of wrongly combined data points is small (the bold rectangle).
+
+2) Evolving the clusters with the granularity of a micro-cluster: Extend Algorithm 2 to handle micro-clusters.
+
+B. The Proposed Algorithm 1. Generating micro-clusters.
+
+In fact, any batch clustering algorithm can be adopted to  generate micro-clusters, as long as it satisfies the following requirements: 1) The algorithm does not need the pre- designated cluster number or the searching range of the cluster number; 2) The granularity of the output clusters is tunable; 3)The algorithm is parallel-friendly, especially GPU-friendly.
+
+Obviously, the mean shift algorithm is a desirable choice.
+
+Given a set of data points {x1, x2, ?, xn} dR? , the underlying probability density is estimated by:  ( )  , '' 1  ( ) n  k d i d  i  c -f k hn h =  ? ? = ? ?? ?  ? ? ? x xx ,             (3)  where ,k dc  is a constant, ( )k ?  is the kernel profile, and h? is the bandwidth parameter.
+
+Fig. 2 Example of micro-clusters  A dense region in the feature space always corresponds to a local maximum (i.e. a stationary point) of the underlying probability density function. And a stationary point z has a gradient that equals to zero ( ( ) | 0x zf =? =x ). The mean shift algorithm uses a hill climbing method to move every data point to its nearest stationary point; and points that converge to the same stationary point form a distinct cluster.(For image segmentation, similar clusters can be further concatenated). The bandwidth has significant influence on the clustering result. Bigger bandwidth usually results in larger clusters, or vice versa. For image segmentation, the spatial bandwidth and the range bandwidth can be different.
+
+2. Inrementally clustering the microc-lusters We propose a neural network algorithm to cluster micro- clusters based on the SOINN algorithm [10]. In SOINN, the neural network consists of a certain number of nodes. During the network?s evolution, the node acts as an agglomerative core as well as a cluster. Every node has a certain number of affiliated data points. All nodes contained in the same connected subset are grouped into a distinct cluster, when the neural network is fully built. Our algorithm leverages the basic idea of SOINN, but it handles micro-clusters other than data points. Notations to be used in our algorithm: ? N: the set of neural network nodes, initially empty and evolves as the  algorithm proceeds.
+
+? node i: a node in N, initially empty (i.e. has no affiliated data points)  and evolves as the algorithm proceeds.
+
+? ni: the number of data points affiliated to node i.
+
+? ,1 ,2 ,{ , ,..., }ii i i nx x x : data points affiliated to node i,  (1) (2) ( ) , , , ,( , ,..., ) ( 1,2,..., )  d d i k i k i k i k ix x x R k n= ? =x .
+
+? Wi: the weight vector of node i, Wi dR? .
+
+? Mi: the mean vector of node i.
+
+(1) (2) ( ) ,   1 ( , ,..., ) in  d i i k i i i  ki  m m m n =  = =?M x .              (4) ? SqMi: the squared mean matrix of node i,  ( ) ( ) , ,   ( ) ,  1 ( ) ( , 1,2,..., ).
+
+i  i pq d d  n p q  pq i k i k ki  a  a x x   p q d n  ?  =  =  = ? =?  SqM (5)  ? Covi: the covariance matrix of node i,  ( ) ( ) ( ) ,  ( , 1,2,..., ).
+
+i pq d d  p q pq pq i i  b  b a  - m m   p q d ?=  = ? =  Cov (6)  ? E: the set of edges in the neural network, initially empty and evolves as the algorithm proceeds.
+
+? neighbor of node i: a node is node i?s neighbor, if it is directly linked to node i via an edge .
+
+? Neighbori: the set of neighbor nodes of node i.
+
+? microNs: the set of micro-clusters produced by the batch clustering  algorithm in the sth step.
+
+? micro-cluster j: a micro-cluster in microNs.
+
+? micronj: the number of data points affiliated to micro-cluster j.
+
+? microMj: the mean vector of micro-cluster j, similarly defined as that  of node i.
+
+? microSqMj: the squared mean matrix of micro-cluster j, similarly  defined as that of node i.
+
+? microCovj: the covariance matrix of micro-cluster j, similarly defined  as that of node i.
+
+? Accui: the accumulating number of node i, initially zero and  incremented by one every time node i successfully absorbs a micro- cluster.
+
+? Radiusi: agglomerative radius of node i, initially positive infinite and updated every time node i successfully absorbs a micro-cluster.
+
+? NNDist(node i, node l): the distance between node i and l, it is the similarity metric of two nodes.
+
+? NMDist(node i, micro-cluster j): the distance between node i and micro-cluster j, it is the similarity metric of a node and a micro-cluster.
+
+Algorithm 3 Incrementally clustering the micro-clusters  1:  INPUT: node set N, micro-cluster set microNs 2:  OUTPUT: updated node set N(new) 3:  if N is empty (i.e. s = = 1) then 4:   Add two empty nodes to the neural network: node 1 and node 2 5:   randomly select two micro-clusters from microNs and number them  as micro-cluster 1, 2 6:    for z =1 to 2 do 7:     Assign micro-cluster z?s affiliated data points to node z;  nz= micronz , Wz=microMz , Mz=microMz , SqMz= microSqMz , Covz =microCovz , Accuz= 0, Radiusz=  8:    end for 9:    Remove micro-cluster 1, 2 from microNs, 10:  end if 11:  repeat 12:   Get a micro-cluster from microNs, and number it as micro-cluster j 13:   Find the nearest and second-nearest node to micro-cluster j: node i1,  i2. The node-to-micro-cluster distance is defined by Equation (7).
+
+14:    if NMDist(i1,j) < Radiusi1 then 15:     Accui1 = Accui1 + 1 16:     Wi1 = Wi1 + (microMj- Wi1)/Accui1.
+
+17:     Absorb micro-cluster j into node i1, and update the other  parameters of node i1 according to Equation (9)  18:      if edge <i1, i2> does not exist then 19:        Add an edge <i1, i2> to E 20:      end if 21:     Adjust Radiusy ( 1{ 1} iy i? ? Neighbor ) according to Equation  (10) 22:    else 23:     Add an empty node to N, and number it as node i ; Wi=microMj,  Mi=microMj , SqMi= microSqMj , Covi =microCovj , Accui= 0, Radiusi=  24:    end if 25:    Remove micro-cluster j from microNs 26:  until microNs is empty   Our algorithm is shown in Algorithm 3. The neural network is initialized using two randomly selected micro- clusters (Algorithm3 line 3 to 10). Then the network evolves in the granularity of a micro-cluster. The distance metric is used to describe the similarity between the node and micro- cluster (Algorithm3 line 13). Unlike a single data point, a micro-cluster has not only ?position? (mean vector) but also ?spread? (covariance matrix) in the feature space. Based on the Mahalanobis distance, we define the distance between node i and micro-cluster j as:     ( ) ( ) ( , )  ( ) ( )  T i j i i j i  i j  T j i j j i j  i j  n NMDist i j  n micron  micron   n micron  ?  ?  ? ? ? =  +  ? ? ? +  +  microM W Cov microM W  W microM microCov W microM .   (7)  The two items on the right side of Equation (7) are completely symmetric, so we only discuss the first one: microMj is selected as the representative point of micro- cluster j; the Mahalanobis distance from microMj to node i reflects how far microMj is from node i; the weight factor is proportional to ni because we want to highlight the spread of node i. The Mahalanobis distance is a point-to-cluster (or micro-cluster) metric, the weighted sum of Mahalanobis distances are used to measure the similarity between a cluster and a micro-cluster. We use Wi other than Mi because the latter is always in the center of the node i?s affiliated data points. In the scenario of incremental clustering, the distance from microMj to Mi may be too large. As a result, even though micro-cluster j is homologous to node i (i.e. it should be affiliated to node i), it is still wrongly identified as distinct.
+
+This problem is similar to the ones illustrated by Fig.1.
+
+However, Wi is constantly shifting to the potential position where the next homologous micro-cluster may appear (Algorithm3 line 16).
+
+Similarly, the distance between two nodes u, v is defined as:    ( ) ( ) ( , )  ( ) ( )  T u v u u v u  u v  T v u v v u v  u v  n NNDist u v  n n  n   n n  ?  ?  ? ? ? =  +  ? ? ? +  +  W W Cov W W  W W Cov W W .     (8)  The agglomerative radius of the node is a vital parameter for identifying homologous micro-clusters. If i1 is the nearest node to micro-cluster j and NMDist(i1, j) < Radiusi1 ,     then j is absorbed into i according to Equation (9) (Algorithm3 line 14 to 21). Otherwise, j is identified as a new node (Algorithm3 line 22 to 24).
+
+( ) 1 1  1 1( )   1 1( )   ( ) 1 is computed in the similar way as Equation(6)  new i i j  i i j jnew i  i j  i i j jnew i  i j  new i  n n micron n micron  n micron n micron  n micron    = +    ? + ? = +  ?  ? + ? = +    ?  M microM M  SqM microSqM SqM  Cov  .     (9)  After absorbing a micro-cluster, Radiusi1 must be adjusted according to Equation (10). The adjusted agglomerative radius is the maximum distance between node i1 and its neighbors. (i1?s neighbors should adjust the radius similarly.)  1 max ( 1, )  i i u  Radius NNDist i u ?  = Neighbor  (10)
+
+IV. EXPERIMENTS Clustering is a common method of image segmentation.
+
+We use images from the Rawzor image compression benchmark as the input data sets [16]. The accuracy metrics are the peak signal to noise ratio (PSNR) and the final cluster number. We define two metrics to measure the parallelism- scalability of our algorithm.
+
+A. Performance metrics 1. Accuracy metrics If the input 256-color grayscale image totally has N pixels.
+
+( )Org k and ( )Seg k ( 1, 2,..., )k N= represent the gray- levels of the corresponding pixels in the original and segmented images, respectively. Peak signal to noise ratio (PSNR) of the segmented image is defined as:     25510log ( ( ) ( )) /  N  k  PSNR Org k Seg k N  =  = ??  (11)  Cfinal represents the final cluster number of the segmented image. Higher PSNR means less information loss caused by the segmentation, and smaller Cfinal means higher compression ratio. Therefore, the segmentation result with higher PSNR and smaller Cfinal is more desirable.
+
+2. Scalability metrics Our algorithm proceeds step by step. In the sth step, t1,s and t2,s (s=1, 2, 3 ?) are the computing time of the parallel- friendly part (generating micro-clusters) and sequential part (clustering micro-clusters), respectively (both on CPU).
+
+Also in the sth step, micros (s=1, 2, 3 ?) is the number of micro-clusters generated by the parallel-friendly part.
+
+Suppose the final segmentation result is obtained after the s0th step, we define PFR (parallel-friendly rate) and SR (shrinking rate) as:    1,  1, 2, ( )  s  s s  s  s s s  t PFR  t t  =  =  = +  ?  ? ,   (12)    s  s s  micro SR  N == ?  .   (13)  Higher PFR means that more computation can be done in a GPU-friendly manner. As is discussed in Part B of Section II, the sequential operations constrain the parallelism. In the sequential part, the micro-clusters can only be processed one by one, which is similar to the point-wise processing pattern  (Algorithm 2). In our algorithm, only   s  s s  micro = ? sequential  operations are needed. But for this moderate-granularity algorithm, the point-wise algorithm would have to do N sequential operations. Thus, higher PFR and lower SR are more favorable.
+
+B. Hardware-software environment All experiments are done on a platform equipped with an  Intel? Core2TM E7500 CPU, and a NVIDIA GTX 660 GPU.
+
+The main memory size of CPU is 2GB. Linux of 2.6.18- 194.el5 kernel is used with gcc 4.1.2 and CUDA5.0.
+
+C. Input datasets and parameter settings Three 256-color grayscale images from the Rawzor  benchmark are used as the input: artificial.pgm (3072 2048), leaves_iso_200.pgm (3008 2000), and fireworks.pgm (3136 2352). These images are transferred into 6291456, 6016000, 7375872 data points, respectively.
+
+Each data point is a three-dimension vector, whose components are X-coordinate, Y-coordinate, and the grayscale. Note that our way of formatting data points is different from the method in [10].
+
+Every image is divided into a certain number of tiles.
+
+Take artificial.pgm as an example, it is divided in the following way: 1) the image is divides into five 3072 400 tiles and a 3072 48 tile; 2) the first five tiles are spliced into one 15360 400 tile, keeping their original order; 3) the 15360 400 tile is separated into thirty-eight 400 400 tiles and a 160 400 tile; 4) except the thirty-eight 400 400 tiles, there are 3072 48+160 400=211456 pixels; 5) keeping the original order of the pixels and obeying the row-major sequence, these 211456 pixels are split into one 160000-pixel tile and one 51456-pixel tile. Overall, this image is divided into forty tiles. The other images are divided into tiles in a similar way. A comparatively large tile size (1.6 104) is adopted , because we want to alter the micro-clusters? granularity by tuning the bandwidth parameters of mean-shift. If the tile size is too small, the size of the micro-clusters will be small even if large bandwidths are used. Each tile serves as a data block.
+
+With regards to the benchmark and parallel-friendly part of our algorithm, the uniform kernel is used. The bath mean- shift algorithm is run on CPU, and its output is the benchmark of accuracy. The sequential part of our algorithm is run on CPU; the parallel-friendly part is run on CPU and GPU, respectively. For the GPU code, CUDA grid size is 5, and CUDA block size is 256. The GPU-accelerated mean- shift algorithm is implemented in a similar manner as [15].
+
+D. Experiment results and discussion PSNR is illustrated in Fig.3. The horizontal axis is the  granularity, measured by the bandwidth parameters. s? is the spatial bandwidth, and r is the range bandwidth. The vertical axis is PSNR. artificial and leaves_iso_200 both achieve the top PSNR when s?=4, r=4. As the granularity grows, their PSNR decline at least obviously or even significantly.
+
+fireworks reaches top PSNR when s?=10, r=8. As the granularity rises to s?=12, r=10, its PSNR also decreases. The final cluster numbers are shown in Table I. With regards to artificial, the cluster number obtained by incremental clustering is 1.48 times as large as that of the benchmark, but its top PSNR is 1.17 dB higher than the benchmark. For leaves_iso_200, its top PSNR is 5.36 dB lower than the benchmark, but its cluster number is 48.3% of the benchmark?s. Likewise, fireworks can achieve the 2.9 dB lower top PSNR with the 21.5% smaller cluster number.
+
+Segmentation results of the benchmark and our algorithm are shown in Fig.5 (at the end of this paper). From Fig.3, Table I and Fig.5, we can see that our algorithm achieves comparable accuracy to the benchmark.
+
+Fig.3 PSNR  TABLE I.  COMPARISION OF FINAL CLUSTER NUMBER  data set artificial leaves_iso_200 fireworks benchmark  (batch mean shift)  (s?=4,r=4)  (s?=4,r=4)  (s?=10,r=8)  in cr  em en  ta l  cl us  te ri  ng s?=4,r=4 3136 7261 5146  s?=8,r=6 2621 4838 3368 s?=10,r=8 2191 2867 1720  s?=12,r=10 1877 1986 1077  The parallel-friendly rate and shrinking rate are shown in Fig.4. The computing time and the parallel part?s speedup are shown in Table II. With the granularity grows, the PFR rises significantly. Even when the granularity is small, a considerable part of computation still can be done on GPU.
+
+SR decreases at least obviously or even significantly, which means higher parallelism-scalability. Even when the granularity is small, the SR can be as low as the magnitude of 10-3. The operation of Algorithm3 line 13 actually involves a loop (similar to Algorithm2 line 4 to 6). Actually, it can be  parallelized on GPU, but the GPU?s computing capability is very likely to be underutilized. A lower SR means a shorter time span during which the GPU is underutilized.
+
+Currently, the problem of how to select suitable bandwidth parameters still remains to be investigated. However, even if the bandwidths are manually set to small values (for example, s?=4, r=4), the accuracy is still comparable to the benchmark.
+
+Compared to the block-wise algorithm, our algorithm does not need a predefined searching range of the cluster number, avoids redundant computing, and is more likely to achieve high accuracy. Compared to the point-wise algorithm, our algorithm is more parallelism-scalable due to much higher PFR and much smaller SR.
+
+In all, our algorithm can benefit from both the block-wise pattern?s and the point-wise pattern?s advantages.
+
+Fig. 4 Parallel-friendly rate and shrinking rate  TABLE II.  COMPARISION OF COMPUTING TIME  data set  computing time(104ms)  artificial (s?=4,r=4)  leaves_iso_200 (s?=4,r=4)  fireworks (s?=10,r=8)  benchmark(CPU-only) 10.08 15.63 136.56  in cr  em en  ta l c  lu st  er in  g total (CPU-only) 2.21 27.51 4.04 parallel-friendly part  (CPU-only) 1.56 5.06 3.10  parallel-friendly part (GPU-powered)  0.284 (speedup: 5.49 )  0.635 (speedup: 7.96 )  0.378 (speedup: 8.20 )  sequential part (CPU-only)  0.65 22.45 0.94
+
+V. CONCLUSION AND FUTURE WORK In this paper we present our work towards a moderate-  granularity incremental clustering algorithm. Our main idea is seeking the balance between accuracy and parallelism.
+
+Our future work will focus on identifying the suitable granularity for a given incremental clustering task. Besides, we will also investigate whether new metric of cluster-to- micro-cluster (or cluster-to-cluster) distance can improve the     clustering accuracy. For example, the Kullback?Leibler divergence is a promising choice.
+
+ACKNOWLEDGEMENT Our sincere thanks to Dr. Bo Hong (School of Electrical  and Computer Engineering, Georgia Institute of Technology, U.S.A.). We appreciate anonymous reviewers? valuable comments and suggestions.
+
+This work is supported by the PhD Programs Foundation of Ministry of Education of China (NO. 20126102110036), and the Basic Research Foundation of Northwestern Polytechnical University, China (grant number JC20110264).
+

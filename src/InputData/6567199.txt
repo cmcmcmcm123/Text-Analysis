@@ -1,0 +1,362 @@
+Comparative Performance Analysis of a Big Data NORA Problem on a Variety of Architectures
+
+Abstract?Non Obvious Relationship Analysis (NORA) is one of the most stressing classes of Big Data Analytics problems. This paper proposes a reference NORA problem that is representative of real problems, and can rationally scale to very large sizes. It then develops a highly concurrent implementation that can run on large systems. Each step of this implementation is sized in terms of how much of four different resources (CPU, memory, disk, and network) might be used. From this, a parameterized model projecting both execution time and utilizations is used to identify the ?tall poles? in performance. The parameters are then modified to represent several different target systems, from a large cluster typical of today to variations in an advanced architecture where processing has been moved into memory.
+
+A ?thought experiment? then uses this model to discover the parameters of a system that would provide both a near 100X speedup, but with a balanced design where no resource is badly over or under utilized.
+
+Keywords?Algorithms, Performance, NORA, non-obvious re- lationship analysis, link discovery, association mining, parallel big data systems, performance, ECL
+
+I. INTRODUCTION  Non-Obvious Relationship Analysis (NORA), or the related terms ?link discovery? and ?association mining,? is an emerg- ing problem of great interest to the Big Data community. At its heart, NORA attempts to identify relationships between entities where there are no direct links. The ?six degrees of separation? concept, popularized by the ?Kevin Bacon? trivia game [1], is an example that uses acting in the same movies to draw relationships between actors. More formal analysis has used url links to map the diameter of the Internet [2] and provided the basis for a new mathematics to describe large networks of information [3].
+
+NORA algorithms at their heart require at least partial cross- product comparisons of sets of entities to themselves, leading to computational complexities that have a strong non-linear characteristic. When coupled with real-life data sets that can  This work was supported in part by the University of Notre Dame, in part by Lexis Nexis Risk Solutions, and in part by Sandia National Laboratory, Albuquerque, NM under both a contract with the U.S. DoD DARPA as part of the XCaliber project under the UHPC program, and a DOE-funded exascale computing effort called XGC.
+
+have literally in the tens of billions of entries, it becomes obvious that knowing how to design computing systems and algorithms together that can scale to handle such massive problems in acceptable time is important.
+
+This paper attempts to explore this relationship between massive NORA problems, algorithms, and large parallel com- puters in a way that yields insight into what direction needs to be taken in the latter two to end up with the most efficient and cost-effective solutions. This could have been attempted by simple benchmarking on an existing platform, but typically would have not given any insight into any parameter other than execution time. It also would prevent us from exploring how variations in architecture and/or in the underlying performance of subsystems of the system affect each other, and how these relationships change as we change the size of either the data set or the compute system.
+
+Instead we built a careful analytical model, accounting for four major performance parameters as we go. This model was then coupled with a reference NORA problem and used to explore variations in parameters that reflect both current and potentially future architectures. What is key about this model is that it attempts to analyze only those minimal computational requirements that would be needed if there were no ?practical? considerations included, such as operating system overhead.
+
+In a real sense, we are trying to get an understanding of foundational computational requirements and complexity, not predict performance on a real platform.
+
+A key result is that we have projections that believable near-term architectures may provide up to a 60+X speedup over a large cluster of today?s computing nodes, at 1/10th the hardware.
+
+The reference problem used in this analysis comes from a real-world problem expressed in ECL [4] - an advanced declarative programming language in use commercially since 2000 to handle exactly such questions in very big data sets.
+
+While superficially similar to the MapReduce paradigm [5] as expressed in the PIG Latin language [6], it has far more expres- sive capabilities, and is coupled with a programming support environment that can perform much deeper and more efficient     optimizations than possible with the standard implementation of MapReduce via the Hadoop package [7].
+
+In terms of organization, Section II discusses related work.
+
+Section III defines the reference NORA problem used in this study. Section IV describes the baseline architecture assumed for the study. Section V defines the four key performance metrics that emerge from the baseline system. Section VI describes how the reference problem might be implemented very efficiently on the baseline system. Section VII looks at the resulting execution values. Section VIII then explores a configuration space to identify the parameters of a possible future system that would represent a balanced, efficient, de- sign. Section IX concludes.
+
+
+
+II. RELATED WORK  The class of problems discussed here is just beginning to receive focus from the community, but not at the scales considered here. Papers such as [8] have focused on the underlying algorithms. Workshops such as LinkKDD [9] have looked at the underlying algorithms and applications for link discovery, but not on detailed performance evaluation. The link discovery package LIMES [10] has been converted into a MapReduce code that was run on up to 9 physical compute nodes versus several different data sets where there were up to 2.4 billion different similarities to be computed and checked.
+
+Emphasis in this case was on parallelizing the similarity tests, and performance evaluation was limited to just overall execution time and speedup relative to a sequential code. Both the overall complexity of the problem and the size of the parallel machines considered were orders of magnitude less than what was considered here.
+
+The related field of Machine Learning has had some focus on parallel performance evaluation [11], but again the focus has been on either computational complexity in the traditional way (as big ?O? notation), or when run on relatively small parallel systems with measurements limited to just overall execution time.
+
+
+
+III. A NORA REFERENCE PROBLEM  The NORA reference problem chosen here is one that is representative of real problems, and can be scaled easily in several directions. The problem starts with a data set consisting of a huge number of records from potentially a variety of sources, with potentially hundreds of attributes per record, not all of which need to be filled in for each record. For this problem, key fields from these records include an ID which is unique to any entity (typically either a person or a business), a set of character strings representing an address, and the entity?s last name when the record was created. The goal is to develop a set of pairs of IDs where there is some reasonable inference from the data that the two designated individuals may have known each other based on a common residency.
+
+A. Basic Steps  Fig. 1 diagrams the major steps in the problem?s solution, and Fig. 2 diagrams the major parts of such a code in ECL.
+
+Annotations on Fig. 1 give key data set characteristics at different steps along the way, and (in red) key schemas of the intermediate data sets. The data set characteristics (in blue) are typical of similar problems that are run frequently as part of real applications.
+
+The first step is to take the ?h? file (14.2 billion records of 300+ bytes each), and project each record into a set ?t? so as to remove all but the ID, last name, and address fields. The number of records stays the same but the data to be processed drops to a mere 1.5TB.
+
+The key computational step is a self-join of t with itself, on the basis of equality of the address fields. A typical output of this, if generated completely, would have on the order of 1.6 trillion records, and require upwards of 300 TB if stored in its entirety.
+
+To make sense of this on a practical parallel system, the code computes a hash of the address fields in each join result, and uses this hash to distribute each record to a different compute node in the system. Thus all records with the same hash will go to the same compute node. In addition, the last names of the two matching people are compared using a Levenshtein distance functiona on the character strings, and a flag is returned to record if the two strings are ?reasonably? close. Also, a field is added to contain a ?score? representing the goodness of the match. This data set ?J? in its full extent would encompass 1.6 trillion records and consume 48+ TB.
+
+Each compute node in the system then takes all the records that it receives, sorts on all fields (with sort in descending order for score and last name match), and eliminates all duplicates in ID pair and addresses. We note the only reason for the sort was to group records with the same ID pair and address, and order the most relevant ones ?first,? so the the de-duplication function can delete the less interesting ones. This typically reduces the file size by a small, data dependant amount, down to perhaps 1.5 trillion records.
+
+Part of this process also distributes the resulting data set ?D? by a hash of the ID pairs so that all records with the same ID pairs (regardless of address) are on the same compute node, where they can be grouped by ID pair, and all scores and last name matches combined into aggregate values.
+
+After this aggregation, we output to the ?result? only records that pass some criterion, such as there were two or more common addresses, or a common address and a common last name. The resulting 12 billion records would consume perhaps 200 GB.
+
+B. Key Data Characteristics  Besides the data set sizes, there are some other characteristic numbers that are important to our modeling efforts. There are about 800 million unique IDs in the original set, and around 100 million unique addresses.
+
+Working backwards from these, we find that the average group of records with a common address is around 16,000, with each distinct ID on average in 2,000 join results. This  ahttp://en.wikipedia.org/wiki/Levenshtein distance     14.2B recs  325 B/rec  4.6TB  Project 14.2B recs  100+ B/rec  1.5TB  Join on  Address  1.6T recs  200+ B/rec  300+TB  Sort &  Remove  Duplicates  1.5T recs  30B/rec  45TB  ? Compute adr hash  ? Compare lnames  ? Init score to 3  ? Project  1.6T recs  30 B/rec  48+TB  Group by  ID pairs &  Sum scores,  Lname_match  {(ID1, ID2,  adrhash, score,  lname_match)}  {(ID, lname, adr)}  Hash ID1,2  & Distribute  12B recs  16B/rec  200GB  Select on  Score &  Lname_match  1.2T recs  16B/rec  20TB  {(ID1, ID2, score, lname_match)}  800M distinct IDs  400M distinct IDs  Send between  nodes via TCP/IP  datagrams  ?h? ?t?  ?J?  ?D?  Figure 1. Major steps in the reference NORA problem.
+
+TABLE I A RANGE OF DATA SET SIZES.
+
+Parameter Small Baseline Large  h: records 1.2B 14.2B 140B  h: record size 1500B 325B 325B  h: size 1.8TB 4.6TB 45.5TB  Unique IDs 400M 800M 6B  Unique Addresses 30M 100M 1B  J: records 800B 1.6T 12T  J: size 150TB 300TB 2.3PB  result: records 6B 12B 112B  result: size 100GB 200GB 1.8TB  average is a bit misleading, however, because of the power law nature of real world data. Single family homes, for example, would on average generate a very few join results between individuals, whereas an address to an apartment building may result in huge numbers.
+
+C. Scaling the Data Set  The characteristics of the data set described above are representative of a problem that is both challenging and typical of data sets encountered in practice. Table I defines two additional data sets that will be useful for exploring how the different configurations discussed later might behave when given data sets that are either smaller or larger than the baseline. The smaller one might represent just US companies while the larger one might represent all the current population of the world.
+
+Intermediate parameters (such as the average number of input records a person may show up in, or the number of join results including each unique ID), will clearly vary from country to country, but for this study are assumed roughly the same as in the baseline.
+
+
+
+IV. TARGET PLATFORMS Part of the rationale for this study was to explore not only  how are such problems solved on today?s systems, but what happens if we change technologies (such as using Solid State Disks), or even more aggressively look forward to potentially radically different architectures. This section describes the various platforms we considered.
+
+A. Baseline Platform  The baseline system assumed here is typical of systems configured by LexisNexis? HPCC systems divisionb. The basic unit is a quad node compute blade, where each node has the following characteristics:  ? 2 processor sockets, each populated with a 6 core pro- cessor running at 2.4GHz. Also, we assume each core, when running, executes instructions at an aggregate rate of one every two cycles. While each core is a superscalar machine capable of higher peak execution rates - up to 3 or 4 per cycle - this degraded number takes into account memory access times (most references are fairly random, causing poor cache performance), and fairly heavy branching.
+
+? 96 GB of DDR3 DRAM on 3 ports, with a peak transfer rate of 10.66GB/s per port.
+
+? 3 disks in a RAID configuration, which together act like a single 7200 RPM 2TB spindle with a peak sustainable transfer rate of 0.16 GB/s.
+
+? 2 GigE full duplex ports, on which only one at a time is in use, and a peak data bandwidth in each direction of 0.1 GB/s.
+
+We assume here 100 such blades in a system (400 nodes in all), with some number of Ethernet router blades to form the equivalent of a fully connected cluster where all nodes can be communicating at full bandwidth concurrently.
+
+bsee http://hpccsystems.com/products-and-services/products/turnkey     h := header.file_headers;  r := RECORD \\ r is schema for the projection from the full data set h.ID; // A 6 byte unique id h.lname; // last name h.prim_range; // simplish proxy for address h.prim_name; h.zip;  END;  nora_rec := RECORD // nora_rec is record format for output of join UNSIGNED6 ID1; UNSIGNED6 ID2; UNSIGNED4 prim_range; BOOLEAN lname_match := FALSE; //Boolean =1 if last names match UNSIGNED2 score := 0;  END;  ResultRecord := RECORD // ResultRecord is schema for output.
+
+D.ID1; D.ID2; UNSIGNED2 Score := SUM(GROUP,D.score); //Sum scores over each group BOOLEAN lname_match := MAX(GROUP,D.lname_match); //Record if match  END;  // Following transform applied to matching results of the join nora_rec MakeNora(t le,t ri) := TRANSFORM SELF.ID1 := le.ID; //Take ID from the left match SELF.ID2 := ri.ID; //Take ID from the right match SELF.prim_range := HASH(le.prim_range); //Hash matching address SELF.lname_match := ut.WithinEditN(le.lname,ri.lname,2); SELF.score := 3;  END;  t := TABLE(h,r); // Convert the raw file into table r  // Do a self-join to create table "J". Match prim_rrange, prim_name, zip // And apply MakeNora to matches J := JOIN(t,t, // Join t with itself  LEFT.prim_range=right.prim_range // This is join condition AND left.prim_name=right.prim_name AND left.zip=right.zip, MakeNora(LEFT,RIGHT)); // This is applied to all matches  // Following creates table D by distributing J over compute nodes // on basis of a hash of ID1,ID2, and sort the result so as to // remove all duplicates in ID1,ID2, prim_range.
+
+D := DEDUP(  SORT(DISTRIBUTE(J,HASH(ID1,ID2)), ID1, ID2, prim_range, -score,-lname_match, LOCAL ),  ID1, ID2, prim_range, LOCAL );  // Now generate the output Table "Result" and filter the result to accept only // rows with either scores>6 or >3 AND last names match  Result := TABLE(D, // D is source table ResultRecord, // This is output format ID1, ID2, // Specifies to group by ID1, ID2 LOCAL) // Keep the result local as distributed previously  (Score>6 OR Score > 3 AND lname_match); //Filter result  Figure 2. ECL Code for the reference NORA problem.
+
+Figure 3. XCaliber node architecture.
+
+B. Replacing the Disks  As will be seen from the analysis, disk performance is the tall pole in performance with the baseline system on this problem. An obvious, and possibly easy, alternative is to use solid state memory for the local disks, either for all storage, or as is more likely, for the intermediate data sets that are transient during computation. Consequently, our model separates out disk accesses for the archival initial and final data sets from the intermediate products, and can use either DRAM or SSD for them.
+
+C. A 2015-era Upgrade  The next possible upgrade is to assume exactly the same blade oriented architecture as today, but upgrade the technol- ogy to what might be available in say 2015. The changes we assumed are: ? A growth from 6 to 24 cores per socket, with a clock  rate of 3 GHz.
+
+? A change to DDR4 DIMMs for DRAMc, with a 4X  growth in capacity and a 3X increase in peak data rate to about 32 GB/s.
+
+? A change in disk technology to 10,000 RPM with a peak sustainable data rate of 0.2 GB/s.
+
+? A change from GigE ethernet to something like switched Infiniband. The EDR version is supposed to be common in that time frame, at 25.7 Gbps per lane, with a higher speed HDR version on the horizon. We assume 8 lanes per interface here, at an effective peak data transfer rate of about 24 GB/s. (This may actually be ?too fast? a projection if the memory and internal subsystems such as NICs cannot run at these rates).
+
+D. XCaliber  Looking a bit further out, the XCaliber project from Sandia National Labs has focused on what may be buildable in the 2018 era using the best of emerging technologies such as 3D chip stacking and photonic interconnect.d For this study we  chttp://en.wikipedia.org/wiki/DDR4 SDRAM dhttps://wiki.ncsa.illinois.edu/display/jointlab/Workshop+Program, Nov. 22,   Figure 4. XCaliber stack architecture.
+
+use the XCaliber project?s projections that one rack can hold 128 compute nodes (Fig. 3), where each compute node holds 2 100-core microprocessors, running at 1.5 GHz, coupled with 16 memory modules via 64 sets of 32 GB/s links.
+
+Each of these 16 memory modules is a 3D stack (Fig. 4) holding 32 GB of DRAM implemented as 64 0.5 GB ?data vaults,? with each vault including two processing units, a ?Vault Arithmetic Unit? (VAU) and a ?Data Arithmetic Unit? (DAU).
+
+Also in this stack is 256GB of non-volatile memory (NVRAM - assumed to be phase change memory). We assume this NVRAM takes the place of a hard disk in the system architecture, and is where both the original and final data will reside.
+
+The peak transfer rate between NVRAM and DRAM is 8 GB/s. Also, each memory has 8 full-duplex links, with each direction capable of 32 GB/s, with 4 of these links to a processor socket, 2 to a memory module associated with the other socket, and 2 to a NIC Router.
+
+Finally, each node includes 2 NIC/Router chips, each with 37 of the above 32 GB/s links, where 8 sets of 2 links go to to 8 memory modules, and the rest are available for connecting nodes. When integrated into a rack, these links combine the 128 nodes into a flattened butterfly topology, where on average a packet from one memory to another makes 2 hops, with an average any-to-any random transfer rate per link of about 1/2     of the 32 GB/s peak.
+
+Within these 128 nodes there are 128 ? 16 = 2048 memory  stacks in a rack, for a total of 65 TB of DRAM and 256 TB of NVRAM.
+
+E. A Memory Stack Only XCaliber Derivative  Looking even further ahead, we also propose an architecture where the only components are memory stacks akin to those described above for XCaliber above. There are no major microprocessor sockets, nor are there any router or NIC chips.
+
+Instead, all we have is a large sea of memory stacks, where the 8 links from each stack are used to create an interconnection topology directly. The particular assumptions are as follows: ? Because of the extra space now available from the  absence of sockets and NICs, there are twice as many memory stacks in the same area as before: namely 4096 per rack.
+
+? The DAU in each vault of each memory stack now takes the place of the microprocessor as the main site of program execution. We assume that each such DAU is akin to a modern core of moderate complexity, running at 1 GHz. There are 64 on each stack, for a total of 262,144 cores in a single rack.
+
+? The topology assumed for the interconnect between stacks is a 4-dimensional torus (other topologies are possible but this one is most easy to represent and model).
+
+For this topology the maximum distance in link traversals between any two stacks is about 16 and the average distance between any two stacks is about 8. Given that the typical messages in the reference algorithm are random any-to-any, this means that each message injected into the system results in 7 additional messages appearing on other links, lowering the peak ?effective? data rate for a link leaving a stack to 1/8th of its peak physical rate.
+
+
+
+V. KEY PERFORMANCE METRICS  There are four system resources which have proven to be critically related to the ability of a computing system as described in Section IV to solve such problems: disk, CPU, memory, and network. We discuss each below, and will use as metrics for the later models how much ?time? in seconds each resource is used during a computation.
+
+A. Disk Performance  First is disk performance. We assume that initial data set is striped across the node disks so that each node has an approximately equal subset of the records of the overall data set (around 35 million records per node for 400 nodes). The same disks must also hold both the final results and any intermediate data sets that cannot be fit in the node memory for the appropriate period of time. We further assume that both the final results and intermediate sets are also striped across all nodes, but that only the movements needed by the algorithm are performed between nodes, so that if data is generated on a node, unless it must be moved, it will stay on that node, and use the node?s disk for storage as needed.
+
+While it is not unreasonable to assume that the size of the input set per node is the same, there may be differences in the sizes of the intermediate data sets that would cause some nodes to have more intermediate or final data than others.
+
+Given the sheer size of the data sets (35 million records per node), however, we assume that statistically the variations will be small and can be ignored, at least initially.
+
+The metric of relevance here is thus the time in seconds needed by the disks on each node to perform the required data transfers. As discussed later, we assume that virtually all disk transfers can be large in size, meaning to a first order that we can compute this metric simply from the data sizes and the peak sustainable data transfer rates.
+
+B. Network Performance  Next in importance, at least on today?s systems, is network performance, namely the time required to transfer all required data between nodes. This occurs twice in the reference prob- lem; once when we want to distribute the results of the join so that only node holds all records with the same address, and once when we distribute the ID pairs so that one one holds all records with the same set of ID pairs.
+
+Again we compute the time in seconds spent by each node transferring data on or off node as the key metric. This is computed as the aggregate data that needs to be moved, divided by the peak sustainable bandwidth of the node?s NIC (Network Interface Controller) as it drives its network port.
+
+We assume full duplex connections here so that the time for outgoing data is not affected by the time for incoming data. Also, we assume as with the disk that statistically all nodes exchange about the same amount of data, but we do degrade the peak numbers on the basis of how the topology handles any-to-any traffic. Again, in the real world there will be interactions that cause degradations in this, which we will ignore in the model.
+
+We also assume that data is packaged in standard sized increments, of about 4KB minimum, and that all data to be transmitted by a node from its NIC must be read from memory first (we count this memory traffic under the memory metric below).
+
+C. CPU Performance  The traditional metric for computer architecture evaluation is execution time for the CPU running the program. To a first approximation this can be estimated by the total number of instructions to be executed divided by the product of the average number instructions the CPU can execute per cycle (denoted here as IPC - ?instructions per cycle?) and the clock rate (cycles per second). This IPC is itself often a function of both the application (code with many unpredictable branches or many random memory references will run slower) and the microarchitecture (wider instruction issue and deeper cache hierarchies will tend to help performance).
+
+In addition, modern machines are ?multi-core? and ?multi- threaded,? with the net effect that they can run multiple independent instruction streams at the same time. If a problem     permits expression in terms of multiple threads, then a perfor- mance gain over a single traditional CPU should be expected.
+
+We use here the term ?socket? to refer to a microprocessor chip that may contain multiple cores. Many compute nodes today are ?multi-socket;? they have multiple such sockets, each with a microprocessor chip, and all of which are available for use on a single or multiple problems simultaneously.
+
+D. Memory Performance  The last metric has to do with the main physical memory from which the cores fetch and store the data they process.
+
+There are actually two metrics here. First is capacity: there has to be sufficient storage to hold all intermediate data and program text to avoid massive paging effects. This is a go/no- go kind of metric, and was considered in the derivation of the processing described in Section VI in relation to the amount of memory found in today?s systems are described in Section IV-A.
+
+The second memory metric that is tracked here more carefully is ?memory bandwidth,? or the number of bytes of data per second that are transferred between cores and memory chips. Today?s memory systems use DDR3 DIMMs for memory, which have well-defined peak bandwidths and protocols under which data may be accessed by the cores. For example, a typical DDR3 DIMM may have a peak data transfer rate of 10.66GB/s per port, with all transfers as multiples of 64B. Also, in most architectures an update to a single byte in a word may require two such 64B transfers - one as part of a cache line read to access the data and one for the eventual flush of the modified data back.
+
+In this study we analyze each step for the minimum amount of data that needs to be transferred, given the constraints of the memory interface protocol, and then divide by the aggregate available peak bandwidth from all memory ports to get a lower bound on time. In computing this minimal data we make assumptions about caching effects and when there is little versus heavy cache reuse (as in the join generation of Step 6 (see Fig. 7). We do not, however, account for redundant memory-memory copies that may be experienced for either I/O or for paging.
+
+
+
+VI. BASELINE IMPLEMENTATION DATA FLOW  The implementation assumed for analysis here is not a step- by-step execution of Fig. 1, where each box (or statement in Fig. 2) is executed to completion before advancing to the next. To do so would require the creation of monstrous intermediate data sets where just the temporary storage and retrieval times would be significant. Instead, the implementa- tion studied is similar to that generated by the ECL compiler.
+
+As with Hadoop, we assume that the problem, starting with the initial data, is partitionable into pieces that can run on separate compute nodes in parallel. In addition, however, we also assume each computational step as defined by Fig.
+
+2 is partitioned into multiple independent ?slices? that are also executable in isolation, and provide sufficient data to be processed by a ?slice? of the next step. Thus within a single  compute node these slices are handled sequentially within a step, but pipelined between steps. Thus slice j of step i is allowed to start as soon as slice j of step i-1 completes. This permits slice j of step i, slice j+1 of step i-1, slice j+2 of step i-2, etc., all to be executed ?at the same time.? With modern multi-socket, multi-core, multi-threaded, compute nodes this is fairly straightforward to do, and achieve a significant amount of concurrency.
+
+Only when absolutely necessary do we assume a barrier where all computation must complete before starting the next step. If done right, this has the enormous advantage of reducing the size of intermediate data sets.
+
+The other major characteristic of this implementation is also a fall-out of the nature of ECL as a declarative, rather than imperative (such as Java or PIG), programming language. In a functional language like ECL, the mathematical rules of functions, such as associativity, commutativity, etc., permit individual functional ?steps? to be rearranged relatively freely.
+
+In particular, operations can be ?moved up,? often providing a significant reduction in intermediate data sizes, saving both intermediate storage and processing time, as filtering can often be done quite early.
+
+Again, this kind of optimization is a key part of the current ECL compiler design.
+
+For this discussion we use the properties of the data set as described in Section III, and, for explanatory purposes, the numerics of the baseline hardware configuration of Section IV.
+
+Of particular use is the assumption of 400 separate compute nodes. The model used in later sections parameterizes all of these properties, allowing for a comparative exploration of the design space.
+
+A. Timing  In our model, for each such slice and step we compute an estimated time in seconds for each of the four summed metrics from Section V. Then, when estimating the minimum overall time for a segment to complete, we sum over all slices from the different steps that may be in progress concurrently, and then take the maximum. The summing of each of the four metrics reflects the fact that in nearly all cases two different computations cannot be performed simultaneously using the same resource, such as the disk, and thus summing the individual usages is closer to reality.
+
+Taking the maximum of the four metrics assumes that all four activities can occur totally concurrently. In reality, there are dependencies between some of the activities, such as waiting for a disk access to complete before starting a network action, so this estimate is thus at best a lower bound on segment time. However, given the amount of different activities from different slices of different steps that are all going on concurrently, it is not totally unreasonable.
+
+Fig. 5 diagrams the partitioning assumed for the reference problem. There are 2 barriers where all prior computation must complete, but between the barriers the steps are partitioned and pipelined as discussed above. We terms each of these regions between barriers as ?stages.?     1. Read in slice of local partition  2. Project out (ID, lname, address fields)  3. Use hash of address to bin into 400 buckets  4. Distribute (ID, lname, adr) to hashed node  5. Use large hash table to arrange for each address a set of (ID, lname)  6. Generate all non-redundant pairs from each set, including address edit distance, and distribute on basis of hash of ID pairs  7. Use 2D hash table to bin by ID pairs, and dump to local disk by bin  8. For each bin use large hash table to match up pairs and perform aggregation  9. Perform filter checks and output   I  te ra  ti o  n s   M B  p er  s li  ce   K  I te  ra ti  o n  s  /U  n iq  u e  A d  d re  ss   I te  ra ti  o n  s  ID B  in  Barrier  Barrier  Figure 5. Assumed Segmented and Pipelined NORA Data Flow.
+
+11.6GB  H partition  Slice buffer Adr hash  Buffer Packet  Buffer  Address Hash Table  2x64MB  Step 1  .
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+2x400x4KB  = 3.2MB  Step 2,3 Step 4  Adr  Step 5   K  e n  tr ie  s  ID, lname  Lname set  72Bx250K  = 18MB  36Bx256 each.
+
+2.3GB for 250K copies  185 iterations  Disk  Compute/memory  Network  READ Project  & Hash  By Adr  Distribute  By Adr Hash Arrange  By Adr & Eliminate  Duplicates  {(ID,lname,Adr)}  {(ID,lname)}  L o cal B  arrier fo r all iteratio  n s to  co m  p lete  Figure 6. Data flow in steps 1-5.
+
+B. Stage 1: Steps 1 through 5  The first 5 steps, Fig. 6, handle up to but not including the join, and work by partitioning the original data set (4.6 TB overall and about 11.5GB per node when there are 400 nodes) into approximately 185 segments of 64MB on each compute node. The 64MB number was chosen to match a similar number used by Hadoop. Each 64 MB segment is then processed in a pipelined fashion by the same node, with step 1 reading in the 64MB segments from a local disk into a memory buffer. Step 2 then performs the projection by reading out just the fields needed for further operations. For each projected record step 3 computes a hash of each address field, and then buffers the projected record into a memory buffer for one of the 400 nodes. Step 4 then sends the records to the appropriate node. We assume here that the records going to each node are buffered into 4KB chunks before being sent out through the network (assuming double buffers of 4KB this requires about 3.2GB of memory buffers per node).
+
+Since all compute nodes use the same hash function, this ensures that all records with the same address will go to the same node, with on average each compute node then receiving all records associated with approximately 100M/400 = 250,000 distinct addresses.
+
+Step 5 then receives these chunks from step 4, and places  250,000 iterations (once for each lname set corresponding to a common address)  Disk  Compute/memory  Network  G lo  b al B  arrier fo r all iteratio  n s to  co m  p lete  ID hash Buffer   .
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+.
+
+{(ID1,ID2,  edit,match)}  Address Hash Table  Adr   K  e n  tr ie  s  ID, lname  Lname set  36Bx256 each.
+
+2.3GB for 250K copies  {(ID,lname)}  Step 6  Packet Buffer  Step 6  {(ID1,ID2,  edit,match)}  8x8 x 1MB.
+
+ID Bin Buffer  ID2 hash  ID  h as  h  Step 7  0.24 MB Per iteration.
+
+Create join pairs  And distribute  By ID pair hash  Bin records by  ID1 & ID2  And write to disk  Figure 7. Data flow in steps 6 and 7.
+
+the ID and last name from each incoming record into a group based on address. This is done by again hashing all incoming records again on address (whose addresses have already been hashed to guarantee only 250,000 unique addresses), and grouping by address. Thus, each entry in the address hash table of Fig. 6 has one copy of a unique address and a pointer to a buffer of records containing IDs and last names that match that address. At this point we can also eliminate as a duplicate any record where the address, ID, and last name match an already existing record. From experience, this is not a very frequent occurrence in real data, but still saves noticable compute time when the join is performed. On average each node receives about 142 entries for each of its unique addresses (again in the real world there will be significant variations, with apartment buildings, for example, receiving a huge number of entries).
+
+Before advancing beyond step 5 we must wait for all slices of all steps 1 to 5 to complete, so as to ensure we have all records for each address grouped together in some single node.
+
+C. Stage 2: Steps 6 and 7  Steps 6 and 7, Fig. 7, handles the generation of the join, and are sliced so that the 250,000 address groups on each node are handled one group at a time. In step 6, each node sequentially takes one of its address groups and generates the join: all possible pairs from these records, and only these records. If on average there are 142 entries per address, this is 10,000 pairs. For each pair so generated, the node computes a 400- way hash based on the ID pair values, and distributes them to some target node for step 7. As before we assume these pairs are buffered up into 4K packets.
+
+Computationally, associated with each pair generated in step 6 is the comparison of the last names to determine if they are within some specified edit distance. In place of the last name, a flag accompanies the pair of IDs to signal the result of the check, again saving considerable space.
+
+In step 7, these packets of ID pairs arrive at their designated node, and are then inserted into another hash table on the basis of a hash of the ID pairs. In Fig. 7 we assume 64 hash entries in a 2D arrangement (hash each ID of the pair 8 ways), but other combinations are possible. Associated with each of these     64 iterations (one for each ID pair bin)  Disk  Compute/memory  Network  58M recordsx16B  = 928MB  ID Pair  Hash Table  Adr   M e  n tr  ie s  2x64M x 16B  = 2GB  Disk Buffer Disk Buffer  Match up by ID pair  And aggregate values Filter and output results  Figure 8. Data flow in steps 8 and 9.
+
+entries is an open file on the node?s local disk. Also associated is a pool of buffers (assumed here to be about 1MB each) to accumulate entries as they arrive. When a buffer associated with each hash has been filled, it is written to the associated local file and the buffer reused.
+
+D. Stage 3: Steps 8 and 9  As after Stage 1, we assume we must wait until all records from all joins have passed through step 7, and there are now a set of files on each local disk of each node holding all pairs of IDs that hash to the same associated value.
+
+Steps 8 and 9, Fig. 8, process these files one at a time in pipelined mode, one file at a time. Step 7 reads the current file and enters the pairs into a very large hash table. When no match is found, a new entry established from the ID pair, and the score and last name match fields initialized. When a duplicate ID pair is found, the score from the incoming record from the file is summed into the entry, and the last name flag ORed into the entry.
+
+When one such file is totally processed, the hash table is passed to step 9, where we iterate through all entries, and output to a local disk file all entries that pass the criterion. At the end, the result file is striped across the 400 nodes.
+
+A key part of this processing is the replacement of a very expensive sort by the two-step hashing, with the first hash reducing the number of pairs down to a relatively small enough number that the second hash can really be an almost linear time ?hash sort? of sorts with the entire hash table in memory. In a real sense, the ?sort? has been distributed backwards, with the duplicate removals done as the ?sort? goes on, not afterwards.
+
+E. Estimating Metrics  The metrics associated with disk and network are fairly straightforward to estimate, since they are based on the size of the data that must be processed.
+
+Memory statistics are a bit more complex, because we must account for each memory reference that reaches the memory modules, and is not handled by some cache. The approach taken here was to use look at the number of distinct addresses a step may generate, and estimate whether or not a cache hit  occurs. For most steps such as the one involving the 250,000 address hash table, cache hits are unlikely, but there are some, like the generation of the sets of join pairs in step 6 where there is an initial cache miss to read the next table, but then a long string of hits. Also, we assume that whenever either a disk or network access occurs, there must always be a memory buffer to source or receive the data. We account for these accesses also. However, we do not account for any additional memory-memory transfers that often occurs in the I/O for general purpose operating systems (some of the early UNIX- like systems had upwards of 7 such copies). This is because we are interested in what is the minimal possible resource need, if the code generated is in fact unique to an algorithm. Again, this is similar to what happens within the ECL compiler and code generating chain.
+
+Compute time is the most complex, because it is a function of both what needs to be done and how many iterations are needed. Consequently, we built a table, Table II, with estimated processing times for each step that were expressed as a function of the number of iterations that would be performed in a slice. This permitted us to change the size or scope of a step and come up with consistent numbers.
+
+This instruction count was augmented with a flag that indicated if the processing could rationally be expected to be executable by multiple threads concurrently. Then, with this information and the machine characteristics, we compute an execution time.
+
+Another item that was not included in these numbers are operating system overhead, which could be significant for such things as process start/stop, TCP/IP stacks, etc. Again ignoring them permits us to get a deeper understanding of what is the absolute minimal computation needed, and not the possibly artificial artifacts of layering all of this on top of a today?s OS.
+
+Again, this is in rough agreement with what happens within the ECL system.
+
+
+
+VII. PERFORMANCE ANALYSIS  A parameterized model of the reference problem was built so that changes in either data set or machine characteristics could be made, and then estimates computed on the minimum time for each step, within the context of the other steps, and an overall minimal ?wall-clock? time computed. Also computed was utilization of each of the four resource categories, both on a per step basis and overall.
+
+What is important about these results is not the specific wall clock times - there are a lot of statistical and real-world effects that would actually be present - but on the relative changes when we change configuration.
+
+This section first discusses the results for the baseline configuration, and then what happens if we were to scale the problem size up and down. After this we look at the results from the more advanced architectures from Section IV.
+
+A. Baseline Results  Fig. 9 summarizes the baseline results for the reference problem. Fig. 9(a) demonstrates how time is spent in each     TABLE II ASSUMED PROCESSING TIMES  Step Function O(1) O(N) N  2 Project from ?h? to ?t? 1000 100 N=number of records projected  3,7,8 Compute hash 1000 100 N=number of records to hash  4 Launch and receive datagram 0 10000 N=number of datagrams  5 Distribute into hash table 1000 100 N=number of records  6 Join pair generation 10000 1000 N=number of pairs generated  9 Filter check 1000 100 N=number of records to check            0 200 400 600 800 1000 1200  M a jo r S te p #  Wall Time (sec)  (a) Wall clock time (in sec) by step (b) Resource utilization by step  1.E 02  1.E 01  1.E+00  1.E+01  1.E+02  1.E+03  1 2 3 4 5 6 7 8 9  R e so u rc e s U se d /n o d e (s e c)  Step # Disk CPU Memory Network  0%  10%  20%  30%  40%  50%  60%  70%  80%  90%  100%  Disk CPU Memory Network  % U ti li za ti o n v s W a ll C lo ck  (c) Resource utilization vs. Wall Clock  45%  19%3%  33%  Disk CPU Memory Network  (d) Breakdown of overall resources  Figure 9. Reference problem on baseline platform.
+
+step. The first 5 steps are fairly completely overlapped, and account for just 7.5% of the total. The join and join distribution of steps 6 and 7 are also overlapped, and take up the bulk of the time at 57%. Steps 8 and 9, the storage, sorting, and filtering of the results take the remaining time.
+
+Fig. 9(b) then provides insight into what drives each step in terms of resource utilization. For each step there are 4 bars, with each bar representing the total number of seconds of each of the 4 resources needed in each step. The tallest bar is thus the one that dominated the computation time for that step. We note that the vertical axis is a logarithmic scale, meaning that one major division is a factor of 10. We note that each step is different, both in terms of amount and mix of resources. Some of the steps are dominated by just one resource, such as 1, 7, and 8 by disk, 4 by network, and 3 and 9 by computation. Step 6, the most dominant step, is network driven with computation a close second.
+
+Fig. 9(c) then aggregates the utilizations for all four re-  sources over all steps, and then divides by total execution time.
+
+The result indicates for what percentage of the ?wall-clock? time each resource is busy. The disks are busy nearly 80% of the time, with the network a close second at nearly 60% of the time.
+
+Fig. 9(d) expresses each resource as a percentage of all resources needed. In this configuration, over the 1025 seconds of wall clock time, there were 1772 seconds of resources from the aggregate of the 4 categories (Not surprisingly, at least two resources were busy at the same time about 72% of the time).
+
+As might be expected, the disks represented about 45% of the total needed computational resources, and network second at 33%.
+
+B. Sensitivity  An interesting question to ask is what is the sensitivity of the execution time to relative changes in the key platform pa- rameters. Fig. 10 varies the relative performance of each of the 4 metrics (disk bandwidth, network bandwidth, computational     0.70  0.80  0.90  1.00  1.10  1.20  1.30  1.40  1.50  1.60  0.5 1 1.5 2R e la t iv e E x e c u t io n T im  e  Relative Increase in Performance over Baseline  Disk Network CPU Memory  Figure 10. Performance sensitivity to system parameters.
+
+Total Stage 1 Stage 2 Stage 3  Baseline 1.00 1026 77 581 369 10  Base w'RAMDIsk 1.45 708 77 581 50 10  2015 upgrade 1.59 644 61 288 295 10  2015 w'RAMDisk 8.12 126 61 55 10 10  XCaliber 11.94 86 13 62 11 1  Stacks Only 67.11 15 1 12 2 1  Time (in seconds)Speedup  vs Baseline  Eqvt.
+
+Racks  Figure 11. Equivalent wall clocks for future platforms.
+
+rate, and memory bandwidth), and plots the relative change in execution time. The baseline (1,1) is the system analyzed in the prior section. A variation value of 1/2 for a metric means that we have ?slowed down? the capability of the system in just that parameter by a factor of 2. A variation value of 2 means that we have ?sped up? the system in that aspect by a factor of 2.
+
+Varying two of the parameters, computation rate and mem- ory bandwidth, by a factor of 2 either up or down has no effect on execution time; these parameters are never within a factor of 2 of being the tall poles.
+
+Varying each of the other parameters, network and disk bandwidth, individually has almost identical results; halving their relative performance increases execution time by a factor of 1.8; accelerating them by a factor of 2 decreases time by a factor of about 0.8.
+
+C. Alternative Platforms  Fig. 11 gives the equivalent times for the variants in platforms discussed in Section IV-E in comparison to the baseline system. Fig. 12 provides matching step by step details of resource utilizations.
+
+Assuming we can upgrade the DRAM DIMMs in the baseline sufficiently to allow use of them as RAM disks for the intermediate files of steps 7 and 8, we get a speedup of about 45%, because the disk usage in steps 7 and 8 have been eliminated (Fig. 12(a)).
+
+Moving to a system (still occupying 10 racks) of 2015 vintage provides only a very modest increase above this, primarily because we still assume the hard disks are used for the intermediate files Fig. (12(b)). Since it is highly likely that such a platform would have sufficient RAM for a RAM disk,  Racks Small Baseline Large  1/4 Baseline Hardware 2.5 0.51 0.25 0.03  Baseline Hardware 10 2.03 1.00 0.13  4X Baseline Hardware 40 8.07 3.97 0.52  Baseline with RAMDisk 10 2.96 1.45 0.19  Xcaliber Rack 1 27.19 11.92 1.52  1 Rack of Memory Stacks 1 140.41 68.33 8.84  Data Set Size  Figure 13. Speedup under different data set sizes.
+
+we ran this also, with now a considerable speedup of over 8X.
+
+An XCaliber-like architecture has a dramatic effect on  performance, with an 11+X speedup with the architecture that uses the next generation microprocessor ?sockets? for the computation, and a 67X speedup if we use smaller cores in memory stacks only. The former speedup is due to the virtually elimination of everything other than computation from the mix (Fig. 12(c)). This latter speedup is due to the significant increase in computation (64 cores on each of 4096 memory stacks), which reduced the computation parts by an order of magnitude (Fig. 12(d)).
+
+Further, these last two times are achieved with 1/10 the hardware. Assuming the cost of a rack is equivalent between the baseline and XCaliber, this means that the XCaliber architecture is between 2 and 3 orders of magnitude better in terms of cost-performance!
+
+D. Data Set Scaling Experiments  Another interesting question to ask is what happens as either the data set sizes or the hardware vary, both larger and smaller.
+
+For the variation in data set sizes we assume the three sets defined in Table I. For the variation in hardware we assume two variations in the baseline configuration: 1/4 and 4X the number of nodes, along with the other three configurations.
+
+Fig. 13 diagrams the resulting relative performances, ex- pressed as speedups over the baseline hardware executing against the baseline data set size.
+
+Because of the structure of the algorithm chosen, Fig. 5, there is more linearity in these results than one might expect.
+
+The quadratic term we might expect from the join is still there, but it is a function of the number of records that each unique ID appears in (i.e. on average the number of residences for each individual). We did not assume that this changed much as we go from small to large.
+
+
+
+VIII. A GEDANKEN EXPERIMENT A final question asked of the model was to determine a  configuration that represented a more ?balanced? configuration where each resource was used at least approximately the same amount. This was done by ?backing off? the performance of each factor that did not represent a tall pole until its utilization was higher, but without drastically increasing execution time.
+
+We did this for two configurations: today?s baseline and the all memory stack variant of XCaliber.
+
+Fig. 14 provides a utilization chart as before for the baseline system where each of the 4 resource categories have been     1.E 03  1.E 02  1.E 01  1.E+00  1.E+01  1.E+02  1.E+03  1 2 3 4 5 6 7 8 9  R e so u rc e s U se d /n o d e (s e c)  Step # Disk CPU Memory Network  (a) Baseline with RAM Disk (b) 2015 version of baseline  (c) XCaliber (d) Xcaliber memory stacks only  1.E 04  1.E 03  1.E 02  1.E 01  1.E+00  1.E+01  1.E+02  1.E+03  1 2 3 4 5 6 7 8 9  R e so u rc e s U se d /n o d e (s e c)  Step # Disk CPU Memory Network  1.E 04  1.E 03  1.E 02  1.E 01  1.E+00  1.E+01  1.E+02  1.E+03  1 2 3 4 5 6 7 8 9  R e so u rc e s U se d /n o d e (s e c)  Step # Disk CPU Memory Network  1.E 04  1.E 03  1.E 02  1.E 01  1.E+00  1.E+01  1.E+02  1.E+03  1 2 3 4 5 6 7 8 9  R e so u rc e s U se d /n o d e (s e c)  Step # Disk CPU Memory Network  Figure 12. Resource utilization by step for future platforms.
+
+0%  10%  20%  30%  40%  50%  60%  70%  80%  90%  100%  Disk CPU Memory Network  % U ti li za ti o n v s W a ll C lo ck  100% 45% 7% 90%  Figure 14. Utilization after reducing baseline parameters.
+
+reduced in peak potential by the factor below the resource name. The disk bandwidth is left untouched, but there is only 45% of the compute power as in the baseline, and 1/14th the memory bandwidth. The execution time, however, has only grown to 1090 seconds - a growth of about 6%. If such a reduction in capability translates into a cheaper system, the small loss in performance may be worth it.
+
+Fig. 15 provides a similar chart for the all memory stack configuration. This time computing was the original limiting factor and changes the least. The other resources, however, may be cut back enormously, with the values shown here growing the execution time by 50% to 23 seconds - still over  10% 100% 1.4% 1.2%  0%  10%  20%  30%  40%  50%  60%  70%  80%  90%  100%  Disk CPU Memory Network  % U ti li za ti o n v s W a ll C lo ck  Figure 15. Utilization after reducing stack parameters.
+
+46 times faster than today?s baseline.
+
+
+
+IX. CONCLUSIONS  The intent of this paper was to explore how the key param- eters of modern computer architectures affect the performance of a very large NORA problem. Importantly, we did not want to project actual running time as much as we wanted to understand the underlying complexity.
+
+The implementation for the basic flow was chosen to match the strength of current architectures by dividing each step into small enough pieces that it could be done within the constraints of a modern compute node without excessive spills to disk, and simultaneously be overlapped with other steps with an     absolute minimum in global barriers. The results indicated that even with such a careful design, the key drivers are disk and network bandwidth.
+
+The results indicate that the problem does scale reasonably well with the number of compute nodes, but the solution is still an extremely time-consuming process. Adding more memory to each node to use as a fast RAM disk does have some effect (perhaps 45%), but whether or not this is cost effective is an open question.
+
+Looking forward to more advanced architectures indicates that there may in fact be a performance inflection point in the future. Providing large amounts of 3D stacked memory with more bandwidth, tying in non-volatile memory in place of disk, and increasing network bandwidth can totally change the dynamics of the computation, to the point where the tall pole in execution time becomes the compute capability. Interestingly, going even further with moving computation onto the memory stacks results in the same tall pole but nearly two orders of magnitude improvement over today, with perhaps 1/10th the hardware.
+
+A side experiment then identified a design point that gave up just a bit of this performance but saved potentially significant costs in bandwidths by balancing utilizations. If such a design point saves money over the other configurations, then it is possible that even more cost-efficient solutions are possible.
+
+These results open up a plethora of future paths to take.
+
+First is to instrument a real system so that real measurements can be made, and the effects of operating systems, paging and caching protocols, threading and I/O overhead, etc. can all be quantified and added to the model. Clearly, we would also like to repeat the analysis for other challenging big data problems such as more degrees of separation and machine learning. We should also look at what might be done to the basic algorithms if and when we are no longer limited in main memory as we are today. Finally, architectures that leverage the emerging 3D technologies appear ripe for optimization with such problems in mind, and yield systems that can convert today?s ?batch processing? model to something that approaches real-time.
+
